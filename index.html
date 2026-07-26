@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = '2026-07-26.3';
+window.APP_VERSION = '2026-07-26.5';
 (function(){
   fetch('version.json?_=' + Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.json() : null; })
@@ -1556,7 +1556,6 @@ function renderKPIs(){
     notes.push('Filter Distributor/Source/Incoterm aktif — target tetap dihitung pada level Provinsi/Distrik/Expeditur yang aktif (tidak bisa menyempit ke Distributor/Source/Incoterm), karena data target tidak punya dimensi tersebut.');
   }
   notes.push('Tonase (MTD) / Tonase Bulan Lalu (MTD LM) / % vs Bulan Lalu SELALU memakai periode bulan berjalan (tanggal 1 s.d. hari data realisasi terakhir) dan padanannya 1 bulan sebelumnya — TIDAK mengikuti rentang tanggal yang dipilih di atas, dan mengabaikan checklist Tahun/Bulan karena harus bisa menjangkau di luar keduanya. KPI/grafik/tabel lain tetap mengikuti filter tanggal yang dipilih seperti biasa.');
-  notes.push('Target STD (Selected-To-Date) pada tabel di bawah mengikuti rentang tanggal yang dipilih di atas — jika rentang tidak dimulai tanggal 1, Target STD dihitung khusus untuk rentang tersebut (bukan dari awal bulan). Jika "dari" = tanggal 1, Target STD = Target MTD seperti biasa.');
   gapEl.style.display = 'block';
   gapEl.textContent = notes.join(' ');
 }
@@ -1577,10 +1576,10 @@ function fmtPct(val){ return val!=null ? val.toFixed(1)+'%' : 'N/A'; }
 const TABLE_COLUMNS = [
   {key:'kontrak', label:'Vol Kontrak (ton)', get:d=>d.targetOK&&d.foundAny?d.kontrak:null, render:d=>fmtNum(d.targetOK&&d.foundAny?d.kontrak:null), display:d=>fmtNum(d.targetOK&&d.foundAny?d.kontrak:null)},
   {key:'full', label:'Target FM (ton)', get:d=>d.targetOK&&d.foundAny?d.full:null, render:d=>fmtNum(d.targetOK&&d.foundAny?d.full:null), display:d=>fmtNum(d.targetOK&&d.foundAny?d.full:null)},
-  {key:'mtd', label:'Target STD (ton)', get:d=>d.targetOK&&d.foundAny?d.mtd:null, render:d=>fmtNum(d.targetOK&&d.foundAny?d.mtd:null), display:d=>fmtNum(d.targetOK&&d.foundAny?d.mtd:null)},
-  {key:'tonase', label:'Vol. STD (ton)', get:d=>d.tonase, render:d=>fmtNum(d.tonase), display:d=>fmtNum(d.tonase)},
+  {key:'mtd', label:'Target MTD (ton)', get:d=>d.targetOK&&d.foundAny?d.mtd:null, render:d=>fmtNum(d.targetOK&&d.foundAny?d.mtd:null), display:d=>fmtNum(d.targetOK&&d.foundAny?d.mtd:null)},
+  {key:'tonase', label:'Vol. MTD (ton)', get:d=>d.tonase, render:d=>fmtNum(d.tonase), display:d=>fmtNum(d.tonase)},
   {key:'achiev', label:'%Achiev', get:d=>d.achiev, render:d=>`<span class="pct-cell" style="background:${pctColor(d.achiev)}">${fmtPct(d.achiev)}</span>`, display:d=>fmtPct(d.achiev)},
-  {key:'gapMTD', label:'Gap STD (ton)', get:d=>d.targetOK&&d.foundAny?d.gapMTD:null, render:d=>fmtGap(d.targetOK&&d.foundAny?d.gapMTD:null), display:d=>fmtGap(d.targetOK&&d.foundAny?d.gapMTD:null).replace(/<[^>]+>/g,'')},
+  {key:'gapMTD', label:'Gap MTD (ton)', get:d=>d.targetOK&&d.foundAny?d.gapMTD:null, render:d=>fmtGap(d.targetOK&&d.foundAny?d.gapMTD:null), display:d=>fmtGap(d.targetOK&&d.foundAny?d.gapMTD:null).replace(/<[^>]+>/g,'')},
   {key:'gapToFM', label:'Gap to FM (ton)', get:d=>d.targetOK&&d.foundAny?d.gapToFM:null, render:d=>fmtGap(d.targetOK&&d.foundAny?d.gapToFM:null), display:d=>fmtGap(d.targetOK&&d.foundAny?d.gapToFM:null).replace(/<[^>]+>/g,'')},
   {key:'so', label:'SO (ton)', get:d=>d.so, render:d=>fmtNum(d.so), display:d=>fmtNum(d.so)},
   {key:'ofpct', label:'%OF', get:d=>d.ofpct, render:d=>`<span class="pct-cell" style="background:${pctColor(d.ofpct)}">${fmtPct(d.ofpct)}</span>`, display:d=>fmtPct(d.ofpct)},
@@ -2043,6 +2042,15 @@ const FLEET_COLUMNS = [
   {key:'trips', label:'Jumlah Trip', get:d=>d.trips, render:d=>d.trips!=null?d.trips.toLocaleString('id-ID'):'-', display:d=>d.trips!=null?d.trips.toLocaleString('id-ID'):'-'},
   {key:'avgCycle', label:'Avg Cycle Time (jam)', get:d=>d.avgCycleHours, render:d=>d.avgCycleHours!=null?d.avgCycleHours.toFixed(1):'-', display:d=>d.avgCycleHours!=null?d.avgCycleHours.toFixed(1):'-'},
   {key:'tonase', label:'Total Tonase (ton)', get:d=>d.tonase, render:d=>fmtNum(d.tonase), display:d=>fmtNum(d.tonase)},
+  // Cross-expeditur / cross-route visibility, added 2026-07-26 per Rendy: "show if armada move
+  // across expeditur or across rute" - computed from the truck's TOTAL rows across the whole
+  // filtered selection (not just its rows under the currently-open top-level group), so a truck
+  // shared between two provinces/expeditur still reads its TRUE diversity wherever it's listed.
+  {key:'nExp', label:'# Expeditur', get:d=>d.nExp, render:d=>d.nExp!=null?d.nExp.toLocaleString('id-ID'):'-', display:d=>d.nExp!=null?d.nExp.toLocaleString('id-ID'):'-'},
+  // Uses NAMA_AREA_DISTRIK, not the ROUTE field - verified 2026-07-26 that ROUTE is a single
+  // constant value ('ZR0002') across all 31,914 rows in the dataset, so it carries zero signal.
+  // District is the real proxy for "does this truck get used across multiple corridors."
+  {key:'nRoute', label:'# Distrik', get:d=>d.nRoute, render:d=>d.nRoute!=null?d.nRoute.toLocaleString('id-ID'):'-', display:d=>d.nRoute!=null?d.nRoute.toLocaleString('id-ID'):'-'},
 ];
 const FLEET_DETAIL_COLUMN_DEFS = [
   {key:'JAM_ANTRI', label:'Jam Antri', agg:'none', get:r=>r.JAM_ANTRI||'-'},
@@ -2118,10 +2126,22 @@ function renderFleetTable(){
     if(!byNopol.has(r.NOPOL)) byNopol.set(r.NOPOL, []);
     byNopol.get(r.NOPOL).push(r);
   });
+  // Global per-NOPOL rows across the WHOLE filtered selection, independent of topField - a truck's
+  // # Expeditur / # Route must reflect its true total diversity even when it's currently listed
+  // under just one top-level bucket (e.g. drilled by Provinsi, but the truck also ran in another
+  // province under a different expeditur).
+  const globalByNopol = new Map();
+  rows.forEach(r=>{
+    if(!globalByNopol.has(r.NOPOL)) globalByNopol.set(r.NOPOL, []);
+    globalByNopol.get(r.NOPOL).push(r);
+  });
+  function distinctCount(rowsForCount, field){ return new Set(rowsForCount.map(r=>normVal(r[field]))).size; }
 
-  function nopolStats(trs){
+  function nopolStats(trs, nopol){
     const sorted = trs.slice().sort((a,b)=>a._d-b._d);
-    return {trips: sorted.length, avgCycleHours: avgCycleHoursFor(sorted), tonase: aggMetric(sorted,'TONASE'), sorted};
+    const globalRows = globalByNopol.get(nopol) || trs;
+    return {trips: sorted.length, avgCycleHours: avgCycleHoursFor(sorted), tonase: aggMetric(sorted,'TONASE'), sorted,
+      nExp: distinctCount(globalRows,'EXPEDITUR_NAMA'), nRoute: distinctCount(globalRows,'NAMA_AREA_DISTRIK')};
   }
   function topStats(topKey){
     const byNopol = byTop.get(topKey);
@@ -2132,37 +2152,42 @@ function renderFleetTable(){
       const sorted = trs.slice().sort((a,b)=>a._d-b._d);
       for(let i=1;i<sorted.length;i++) allGaps.push((sorted[i]._d-sorted[i-1]._d)/3600000);
     });
-    return {trips: allRows.length, truckUnik, avgCycleHours: allGaps.length?allGaps.reduce((a,b)=>a+b,0)/allGaps.length:null, tonase: aggMetric(allRows,'TONASE'), allRows};
+    return {trips: allRows.length, truckUnik, avgCycleHours: allGaps.length?allGaps.reduce((a,b)=>a+b,0)/allGaps.length:null, tonase: aggMetric(allRows,'TONASE'), allRows,
+      nExp: distinctCount(allRows,'EXPEDITUR_NAMA'), nRoute: distinctCount(allRows,'NAMA_AREA_DISTRIK')};
   }
 
   const topKeys = [...byTop.keys()].sort();
   const totalTruckUnik = new Set(rows.map(r=>r.NOPOL)).size; // counted once overall even if active under >1 top group
   const totalTrip = rows.length;
   const util = totalTruckUnik>0 ? (totalTrip/totalTruckUnik) : 0;
-  const summaryRow = `<tr style="background:var(--panel2);"><td colspan="${3+detailCols.length}" style="text-align:left;color:var(--sub);font-size:11px;">
+  const summaryRow = `<tr style="background:var(--panel2);"><td colspan="${FLEET_COLUMNS.length+detailCols.length}" style="text-align:left;color:var(--sub);font-size:11px;">
     Total truk unik (keseluruhan, tidak dobel-hitung): ${totalTruckUnik.toLocaleString('id-ID')} ·
-    Total trip: ${totalTrip.toLocaleString('id-ID')} · Utilisasi rata-rata: ${util.toFixed(2)}x per truk (= Ritase)
+    Total trip: ${totalTrip.toLocaleString('id-ID')} · Utilisasi rata-rata: ${util.toFixed(2)}x per truk (= Ritase) ·
+    <span style="color:var(--red);">#Expeditur/#Distrik &gt;1 = truk ini terpakai lintas expeditur/distrik</span>
   </td></tr>`;
 
   function tripRowHtml(r, indentPx){
-    const cells = FLEET_COLUMNS.map(()=>'<td>-</td>').join(''); // trips/avgCycle N/A at trip grain, tonase shown separately below
     const tonaseTd = `<td>${fmtNum(r.TONASE)}</td>`;
     const detailTds = detailCols.map(c=>`<td>${c.get(r)}</td>`).join('');
     const tglDisplay = (r.TGL_SPJ||'-').toString().slice(0,10);
-    return `<tr class="lvl-leaf"><td class="grouplabel" style="padding-left:${indentPx}px;">${tglDisplay} <span style="color:var(--sub);">(${r.NO_SPJ||''})</span></td>${FLEET_COLUMNS.slice(0,2).map(()=>'<td>-</td>').join('')}${tonaseTd}${detailTds}</tr>`;
+    // trips/avgCycle/#Expeditur/#Route N/A at trip grain (single row, nothing to count) - tonase shown separately below
+    return `<tr class="lvl-leaf"><td class="grouplabel" style="padding-left:${indentPx}px;">${tglDisplay} <span style="color:var(--sub);">(${r.NO_SPJ||''})</span></td>${'<td>-</td>'.repeat(2)}${tonaseTd}${'<td>-</td>'.repeat(2)}${detailTds}</tr>`;
   }
 
   function nopolRowsHtml(topKey, byNopol, indentBase){
     const nopols = [...byNopol.keys()].sort();
     return nopols.map(nopol=>{
       const trs = byNopol.get(nopol);
-      const stats = nopolStats(trs);
+      const stats = nopolStats(trs, nopol);
       const nopolKey = topKey+'|||'+nopol;
       const expanded = state.fleetExpandedNopol.has(nopolKey);
       const caret = expanded ? '▼' : '▶';
-      const nopolRow = `<tr class="lvl-leaf" data-nopolkey="${escapeAttr(nopolKey)}" onclick="toggleFleetNopol(this.dataset.nopolkey)" style="cursor:pointer;" title="Klik untuk lihat/sembunyikan trip individual">
-        <td class="grouplabel" style="padding-left:${indentBase}px;"><span class="lvl-caret">${caret}</span> ${nopol}</td>
+      const crossFlag = (stats.nExp>1 || stats.nRoute>1);
+      const cellStyle = crossFlag ? ' style="color:var(--red);font-weight:600;"' : '';
+      const nopolRow = `<tr class="lvl-leaf" data-nopolkey="${escapeAttr(nopolKey)}" onclick="toggleFleetNopol(this.dataset.nopolkey)" style="cursor:pointer;" title="Klik untuk lihat/sembunyikan trip individual${crossFlag ? ' — truk ini lintas expeditur/distrik' : ''}">
+        <td class="grouplabel" style="padding-left:${indentBase}px;"><span class="lvl-caret">${caret}</span> ${nopol}${crossFlag ? ' <span style="color:var(--red);" title="Lintas expeditur/distrik">⚠</span>' : ''}</td>
         <td>${stats.trips.toLocaleString('id-ID')}</td><td>${stats.avgCycleHours!=null?stats.avgCycleHours.toFixed(1):'-'}</td><td>${fmtNum(stats.tonase)}</td>
+        <td${cellStyle}>${stats.nExp}</td><td${cellStyle}>${stats.nRoute}</td>
         ${detailCols.map(c=>`<td>${detailAggValue(c, trs)}</td>`).join('')}</tr>`;
       const tripRows = expanded ? stats.sorted.map(r=>tripRowHtml(r, indentBase+20)).join('') : '';
       return nopolRow + tripRows;
@@ -2178,6 +2203,7 @@ function renderFleetTable(){
       const topRow = `<tr class="lvl-subtotal" data-topkey="${escapeAttr(topKey)}" onclick="toggleFleetTop(this.dataset.topkey)" style="cursor:pointer;">
         <td class="grouplabel"><span class="lvl-caret">${caret}</span> ${topKey} <span style="font-weight:400;color:var(--sub);">(${stats.truckUnik.toLocaleString('id-ID')} truk)</span></td>
         <td>${stats.trips.toLocaleString('id-ID')}</td><td>${stats.avgCycleHours!=null?stats.avgCycleHours.toFixed(1):'-'}</td><td>${fmtNum(stats.tonase)}</td>
+        <td>${stats.nExp}</td><td>${stats.nRoute}</td>
         ${detailCols.map(c=>`<td>${detailAggValue(c, stats.allRows)}</td>`).join('')}</tr>`;
       const nopolRows = isCollapsed ? '' : nopolRowsHtml(topKey, byTop.get(topKey), 20);
       return topRow + nopolRows;
