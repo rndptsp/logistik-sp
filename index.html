@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = '2026-07-27.19';
+window.APP_VERSION = '2026-07-27.24';
 (function(){
   fetch('version.json?_=' + Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.json() : null; })
@@ -220,6 +220,9 @@ td.grouplabel{white-space:nowrap;}
    instead of cutting off). To keep the row from ballooning sideways, the numeric metric columns
    (Jumlah Trip/Tonase/Avg Waiting/Avg Dwell/Avg Cycle) are instead pinned narrow via nth-child,
    with their headers allowed to wrap onto 2 lines instead of forcing the column wide. */
+.fleet-viewtoggle{display:flex;gap:6px;}
+.fleet-view-btn{background:var(--panel2);border:1px solid var(--border);color:var(--sub);padding:5px 12px;border-radius:6px;font-size:11px;cursor:pointer;font-weight:600;}
+.fleet-view-btn.active{background:var(--accent);border-color:var(--accent);color:#fff;}
 #fleetTable{table-layout:auto;}
 #fleetTable th:first-child, #fleetTable td.grouplabel{white-space:normal; word-break:break-word;}
 #fleetTable th:nth-child(n+2):nth-child(-n+6){white-space:normal; width:64px; max-width:64px;}
@@ -397,6 +400,10 @@ window.addEventListener('error', function(e){
   <div class="panel">
     <div class="panel-head" onclick="toggleSection('armadaBody')"><h2><span class="panel-caret" id="armadaBody-caret">▼</span> Armada — Cycle Time Truk Berulang</h2></div>
     <div class="panel-body" id="armadaBody">
+      <div class="fleet-viewtoggle" style="margin-bottom:8px;">
+        <button type="button" id="fleetViewBtn-review1" class="fleet-view-btn" onclick="event.stopPropagation();setFleetViewMode('review1')">REVIEW 1 — Pola Pemakaian</button>
+        <button type="button" id="fleetViewBtn-review2" class="fleet-view-btn" onclick="event.stopPropagation();setFleetViewMode('review2')">REVIEW 2 — Status Aktivitas</button>
+      </div>
       <div class="tablewrap"><table id="fleetTable"></table></div>
     </div>
   </div>
@@ -1385,11 +1392,23 @@ function computeSeries(f){
         const gm = buckets.get(bk);
         const grows = (gm && gm.get(ds.label)) || [];
         const tonase = aggMetric(grows, 'TONASE');
-        const extraMatch = chartGroupField==='NONE' ? null : (r)=> {
+        // BUG FIXED 2026-07-27 per Rendy (same root cause as the target-line fix below): extraMatch
+        // and scope here only ever checked chartGroupField (the chart's own top-level group), never
+        // state.rowFocus - so clicking a leaf table row (e.g. Provinsi>Expeditur) correctly narrowed
+        // `grows`/tonase (via applyRowFocus at the top of this function) but SO/%OF/%Achiev still
+        // summed across the WHOLE chartGroupField group, ignoring the deeper row-focus restriction.
+        const rowFocusMatchers = (state.rowFocus||[]).map(rf=>{
+          const soKey = SO_FIELD_MAP[rf.field];
+          if(!soKey) return null;
+          return (r)=> normVal(r[soKey])===rf.value;
+        }).filter(Boolean);
+        const groupMatch = chartGroupField==='NONE' ? null : (r)=> {
           const soKey = SO_FIELD_MAP[chartGroupField];
           if(!soKey) return true;
           return normVal(r[soKey])===ds.label;
         };
+        const allMatchers = [...rowFocusMatchers, ...(groupMatch ? [groupMatch] : [])];
+        const extraMatch = allMatchers.length ? (r)=> allMatchers.every(m=>m(r)) : null;
         // BUG FIXED 2026-07-26: was only scoping SO to this bucket's own date range for
         // gran==='daily' - see bucketDateRange() comment above for the full explanation.
         const sampleDate = grows.length ? grows[0]._d : null;
@@ -1400,7 +1419,10 @@ function computeSeries(f){
         if(f.value==='OF') return so>0 ? round2(tonase/so*100) : null;
         if(f.value==='ACHIEV'){
           const scope = {};
-          if(chartGroupField!=='NONE' && TARGET_CAPABLE_FIELDS.has(chartGroupField)) scope[chartGroupField]=ds.label;
+          if(state.rowFocus && state.rowFocus.length){
+            state.rowFocus.forEach(rf=>{ if(TARGET_CAPABLE_FIELDS.has(rf.field)) scope[rf.field] = rf.value; });
+          }
+          if(chartGroupField!=='NONE' && TARGET_CAPABLE_FIELDS.has(chartGroupField) && scope[chartGroupField]==null) scope[chartGroupField]=ds.label;
           // %Achievement = Vol. MTD / Target MTD, not Target FM - same fix as renderKPIs()/buildRowMetrics().
           const {mtd, foundAny} = targetForGroup(grows, f, scope);
           return (mtd!=null && foundAny && mtd>0) ? round2(tonase/mtd*100) : null;
@@ -1432,7 +1454,17 @@ function computeSeries(f){
           isTarget: true, sourceType: srcType,
           data: bucketKeys.map(bk=>{
             const scope = {};
-            if(!forceCumulativeTarget && chartGroupField!=='NONE') scope[chartGroupField] = g;
+            // BUG FIXED 2026-07-27 per Rendy: clicking a table row (Provinsi>Expeditur leaf, etc.)
+            // narrows the Tonase bars via applyRowFocus() at the top of this function, but this
+            // target-line scope never looked at state.rowFocus at all - it only ever pinned the
+            // chart's own top-level group field (chartGroupField = state.levels[0]), so a click on
+            // a specific vendor row still showed the WHOLE PROVINCE's target line, unchanged.
+            // Row focus is the most specific selection the user made, so it takes priority; the
+            // chart's own group label only fills in gaps row focus didn't already pin.
+            if(state.rowFocus && state.rowFocus.length){
+              state.rowFocus.forEach(rf=>{ if(TARGET_CAPABLE_FIELDS.has(rf.field)) scope[rf.field] = rf.value; });
+            }
+            if(!forceCumulativeTarget && chartGroupField!=='NONE' && scope[chartGroupField]==null) scope[chartGroupField] = g;
             // Prorated per-bucket slice (matches Realisasi's own per-bucket basis), not the whole
             // month's target repeated flat on every bucket — see targetForBucket() above.
             return targetForBucket(bk, f.gran, f, scope, srcType);
@@ -1465,8 +1497,15 @@ function computeAchievBarsSeries(f){
   });
   const bucketKeys = [...buckets.keys()].sort();
   const targetCapable = levelsAreTargetCapable(state.levels);
+  // BUG FIXED 2026-07-27 per Rendy (same root cause as the Tonase+Target chart fix above): scope
+  // was always {} here regardless of an active row-focus, so clicking a table row narrowed the
+  // tonase bars but left the target line showing the whole unfiltered total.
+  const rowFocusScope = {};
+  if(state.rowFocus && state.rowFocus.length){
+    state.rowFocus.forEach(rf=>{ if(TARGET_CAPABLE_FIELDS.has(rf.field)) rowFocusScope[rf.field] = rf.value; });
+  }
   const tonase = bucketKeys.map(bk => aggMetric(buckets.get(bk), 'TONASE'));
-  const target = bucketKeys.map(bk => targetCapable ? targetForBucket(bk, f.gran, f, {}, undefined) : null);
+  const target = bucketKeys.map(bk => targetCapable ? targetForBucket(bk, f.gran, f, rowFocusScope, undefined) : null);
   const achievPct = bucketKeys.map((bk,i)=> (target[i]!=null && target[i]>0) ? round2(tonase[i]/target[i]*100) : null);
   return {bucketKeys, tonase, target, achievPct};
 }
@@ -2208,7 +2247,12 @@ function avgCycleHoursFor(sortedRowsByDate){
   return gaps.reduce((a,b)=>a+b,0)/gaps.length;
 }
 function toggleFleetCategory(key){
-  if(state.fleetCollapsedCat.has(key)) state.fleetCollapsedCat.delete(key); else state.fleetCollapsedCat.add(key);
+  const set = state.fleetViewMode==='review2' ? state.fleetCollapsedCatReview2 : state.fleetCollapsedCat;
+  if(set.has(key)) set.delete(key); else set.add(key);
+  renderFleetTable();
+}
+function setFleetViewMode(mode){
+  state.fleetViewMode = mode;
   renderFleetTable();
 }
 function toggleFleetOpenNopol(key){
@@ -2246,12 +2290,49 @@ function truckCategory(trips, nExp, nDist){
   if(nExp===1 && nDist>1) return 'multiDist';
   return 'multiBoth';
 }
+/* ================= ARMADA REVIEW 2 - ACTIVITY STATUS (2026-07-27) =================
+   Added per Rendy's request: a second, independent grouping mode for the Armada table,
+   toggled alongside REVIEW 1 (the existing 5 usage-pattern categories, unchanged).
+   3 mutually-exclusive categories, priority order 'baru' > 'aktif' > 'tidakAktif':
+     - Armada Baru      : truck's FIRST trip (within the currently active filter scope) falls
+                          within the last 14 days of the reference date.
+     - Armada Aktif     : truck's LAST trip falls within the last 30 days of the reference date
+                          (and it isn't already counted as 'baru').
+     - Armada Tidak Aktif: truck's last trip is >30 days before the reference date.
+   Per Rendy's explicit decisions (2026-07-27):
+     1. Reference "today" = the max TGL_SPJ found WITHIN the current filtered/row-focused rows
+        (not the real calendar date) - so this keeps working sensibly even if live data lags.
+     2. Scope = the currently active filters (date range/provinsi/distrik/expeditur/row-focus),
+        same rows REVIEW 1 uses - NOT the full unfiltered dataset. Narrowing the filter narrows
+        which trips count toward a truck's first/last-seen date and can change its category. */
+const FLEET_CATEGORY_DEFS_REVIEW2 = [
+  {key:'baru', label:'Armada Baru (trip pertama dalam 14 hari terakhir dari data)'},
+  {key:'aktif', label:'Armada Aktif (beroperasi dalam 30 hari terakhir dari data)'},
+  {key:'tidakAktif', label:'Armada Tidak Aktif (>30 hari tidak beroperasi)'},
+];
+function truckActivityCategory(firstMs, lastMs, refMs){
+  const DAY = 86400000;
+  if(refMs - firstMs <= 14*DAY) return 'baru';
+  if(refMs - lastMs <= 30*DAY) return 'aktif';
+  return 'tidakAktif';
+}
 function renderFleetTable(){
   const f = getFilterState();
   const rows = applyRowFocus(filteredRE(f)).filter(r=>r._d);
+  state.fleetViewMode = state.fleetViewMode || 'review1';
   state.fleetCollapsedCat = state.fleetCollapsedCat || new Set(FLEET_CATEGORY_DEFS.map(c=>c.key)); // default: all 5 collapsed
+  state.fleetCollapsedCatReview2 = state.fleetCollapsedCatReview2 || new Set(FLEET_CATEGORY_DEFS_REVIEW2.map(c=>c.key)); // default: all 3 collapsed
   state.fleetOpenNopol = state.fleetOpenNopol || new Set();      // NOPOL with district x expeditur breakdown shown
   state.fleetExpandedNopol = state.fleetExpandedNopol || new Set(); // NOPOL with full trip list also shown
+  const viewMode = state.fleetViewMode;
+  const catDefs = viewMode==='review2' ? FLEET_CATEGORY_DEFS_REVIEW2 : FLEET_CATEGORY_DEFS;
+  const collapsedSet = viewMode==='review2' ? state.fleetCollapsedCatReview2 : state.fleetCollapsedCat;
+  const btn1 = document.getElementById('fleetViewBtn-review1');
+  const btn2 = document.getElementById('fleetViewBtn-review2');
+  if(btn1 && btn2){
+    btn1.classList.toggle('active', viewMode!=='review2');
+    btn2.classList.toggle('active', viewMode==='review2');
+  }
 
   function distinctCount(rowsForCount, field){ return new Set(rowsForCount.map(r=>normVal(r[field]))).size; }
   // Six-column row cell builder shared by every level (category/NOPOL/breakdown/trip) so the table
@@ -2271,12 +2352,22 @@ function renderFleetTable(){
     if(!byNopol.has(r.NOPOL)) byNopol.set(r.NOPOL, []);
     byNopol.get(r.NOPOL).push(r);
   });
-  const byCategory = new Map(FLEET_CATEGORY_DEFS.map(c=>[c.key, []]));
+  // REVIEW 2 reference date: max _d across the currently filtered/row-focused rows (per Rendy
+  // 2026-07-27 - NOT the real calendar date, so this stays sensible even if live data lags).
+  const refMs = viewMode==='review2' && rows.length ? Math.max(...rows.map(r=>r._d.getTime?r._d.getTime():r._d)) : null;
+  const byCategory = new Map(catDefs.map(c=>[c.key, []]));
   byNopol.forEach((trs, nopol)=>{
     const sorted = trs.slice().sort((a,b)=>a._d-b._d);
     const nExp = distinctCount(trs,'EXPEDITUR_NAMA');
     const nDist = distinctCount(trs,'NAMA_AREA_DISTRIK');
-    const cat = truckCategory(trs.length, nExp, nDist);
+    let cat;
+    if(viewMode==='review2'){
+      const firstMs = sorted[0]._d.getTime?sorted[0]._d.getTime():sorted[0]._d;
+      const lastMs = sorted[sorted.length-1]._d.getTime?sorted[sorted.length-1]._d.getTime():sorted[sorted.length-1]._d;
+      cat = truckActivityCategory(firstMs, lastMs, refMs);
+    } else {
+      cat = truckCategory(trs.length, nExp, nDist);
+    }
     byCategory.get(cat).push({nopol, trs, sorted, nExp, nDist,
       avgCycleHours: avgCycleHoursFor(sorted), tonase: aggMetric(sorted,'TONASE'),
       avgWaiting: aggMetric(trs,'WAITING'), avgDwell: aggMetric(trs,'DWELL')});
@@ -2337,9 +2428,9 @@ function renderFleetTable(){
   }
 
   let bodyHtml = summaryRow;
-  bodyHtml += FLEET_CATEGORY_DEFS.map(catDef=>{
+  bodyHtml += catDefs.map(catDef=>{
     const items = byCategory.get(catDef.key).sort((a,b)=>a.nopol.localeCompare(b.nopol));
-    const isCollapsed = state.fleetCollapsedCat.has(catDef.key);
+    const isCollapsed = collapsedSet.has(catDef.key);
     const caret = isCollapsed ? '▶' : '▼';
     const allCatRows = items.flatMap(it=>it.trs);
     const catTonase = aggMetric(allCatRows,'TONASE');
