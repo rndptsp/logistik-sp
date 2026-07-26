@@ -177,6 +177,13 @@ td.grouplabel{white-space:nowrap;}
 tr.lvl-subtotal td{font-weight:700;background:#FAFAFA;}
 tr.lvl-subtotal td.grouplabel{border-left:3px solid var(--accent);}
 tr.lvl-leaf td.grouplabel{padding-left:26px;color:var(--sub);font-weight:400;}
+tr.lvl-subtotal, tr.lvl-leaf{cursor:pointer;}
+tr.lvl-subtotal:hover, tr.lvl-leaf:hover{filter:brightness(0.97);}
+tr.row-focused td{background:#FDF1F0 !important;}
+tr.row-focused td.grouplabel{border-left:3px solid var(--accent-dark,var(--accent));}
+.lvl-caret{display:inline-block;width:16px;cursor:pointer;user-select:none;}
+.rowfocus-banner{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--sub);background:#FDF1F0;border:1px solid var(--border);border-radius:6px;padding:6px 10px;margin-bottom:8px;}
+.rowfocus-banner button{font-size:11px;padding:2px 8px;border:1px solid var(--border);border-radius:4px;background:#fff;cursor:pointer;}
 .gap-neg{color:var(--red);}
 th.sortable{cursor:pointer;user-select:none;}
 th.sortable:hover{color:var(--accent-dark);}
@@ -208,6 +215,29 @@ footer{text-align:center;font-size:11px;color:var(--sub);padding:18px 20px 26px;
 .gatebox .gateerr{color:#C0392B;font-size:12px;min-height:16px;margin-top:10px;}
 .gatebox .gateprogress{color:var(--sub);font-size:11px;margin-top:10px;min-height:14px;}
 #appRoot.gated{display:none;}
+
+/* ===== Collapsible sections (KPI/chart/table/Armada/filter bar) ===== */
+.panel-head{cursor:pointer;user-select:none;}
+.panel-caret{display:inline-block;width:16px;color:var(--accent);}
+.panel-body.panel-collapsed{display:none;}
+#kpiPanelHead, #filterPanelHead{cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;padding:6px 2px;color:var(--accent-dark,#1A1A1A);}
+
+/* ===== Custom calendar popover (replaces Tahun/Bulan checklists) ===== */
+.calendar-popover{position:absolute;top:calc(100% + 6px);left:0;z-index:500;background:#fff;border:1px solid var(--border);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.15);padding:12px;}
+.cal-wrap{display:flex;flex-wrap:wrap;gap:16px;}
+.cal-month{width:200px;}
+.cal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;}
+.cal-title{font-size:12px;font-weight:700;}
+.cal-nav{background:transparent;border:none;cursor:pointer;font-size:14px;padding:2px 6px;color:var(--accent);}
+.cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;}
+.cal-dow{font-size:9px;color:var(--sub);text-align:center;padding:2px 0;}
+.cal-cell{font-size:11px;text-align:center;padding:5px 0;cursor:pointer;border-radius:4px;}
+.cal-cell:hover{background:#FDF1F0;}
+.cal-cell.empty{cursor:default;}
+.cal-cell.cal-inrange{background:#FDF1F0;}
+.cal-cell.cal-start, .cal-cell.cal-end{background:var(--accent);color:#fff;font-weight:700;}
+.cal-actions{width:100%;display:flex;gap:8px;justify-content:flex-end;margin-top:8px;}
+.cal-actions .btn{font-size:11px;padding:5px 12px;}
 </style>
 </head>
 <body>
@@ -246,15 +276,19 @@ window.addEventListener('error', function(e){
   </div>
 </header>
 
-<div class="filterbar" id="filterbar">
-  <div class="fgroup">
-    <label>Dari Tanggal</label>
-    <input type="date" id="fDateFrom">
-    <label style="margin-top:4px;">Sampai Tanggal</label>
-    <input type="date" id="fDateTo">
+<div id="filterPanelHead" onclick="toggleSection('filterbar')"><span class="panel-caret" id="filterbar-caret">▶</span> Filter</div>
+<div class="filterbar panel-body panel-collapsed" id="filterbar">
+  <div class="fgroup" style="min-width:320px;">
+    <label>Rentang Tanggal</label>
+    <div class="pillrow" id="datePresets"></div>
+    <div style="display:flex;gap:6px;align-items:center;margin-top:4px;position:relative;">
+      <input type="date" id="fDateFrom" style="flex:1;">
+      <span style="color:var(--sub);">s/d</span>
+      <input type="date" id="fDateTo" style="flex:1;">
+      <button type="button" class="btn secondary" id="btnOpenCalendar" title="Pilih rentang lewat kalender">📅</button>
+      <div id="calendarPopover" class="calendar-popover" style="display:none;"></div>
+    </div>
   </div>
-  <div class="fgroup"><label>Tahun</label><div id="mTahun"></div></div>
-  <div class="fgroup"><label>Bulan</label><div id="mBulan"></div></div>
   <div class="fgroup">
     <label>Granularitas</label>
     <div class="pillrow" id="pGranularity"></div>
@@ -274,31 +308,41 @@ window.addEventListener('error', function(e){
 </div>
 <div class="gapnote" id="gapNote" style="display:none;"></div>
 
-<div class="kpis" id="kpiRow"></div>
+<div id="kpiPanelHead" onclick="toggleSection('kpiRow')"><span class="panel-caret" id="kpiRow-caret">▼</span> KPI Ringkasan</div>
+<div class="kpis panel-body" id="kpiRow"></div>
 
 <main>
   <div class="panel">
-    <div class="panel-head">
-      <h2 id="chartTitle">Tren</h2>
-      <div class="pillrow" id="targetToggleRow" style="margin-left:auto;"></div>
+    <div class="panel-head" onclick="toggleSection('chartBody')">
+      <h2><span class="panel-caret" id="chartBody-caret">▶</span> <span id="chartTitle">Tren</span></h2>
     </div>
-    <div class="chart-body">
-      <div class="value-list" id="valueList"></div>
-      <div class="chart-wrap"><canvas id="mainChart"></canvas></div>
+    <div class="panel-body panel-collapsed" id="chartBody">
+      <div class="pillrow" id="targetToggleRow"></div>
+      <div id="rowFocusBanner" class="rowfocus-banner" style="display:none;"></div>
+      <div class="chart-body">
+        <div class="value-list" id="valueList"></div>
+        <div class="chart-wrap"><canvas id="mainChart"></canvas></div>
+      </div>
     </div>
   </div>
 
   <div class="panel">
-    <div class="panel-head">
-      <h2>Ringkasan — Level: <span id="groupByLabel">Tidak ada (Total)</span></h2>
+    <div class="panel-head" onclick="toggleSection('summaryBody')">
+      <h2><span class="panel-caret" id="summaryBody-caret">▼</span> Ringkasan — Level: <span id="groupByLabel">Tidak ada (Total)</span></h2>
       <span class="sub" style="font-size:10px;color:var(--sub);">Warna %Achiev/%OF: hijau ≥100%, kuning→merah di bawah 100%. Target hanya tersedia bila semua level drill-down aktif = Provinsi/Distrik/Expeditur (tidak pernah untuk Distributor/Source/Incoterm). % vs LM = dibanding periode yang sama persis digeser mundur 1 bulan.</span>
     </div>
-    <div class="tablewrap"><table id="summaryTable"></table></div>
+    <div class="panel-body" id="summaryBody">
+      <div class="tablewrap"><table id="summaryTable"></table></div>
+    </div>
   </div>
 
   <div class="panel">
-    <div class="panel-head"><h2>Armada — Cycle Time Truk Berulang</h2></div>
-    <div class="tablewrap"><table id="fleetTable"></table></div>
+    <div class="panel-head" onclick="toggleSection('armadaBody')"><h2><span class="panel-caret" id="armadaBody-caret">▼</span> Armada — Cycle Time Truk Berulang</h2></div>
+    <div class="panel-body" id="armadaBody">
+      <div style="padding:8px 16px 0;font-size:11px;color:var(--sub);">Kolom detail per-trip (tampil di baris trip individual saat NOPOL dibuka):</div>
+      <div class="pillrow" id="fleetColPicker" style="padding:4px 16px 8px;"></div>
+      <div class="tablewrap"><table id="fleetTable"></table></div>
+    </div>
   </div>
 </main>
 
@@ -509,15 +553,18 @@ const DIMENSIONS = [
 ];
 const ALLV = {}; // dim key -> full sorted list of values
 const state = {
-  gran:'daily', value:'TONASE', chartType:'bar',
+  gran:'daily', value:'TONASE', chartType:'stackedbar',
   levels: [], // ordered list of DIMENSIONS[].field, in click order. Drives BOTH the summary
               // table's drill-down (level 1 = first field clicked, level 2 = second, ...) and the
               // chart's series-split (uses levels[0] only, to keep the chart to a sane series count).
               // NOT a value filter — value filtering is the separate ▾ checklist popover below.
   targetToggle: {SNOP:true, CONTRACT:false, RKAP:false}, // independent chart target-line toggles
+  rowFocus: [], // clicking a summary-table row narrows the CHART + ARMADA (not the table itself) to
+                // that row's exact drill-down scope. Array of {field, value} pairs, ANDed together.
+                // Distinct from the ▾ checklist filters (state.provinsi etc.) and from state.levels
+                // (which controls the table's grouping, not a value filter). Set via toggleRowFocus().
 };
 DIMENSIONS.forEach(d=> state[d.key] = new Set());
-state.tahun = new Set(); state.bulan = new Set();
 
 const BLANK = '(kosong)';
 function normVal(v){ return (v==null || v==='') ? BLANK : v; }
@@ -646,15 +693,7 @@ function populateFilters(){
   const gf = document.getElementById('groupFilters'); gf.innerHTML='';
   DIMENSIONS.forEach(d=> createPivotFilter(gf, d.key, d.label, uniqSorted(RE, d.field), d.field));
 
-  const years = [...new Set(RE.map(r=>r._d && r._d.getFullYear()).filter(Boolean))].sort();
-  const mTahun = document.getElementById('mTahun'); mTahun.innerHTML='';
-  createPivotFilter(mTahun, 'tahun', 'Tahun', years);
-
-  const months = [...new Set(RE.map(r=>r._d && (r._d.getMonth()+1)).filter(Boolean))].sort((a,b)=>a-b);
-  const mBulan = document.getElementById('mBulan'); mBulan.innerHTML='';
-  ALLV.bulan = months;
-  if(state.bulan.size===0) state.bulan = new Set(months);
-  createPivotFilter(mBulan, 'bulan', 'Bulan', months);
+  renderDatePresets();
 
   renderSinglePills('pGranularity', [
     {value:'hourly',label:'Hourly'},{value:'daily',label:'Daily'},{value:'weekly',label:'Weekly'},
@@ -736,7 +775,6 @@ function getFilterState(){
   return {
     from: parseLocalDateInput(document.getElementById('fDateFrom').value),
     to: parseLocalDateInput(document.getElementById('fDateTo').value),
-    tahun: state.tahun, bulan: state.bulan,
     provinsi: state.provinsi, distrik: state.distrik,
     distributor: state.distributor, expeditur: state.expeditur, source: state.source, incoterm: state.incoterm,
     gran: state.gran, value: state.value, chartType: state.chartType,
@@ -753,8 +791,6 @@ function getLMFilterState(f){
   const lm = Object.assign({}, f);
   lm.from = shiftMonthBack(f.from);
   lm.to = shiftMonthBack(f.to);
-  lm.tahun = new Set(ALLV.tahun||[]);
-  lm.bulan = new Set(ALLV.bulan||[]);
   return lm;
 }
 function matchRowLM(r, lm){
@@ -784,15 +820,11 @@ function currentMTDFilterState(f){
   const cutoffDay = LAST_DATA_DAY_CACHE[y+'-'+m] || today.getDate();
   mf.from = new Date(y, m-1, 1);
   mf.to = new Date(y, m-1, cutoffDay);
-  mf.tahun = new Set(ALLV.tahun||[]);
-  mf.bulan = new Set(ALLV.bulan||[]);
   return mf;
 }
 function matchRow(r, f){
   if(f.from && r._d && r._d < f.from) return false;
   if(f.to && r._d && r._d > new Date(f.to.getFullYear(),f.to.getMonth(),f.to.getDate(),23,59,59)) return false;
-  if(r._d && !f.tahun.has(r._d.getFullYear())) return false;
-  if(r._d && !f.bulan.has(r._d.getMonth()+1)) return false;
   if(!f.provinsi.has(normVal(r.NAMA_PROPINSI))) return false;
   if(!f.distrik.has(normVal(r.NAMA_AREA_DISTRIK))) return false;
   if(!f.distributor.has(normVal(r.DISTRIBUTOR))) return false;
@@ -802,6 +834,29 @@ function matchRow(r, f){
   return true;
 }
 function filteredRE(f){ return RE.filter(r=>matchRow(r,f)); }
+
+/* ================= ROW FOCUS (table row click -> narrows chart + Armada only) ================= */
+function applyRowFocus(rows){
+  if(!state.rowFocus || !state.rowFocus.length) return rows;
+  return rows.filter(r => state.rowFocus.every(rf => normVal(r[rf.field]) === rf.value));
+}
+function sameFocus(a, b){
+  if(a.length !== b.length) return false;
+  return a.every((rf,i)=> rf.field===b[i].field && rf.value===b[i].value);
+}
+function toggleRowFocus(levelsArr, partsArr){
+  const next = levelsArr.map((field,i)=>({field, value: partsArr[i]}));
+  state.rowFocus = sameFocus(state.rowFocus, next) ? [] : next;
+  renderAll();
+}
+function clearRowFocus(){
+  state.rowFocus = [];
+  renderAll();
+}
+function rowFocusLabel(){
+  if(!state.rowFocus.length) return '';
+  return state.rowFocus.map(rf=>rf.value).join(' › ');
+}
 
 /* ================= AGGREGATION HELPERS ================= */
 function aggMetric(rows, metric){
@@ -827,8 +882,6 @@ function soTonaseFor(f, extraMatch){
   return SO.filter(r=>{
     if(f.from && r._d && r._d < f.from) return false;
     if(f.to && r._d && r._d > new Date(f.to.getFullYear(),f.to.getMonth(),f.to.getDate(),23,59,59)) return false;
-    if(r._d && !f.tahun.has(r._d.getFullYear())) return false;
-    if(r._d && !f.bulan.has(r._d.getMonth()+1)) return false;
     if(isRestricted('provinsi') && !f.provinsi.has(normVal(r.PROPINSI))) return false;
     if(isRestricted('distributor') && !f.distributor.has(normVal(r.DISTRIBUTOR))) return false;
     if(isRestricted('source') && !f.source.has(normVal(r.SOURCE))) return false;
@@ -1056,7 +1109,7 @@ const TARGET_TYPE_LABELS = {SNOP:'Target SNOP', CONTRACT:'Vol. Kontrak', RKAP:'T
 const TARGET_COLORS = {SNOP:'#1A1A1A', CONTRACT:'#2E9E4B', RKAP:'#1F5FA8'};
 
 function computeSeries(f){
-  const rows = filteredRE(f);
+  const rows = applyRowFocus(filteredRE(f));
   // Chart series-split uses only the FIRST (top) active drill-down level, to keep the number of
   // chart lines sane — the full multi-level breakdown is what the summary table below is for.
   const chartGroupField = state.levels.length ? state.levels[0] : 'NONE';
@@ -1176,6 +1229,14 @@ function renderChart(){
   const {bucketKeys, datasets, targetDatasets} = computeSeries(f);
   const labels = bucketKeys.map(bk=>chartLabel(bk, f.gran));
   const chartGroupField = state.levels.length ? state.levels[0] : null;
+  const focusBanner = document.getElementById('rowFocusBanner');
+  if(state.rowFocus.length){
+    focusBanner.style.display = 'flex';
+    focusBanner.innerHTML = `<span>Grafik + Armada difokuskan ke: <strong>${escapeAttr(rowFocusLabel())}</strong></span><button type="button" onclick="clearRowFocus()">Hapus fokus</button>`;
+  } else {
+    focusBanner.style.display = 'none';
+    focusBanner.innerHTML = '';
+  }
   document.getElementById('groupByLabel').textContent = levelsBreadcrumb();
   document.getElementById('chartTitle').textContent =
     `${VALUE_LABELS[f.value]} — ${({hourly:'Per Jam',daily:'Harian',weekly:'Mingguan (mulai Senin)',monthly:'Bulanan',quarterly:'Kuartalan'})[f.gran]}${chartGroupField ? ' per '+levelLabelForField(chartGroupField) : ''}`;
@@ -1493,6 +1554,146 @@ function renderFilterableHeaderCell(uidPrefix, colKey, label, values, filtersObj
   return th;
 }
 
+function escapeAttr(s){
+  return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+/* ================= DATE PRESETS + CUSTOM CALENDAR (replaces Tahun/Bulan checklists) ================= */
+function sameDay(a,b){ return a && b && a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
+function renderDatePresets(){
+  const el = document.getElementById('datePresets');
+  if(!el) return;
+  el.innerHTML = '';
+  const presets = [
+    {label:'Hari Ini', fn: ()=>{ const t=new Date(); return [t,t]; }},
+    {label:'7 Hari Terakhir', fn: ()=>{ const t=new Date(); const from=new Date(t); from.setDate(t.getDate()-6); return [from,t]; }},
+    {label:'Bulan Ini', fn: ()=>{ const t=new Date(); return [new Date(t.getFullYear(),t.getMonth(),1), t]; }},
+    {label:'Bulan Lalu', fn: ()=>{ const t=new Date(); return [new Date(t.getFullYear(),t.getMonth()-1,1), new Date(t.getFullYear(),t.getMonth(),0)]; }},
+    {label:'Kuartal Ini', fn: ()=>{ const t=new Date(); const qm=Math.floor(t.getMonth()/3)*3; return [new Date(t.getFullYear(),qm,1), t]; }},
+    {label:'Tahun Ini', fn: ()=>{ const t=new Date(); return [new Date(t.getFullYear(),0,1), t]; }},
+    {label:'Semua', fn: ()=>{ const dates = RE.map(r=>r._d).filter(Boolean); if(!dates.length) return [null,null]; return [new Date(Math.min(...dates)), new Date(Math.max(...dates))]; }},
+  ];
+  presets.forEach(p=>{
+    const b = document.createElement('button'); b.type='button'; b.className='pill';
+    b.textContent = p.label;
+    b.addEventListener('click', async ()=>{
+      const [from,to] = p.fn();
+      if(!from || !to) return;
+      if(p.label==='Semua'){
+        // "Semua" may reach outside what's currently loaded (lazy monthly chunks) - ensure the
+        // full manifest range is fetched before setting the filter, otherwise it'd silently
+        // clip to whatever happens to be loaded already.
+        if(manifest){ try{ await ensureMonthsLoaded(manifest.realisasi_months||[]); }catch(err){ console.error('Gagal memuat seluruh bulan:', err); } }
+      }
+      document.getElementById('fDateFrom').value = fmtDate(from);
+      document.getElementById('fDateTo').value = fmtDate(to);
+      await onDateFilterChange();
+    });
+    el.appendChild(b);
+  });
+}
+const calendarState = { viewYear:null, viewMonth:null, pickStart:null, pickEnd:null };
+function calMonthGrid(year, month){
+  const first = new Date(year, month, 1);
+  const startOffset = (first.getDay()+6)%7; // week starts Monday
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  const cells = [];
+  for(let i=0;i<startOffset;i++) cells.push(null);
+  for(let d=1; d<=daysInMonth; d++) cells.push(new Date(year,month,d));
+  while(cells.length%7!==0) cells.push(null);
+  return cells;
+}
+function toggleCalendarPopover(){
+  const pop = document.getElementById('calendarPopover');
+  const isOpen = pop.style.display !== 'none';
+  if(isOpen){ pop.style.display='none'; return; }
+  const cur = parseLocalDateInput(document.getElementById('fDateFrom').value) || new Date();
+  calendarState.viewYear = cur.getFullYear();
+  calendarState.viewMonth = cur.getMonth();
+  calendarState.pickStart = parseLocalDateInput(document.getElementById('fDateFrom').value);
+  calendarState.pickEnd = parseLocalDateInput(document.getElementById('fDateTo').value);
+  pop.style.display = 'block';
+  renderCalendarPopover();
+}
+function renderCalendarPopover(){
+  const pop = document.getElementById('calendarPopover');
+  const {viewYear, viewMonth, pickStart, pickEnd} = calendarState;
+  function monthHtml(y,m,showPrev,showNext){
+    const cells = calMonthGrid(y,m);
+    const dow = ['Sn','Sl','Rb','Km','Jm','Sb','Mg'];
+    let html = `<div class="cal-month"><div class="cal-head">`;
+    html += showPrev ? `<button type="button" class="cal-nav" data-nav="-1">‹</button>` : `<span></span>`;
+    html += `<span class="cal-title">${MONTH_NAMES_ID[m+1]} ${y}</span>`;
+    html += showNext ? `<button type="button" class="cal-nav" data-nav="1">›</button>` : `<span></span>`;
+    html += `</div><div class="cal-grid">`;
+    dow.forEach(d=> html += `<div class="cal-dow">${d}</div>`);
+    cells.forEach(d=>{
+      if(!d){ html += `<div class="cal-cell empty"></div>`; return; }
+      let cls='cal-cell';
+      if(pickStart && sameDay(d,pickStart)) cls+=' cal-start';
+      if(pickEnd && sameDay(d,pickEnd)) cls+=' cal-end';
+      if(pickStart && pickEnd && d>pickStart && d<pickEnd) cls+=' cal-inrange';
+      html += `<div class="${cls}" data-date="${fmtDate(d)}">${d.getDate()}</div>`;
+    });
+    html += `</div></div>`;
+    return html;
+  }
+  let nextM = viewMonth+1, nextY = viewYear;
+  if(nextM>11){ nextM=0; nextY++; }
+  pop.innerHTML = `<div class="cal-wrap">${monthHtml(viewYear,viewMonth,true,false)}${monthHtml(nextY,nextM,false,true)}
+    <div class="cal-actions"><button type="button" id="calApply" class="btn">Terapkan</button><button type="button" id="calCancel" class="btn secondary">Batal</button></div></div>`;
+  pop.querySelectorAll('.cal-nav').forEach(b=> b.addEventListener('click', ()=>{
+    const dir = parseInt(b.dataset.nav,10);
+    calendarState.viewMonth += dir;
+    if(calendarState.viewMonth<0){ calendarState.viewMonth=11; calendarState.viewYear--; }
+    if(calendarState.viewMonth>11){ calendarState.viewMonth=0; calendarState.viewYear++; }
+    renderCalendarPopover();
+  }));
+  pop.querySelectorAll('.cal-cell:not(.empty)').forEach(cell=> cell.addEventListener('click', ()=>{
+    const d = parseLocalDateInput(cell.dataset.date);
+    if(calendarState.pickStart && !calendarState.pickEnd){
+      if(d < calendarState.pickStart){ calendarState.pickEnd = calendarState.pickStart; calendarState.pickStart = d; }
+      else calendarState.pickEnd = d;
+    } else {
+      calendarState.pickStart = d; calendarState.pickEnd = null;
+    }
+    renderCalendarPopover();
+  }));
+  document.getElementById('calApply').addEventListener('click', async ()=>{
+    if(calendarState.pickStart){
+      document.getElementById('fDateFrom').value = fmtDate(calendarState.pickStart);
+      document.getElementById('fDateTo').value = fmtDate(calendarState.pickEnd || calendarState.pickStart);
+      document.getElementById('calendarPopover').style.display='none';
+      await onDateFilterChange();
+    }
+  });
+  document.getElementById('calCancel').addEventListener('click', ()=>{ document.getElementById('calendarPopover').style.display='none'; });
+}
+function toggleSection(bodyId){
+  const body = document.getElementById(bodyId);
+  const caret = document.getElementById(bodyId+'-caret');
+  const collapsed = body.classList.toggle('panel-collapsed');
+  if(caret) caret.textContent = collapsed ? '▶' : '▼';
+  // Chart canvas has zero size while its container is display:none; Chart.js renders based on
+  // that zero size and stays blank when un-hidden unless we force a fresh render afterward.
+  if(bodyId==='chartBody' && !collapsed) renderChart();
+}
+function handleSummaryRowClick(el){
+  const {levels, parts} = JSON.parse(el.getAttribute('data-focus'));
+  toggleRowFocus(levels, parts);
+}
+function toggleSummaryGroup(groupKey){
+  if(state.tableCollapsed.has(groupKey)) state.tableCollapsed.delete(groupKey);
+  else state.tableCollapsed.add(groupKey);
+  renderSummaryTable();
+}
+function collapseAllSummaryGroups(allKeys){
+  allKeys.forEach(k=> state.tableCollapsed.add(k));
+  renderSummaryTable();
+}
+function expandAllSummaryGroups(){
+  state.tableCollapsed.clear();
+  renderSummaryTable();
+}
 function renderSummaryTable(){
   const f = getFilterState();
   const rows = filteredRE(f);
@@ -1500,6 +1701,7 @@ function renderSummaryTable(){
   const targetOK = levelsAreTargetCapable(levels);
   state.tableSort = state.tableSort || {key:'tonase', dir:'desc'};
   state.tableColFilters = state.tableColFilters || {};
+  state.tableCollapsed = state.tableCollapsed || new Set(); // top-level group keys currently collapsed (children hidden)
 
   const lmF = getLMFilterState(f);
   const lmRowsAll = RE.filter(r=>matchRowLM(r, lmF));
@@ -1564,14 +1766,31 @@ function renderSummaryTable(){
     subtotals = subtotals.filter(s=> passesGroupFilterOnly(s, state.tableColFilters) && s.children.length>0);
     subtotals = sortRows(subtotals, sortKey, sortDir);
     bodyHtml = subtotals.map(s=>{
-      const subtotalRow = `<tr class="lvl-subtotal"><td class="grouplabel">${s.label}</td>${TABLE_COLUMNS.map(c=>`<td>${c.render(s)}</td>`).join('')}</tr>`;
-      const childRows = s.children.map(d=>`<tr class="lvl-leaf"><td class="grouplabel">${d.label}</td>${TABLE_COLUMNS.map(c=>`<td>${c.render(d)}</td>`).join('')}</tr>`).join('');
+      const groupKey = s.parts[0];
+      const isCollapsed = state.tableCollapsed.has(groupKey);
+      const caret = isCollapsed ? '▶' : '▼';
+      const subtotalFocus = escapeAttr(JSON.stringify({levels:[levels[0]], parts:[groupKey]}));
+      const subtotalSelected = sameFocus(state.rowFocus, [{field:levels[0], value:groupKey}]) ? ' row-focused' : '';
+      const subtotalRow = `<tr class="lvl-subtotal${subtotalSelected}" data-focus="${subtotalFocus}" onclick="handleSummaryRowClick(this)" title="Klik baris untuk fokuskan grafik+armada ke grup ini"><td class="grouplabel"><span class="lvl-caret" data-groupkey="${escapeAttr(groupKey)}" onclick="event.stopPropagation();toggleSummaryGroup(this.dataset.groupkey)" title="Klik untuk lipat/buka">${caret}</span> ${s.label}</td>${TABLE_COLUMNS.map(c=>`<td>${c.render(s)}</td>`).join('')}</tr>`;
+      const childRows = isCollapsed ? '' : s.children.map(d=>{
+        const leafFocus = escapeAttr(JSON.stringify({levels, parts:d.parts}));
+        const leafSelected = sameFocus(state.rowFocus, levels.map((fld,i)=>({field:fld, value:d.parts[i]}))) ? ' row-focused' : '';
+        return `<tr class="lvl-leaf${leafSelected}" data-focus="${leafFocus}" onclick="handleSummaryRowClick(this)" title="Klik untuk fokuskan grafik+armada ke baris ini"><td class="grouplabel">${d.label}</td>${TABLE_COLUMNS.map(c=>`<td>${c.render(d)}</td>`).join('')}</tr>`;
+      }).join('');
       return subtotalRow + childRows;
     }).join('');
   } else {
     groupValueUniverse = [...new Set(leafRows.map(d=>d.label))].sort();
     const visible = sortRows(leafRows.filter(lr=>rowPassesColFilters(lr)), sortKey, sortDir);
-    bodyHtml = visible.map(d=>`<tr><td class="grouplabel">${d.label}</td>${TABLE_COLUMNS.map(c=>`<td>${c.render(d)}</td>`).join('')}</tr>`).join('');
+    bodyHtml = visible.map(d=>{
+      if(!levels.length){
+        // "Total" row (no drill-down active) - nothing to focus to, it's already everything.
+        return `<tr><td class="grouplabel">${d.label}</td>${TABLE_COLUMNS.map(c=>`<td>${c.render(d)}</td>`).join('')}</tr>`;
+      }
+      const leafFocus = escapeAttr(JSON.stringify({levels, parts:d.parts}));
+      const leafSelected = sameFocus(state.rowFocus, levels.map((fld,i)=>({field:fld, value:d.parts[i]}))) ? ' row-focused' : '';
+      return `<tr class="lvl-leaf${leafSelected}" data-focus="${leafFocus}" onclick="handleSummaryRowClick(this)" title="Klik untuk fokuskan grafik+armada ke baris ini"><td class="grouplabel">${d.label}</td>${TABLE_COLUMNS.map(c=>`<td>${c.render(d)}</td>`).join('')}</tr>`;
+    }).join('');
   }
 
   // Header built as real DOM nodes (not an HTML string) so the checklist filter popovers keep
@@ -1596,14 +1815,27 @@ function renderSummaryTable(){
 }
 
 /* ================= FLEET / CYCLE TIME (Armada) =================
-   Compact pivot, same pattern as the Summary table: Level 1 = Distrik (subtotal row), Level 2 =
-   NOPOL (nested leaf rows). Split-by-district (confirmed 2026-07-25): a truck serving 2+ districts
-   gets its own row + stats computed SEPARATELY under each district it actually served, but is
-   still counted only once in the grand-total truk-unik figure in the note row above the table. */
+   Rebuilt 2026-07-26: hierarchy now FOLLOWS the Summary table's active drill-down level
+   (state.levels[0]) as the top tier, then NOPOL, then individual trips (TGL_SPJ) as the deepest
+   tier — per explicit instruction. If no Summary drill-down is active, NOPOL becomes the top tier
+   directly. NOPOL groups default COLLAPSED (their per-trip rows hidden) since a truck can have many
+   trips and there can be 1000+ trucks — click a NOPOL row to expand and see its individual trips.
+   Per-trip fields (jam antri/masuk/keluar, waiting/dwell, berat kosong/isi/real) are opt-in via the
+   column picker button, since showing all of them by default would make every trip row very wide. */
 const FLEET_COLUMNS = [
-  {key:'trips', label:'Jumlah Trip', get:d=>d.trips, render:d=>d.trips.toLocaleString('id-ID'), display:d=>d.trips.toLocaleString('id-ID')},
-  {key:'avgCycle', label:'Avg Cycle Time (jam)', get:d=>d.avgCycleHours, render:d=>d.avgCycleHours!=null?d.avgCycleHours.toFixed(1):'N/A', display:d=>d.avgCycleHours!=null?d.avgCycleHours.toFixed(1):'N/A'},
+  {key:'trips', label:'Jumlah Trip', get:d=>d.trips, render:d=>d.trips!=null?d.trips.toLocaleString('id-ID'):'-', display:d=>d.trips!=null?d.trips.toLocaleString('id-ID'):'-'},
+  {key:'avgCycle', label:'Avg Cycle Time (jam)', get:d=>d.avgCycleHours, render:d=>d.avgCycleHours!=null?d.avgCycleHours.toFixed(1):'-', display:d=>d.avgCycleHours!=null?d.avgCycleHours.toFixed(1):'-'},
   {key:'tonase', label:'Total Tonase (ton)', get:d=>d.tonase, render:d=>fmtNum(d.tonase), display:d=>fmtNum(d.tonase)},
+];
+const FLEET_DETAIL_COLUMN_DEFS = [
+  {key:'JAM_ANTRI', label:'Jam Antri', get:r=>r.JAM_ANTRI||'-'},
+  {key:'JAM_MASUK', label:'Jam Masuk', get:r=>r.JAM_MASUK||'-'},
+  {key:'JAM_KELUAR', label:'Jam Keluar', get:r=>r.JAM_KELUAR||'-'},
+  {key:'WAITING_TIME_JAM', label:'Waiting (jam)', get:r=>r.WAITING_TIME_JAM!=null?Number(r.WAITING_TIME_JAM).toFixed(1):'-'},
+  {key:'DWELL_TIME_JAM', label:'Dwell (jam)', get:r=>r.DWELL_TIME_JAM!=null?Number(r.DWELL_TIME_JAM).toFixed(1):'-'},
+  {key:'BERAT_KOSONG', label:'Berat Kosong', get:r=>r.BERAT_KOSONG!=null?fmtNum(r.BERAT_KOSONG):'-'},
+  {key:'BERAT_ISI', label:'Berat Isi', get:r=>r.BERAT_ISI!=null?fmtNum(r.BERAT_ISI):'-'},
+  {key:'BERAT_REAL', label:'Berat Real', get:r=>r.BERAT_REAL!=null?fmtNum(r.BERAT_REAL):'-'},
 ];
 function avgCycleHoursFor(sortedRowsByDate){
   if(sortedRowsByDate.length<2) return null;
@@ -1611,85 +1843,125 @@ function avgCycleHoursFor(sortedRowsByDate){
   for(let i=1;i<sortedRowsByDate.length;i++) gaps.push((sortedRowsByDate[i]._d - sortedRowsByDate[i-1]._d)/3600000);
   return gaps.reduce((a,b)=>a+b,0)/gaps.length;
 }
+function toggleFleetTop(key){
+  if(state.fleetCollapsedTop.has(key)) state.fleetCollapsedTop.delete(key); else state.fleetCollapsedTop.add(key);
+  renderFleetTable();
+}
+function toggleFleetNopol(key){
+  if(state.fleetExpandedNopol.has(key)) state.fleetExpandedNopol.delete(key); else state.fleetExpandedNopol.add(key);
+  renderFleetTable();
+}
+function toggleFleetDetailCol(key){
+  if(state.fleetDetailCols.has(key)) state.fleetDetailCols.delete(key); else state.fleetDetailCols.add(key);
+  renderFleetTable();
+}
+function renderFleetColumnPicker(){
+  const el = document.getElementById('fleetColPicker');
+  if(!el) return;
+  el.innerHTML = '';
+  FLEET_DETAIL_COLUMN_DEFS.forEach(c=>{
+    const b = document.createElement('button'); b.type = 'button';
+    b.className = 'pill' + (state.fleetDetailCols.has(c.key) ? ' active' : '');
+    b.textContent = c.label;
+    b.title = 'Tampilkan/sembunyikan kolom ini pada baris per-trip';
+    b.addEventListener('click', ()=> toggleFleetDetailCol(c.key));
+    el.appendChild(b);
+  });
+}
 function renderFleetTable(){
   const f = getFilterState();
-  const rows = filteredRE(f).filter(r=>r._d);
-  state.fleetSort = state.fleetSort || {key:'trips', dir:'desc'};
-  state.fleetColFilters = state.fleetColFilters || {};
+  const rows = applyRowFocus(filteredRE(f)).filter(r=>r._d);
+  state.fleetCollapsedTop = state.fleetCollapsedTop || new Set();   // top-tier keys with children hidden
+  state.fleetExpandedNopol = state.fleetExpandedNopol || new Set(); // NOPOL keys ("top|||nopol") with per-trip rows shown
+  state.fleetDetailCols = state.fleetDetailCols || new Set();
+  renderFleetColumnPicker();
 
-  const byDistrict = new Map(); // district -> Map(NOPOL -> rows[])
+  const topField = state.levels.length ? state.levels[0] : null;
+  const detailCols = FLEET_DETAIL_COLUMN_DEFS.filter(c=>state.fleetDetailCols.has(c.key));
+
+  // ---- group: top (optional) -> NOPOL -> raw trip rows ----
+  const byTop = new Map(); // topKey -> Map(NOPOL -> rows[])
   rows.forEach(r=>{
-    const dist = normVal(r.NAMA_AREA_DISTRIK);
-    if(!byDistrict.has(dist)) byDistrict.set(dist, new Map());
-    const byTruck = byDistrict.get(dist);
-    if(!byTruck.has(r.NOPOL)) byTruck.set(r.NOPOL, []);
-    byTruck.get(r.NOPOL).push(r);
+    const topKey = topField ? normVal(r[topField]) : '__ALL__';
+    if(!byTop.has(topKey)) byTop.set(topKey, new Map());
+    const byNopol = byTop.get(topKey);
+    if(!byNopol.has(r.NOPOL)) byNopol.set(r.NOPOL, []);
+    byNopol.get(r.NOPOL).push(r);
   });
 
-  const leafRows = [];
-  byDistrict.forEach((byTruck, dist)=>{
-    byTruck.forEach((trs, nopol)=>{
-      const sorted = trs.slice().sort((a,b)=>a._d-b._d);
-      leafRows.push({parts:[dist,nopol], label:nopol, district:dist,
-        trips: sorted.length, avgCycleHours: avgCycleHoursFor(sorted), tonase: aggMetric(sorted,'TONASE')});
-    });
-  });
-
-  const sortKey = state.fleetSort.key, sortDir = state.fleetSort.dir;
-  const districtLeaves = new Map();
-  leafRows.forEach(d=>{ if(!districtLeaves.has(d.district)) districtLeaves.set(d.district, []); districtLeaves.get(d.district).push(d); });
-
-  // Initialize/refresh every column's checklist filter universe BEFORE using it to filter rows
-  // below — same fix as the Summary table: doing this after body-filtering lets a stale filter
-  // Set from a previous render (different date range, different rows) wipe out the whole table.
-  const districtLabelsNow = [...districtLeaves.keys()];
-  ensureColFilterSet(state.fleetColFilters, 'group', [...new Set([...districtLabelsNow, ...leafRows.map(d=>d.label)])].sort());
-  FLEET_COLUMNS.forEach(c=>{
-    ensureColFilterSet(state.fleetColFilters, c.key, [...new Set(leafRows.map(d=>c.display(d)))].sort());
-  });
-
-  let subtotals = [...districtLeaves.keys()].map(dist=>{
-    // Recomputed fresh from raw rows (not summed from already-filtered children), same convention
-    // as the Summary table's subtotal rows, so it stays correct regardless of the column filter.
-    const districtRows = rows.filter(r=>normVal(r.NAMA_AREA_DISTRIK)===dist);
-    const truckUnik = new Set(districtRows.map(r=>r.NOPOL)).size;
+  function nopolStats(trs){
+    const sorted = trs.slice().sort((a,b)=>a._d-b._d);
+    return {trips: sorted.length, avgCycleHours: avgCycleHoursFor(sorted), tonase: aggMetric(sorted,'TONASE'), sorted};
+  }
+  function topStats(topKey){
+    const byNopol = byTop.get(topKey);
+    const allRows = [...byNopol.values()].flat();
+    const truckUnik = byNopol.size;
     let allGaps = [];
-    const byTruckHere = new Map();
-    districtRows.forEach(r=>{ if(!byTruckHere.has(r.NOPOL)) byTruckHere.set(r.NOPOL,[]); byTruckHere.get(r.NOPOL).push(r); });
-    byTruckHere.forEach(trs=>{
+    byNopol.forEach(trs=>{
       const sorted = trs.slice().sort((a,b)=>a._d-b._d);
       for(let i=1;i<sorted.length;i++) allGaps.push((sorted[i]._d-sorted[i-1]._d)/3600000);
     });
-    const d = {parts:[dist], label:dist, district:dist, truckUnik,
-      trips: districtRows.length, avgCycleHours: allGaps.length ? allGaps.reduce((a,b)=>a+b,0)/allGaps.length : null,
-      tonase: aggMetric(districtRows,'TONASE')};
-    d.children = sortRows(districtLeaves.get(dist), sortKey, sortDir, FLEET_COLUMNS).filter(lr=>rowPassesColFilters(lr, state.fleetColFilters, FLEET_COLUMNS));
-    return d;
-  });
-  const groupValueUniverse = [...new Set([...subtotals.map(s=>s.label), ...leafRows.map(d=>d.label)])].sort();
-  subtotals = subtotals.filter(s=> passesGroupFilterOnly(s, state.fleetColFilters) && s.children.length>0);
-  subtotals = sortRows(subtotals, sortKey, sortDir, FLEET_COLUMNS);
+    return {trips: allRows.length, truckUnik, avgCycleHours: allGaps.length?allGaps.reduce((a,b)=>a+b,0)/allGaps.length:null, tonase: aggMetric(allRows,'TONASE')};
+  }
 
-  const totalTruckUnik = new Set(rows.map(r=>r.NOPOL)).size; // counted once overall, even if active in 2+ districts
+  const topKeys = [...byTop.keys()].sort();
+  const totalTruckUnik = new Set(rows.map(r=>r.NOPOL)).size; // counted once overall even if active under >1 top group
   const totalTrip = rows.length;
   const util = totalTruckUnik>0 ? (totalTrip/totalTruckUnik) : 0;
-  const summaryRow = `<tr style="background:var(--panel2);"><td colspan="4" style="text-align:left;color:var(--sub);font-size:11px;">
-    Total truk unik (keseluruhan, tidak dobel-hitung truk yang aktif di &gt;1 distrik): ${totalTruckUnik.toLocaleString('id-ID')} ·
+  const summaryRow = `<tr style="background:var(--panel2);"><td colspan="${3+detailCols.length}" style="text-align:left;color:var(--sub);font-size:11px;">
+    Total truk unik (keseluruhan, tidak dobel-hitung): ${totalTruckUnik.toLocaleString('id-ID')} ·
     Total trip: ${totalTrip.toLocaleString('id-ID')} · Utilisasi rata-rata: ${util.toFixed(2)}x per truk (= Ritase)
   </td></tr>`;
 
-  const bodyHtml = summaryRow + subtotals.map(s=>{
-    const subtotalRow = `<tr class="lvl-subtotal"><td class="grouplabel">${s.label} <span style="font-weight:400;color:var(--sub);">(${s.truckUnik.toLocaleString('id-ID')} truk)</span></td>${FLEET_COLUMNS.map(c=>`<td>${c.render(s)}</td>`).join('')}</tr>`;
-    const childRows = s.children.map(d=>`<tr class="lvl-leaf"><td class="grouplabel">${d.label}</td>${FLEET_COLUMNS.map(c=>`<td>${c.render(d)}</td>`).join('')}</tr>`).join('');
-    return subtotalRow + childRows;
-  }).join('');
+  function tripRowHtml(r, indentPx){
+    const cells = FLEET_COLUMNS.map(()=>'<td>-</td>').join(''); // trips/avgCycle N/A at trip grain, tonase shown separately below
+    const tonaseTd = `<td>${fmtNum(r.TONASE)}</td>`;
+    const detailTds = detailCols.map(c=>`<td>${c.get(r)}</td>`).join('');
+    const tglDisplay = (r.TGL_SPJ||'-').toString().slice(0,10);
+    return `<tr class="lvl-leaf"><td class="grouplabel" style="padding-left:${indentPx}px;">${tglDisplay} <span style="color:var(--sub);">(${r.NO_SPJ||''})</span></td>${FLEET_COLUMNS.slice(0,2).map(()=>'<td>-</td>').join('')}${tonaseTd}${detailTds}</tr>`;
+  }
+
+  function nopolRowsHtml(topKey, byNopol, indentBase){
+    const nopols = [...byNopol.keys()].sort();
+    return nopols.map(nopol=>{
+      const trs = byNopol.get(nopol);
+      const stats = nopolStats(trs);
+      const nopolKey = topKey+'|||'+nopol;
+      const expanded = state.fleetExpandedNopol.has(nopolKey);
+      const caret = expanded ? '▼' : '▶';
+      const nopolRow = `<tr class="lvl-leaf" data-nopolkey="${escapeAttr(nopolKey)}" onclick="toggleFleetNopol(this.dataset.nopolkey)" style="cursor:pointer;" title="Klik untuk lihat/sembunyikan trip individual">
+        <td class="grouplabel" style="padding-left:${indentBase}px;"><span class="lvl-caret">${caret}</span> ${nopol}</td>
+        <td>${stats.trips.toLocaleString('id-ID')}</td><td>${stats.avgCycleHours!=null?stats.avgCycleHours.toFixed(1):'-'}</td><td>${fmtNum(stats.tonase)}</td>
+        ${detailCols.map(()=>'<td>-</td>').join('')}</tr>`;
+      const tripRows = expanded ? stats.sorted.map(r=>tripRowHtml(r, indentBase+20)).join('') : '';
+      return nopolRow + tripRows;
+    }).join('');
+  }
+
+  let bodyHtml = summaryRow;
+  if(topField){
+    bodyHtml += topKeys.map(topKey=>{
+      const stats = topStats(topKey);
+      const isCollapsed = state.fleetCollapsedTop.has(topKey);
+      const caret = isCollapsed ? '▶' : '▼';
+      const topRow = `<tr class="lvl-subtotal" data-topkey="${escapeAttr(topKey)}" onclick="toggleFleetTop(this.dataset.topkey)" style="cursor:pointer;">
+        <td class="grouplabel"><span class="lvl-caret">${caret}</span> ${topKey} <span style="font-weight:400;color:var(--sub);">(${stats.truckUnik.toLocaleString('id-ID')} truk)</span></td>
+        <td>${stats.trips.toLocaleString('id-ID')}</td><td>${stats.avgCycleHours!=null?stats.avgCycleHours.toFixed(1):'-'}</td><td>${fmtNum(stats.tonase)}</td>
+        ${detailCols.map(()=>'<td>-</td>').join('')}</tr>`;
+      const nopolRows = isCollapsed ? '' : nopolRowsHtml(topKey, byTop.get(topKey), 20);
+      return topRow + nopolRows;
+    }).join('');
+  } else {
+    bodyHtml += nopolRowsHtml('__ALL__', byTop.get('__ALL__') || new Map(), 0);
+  }
 
   const theadRow1 = document.createElement('tr');
-  theadRow1.appendChild(renderFilterableHeaderCell('fleet', 'group', 'Distrik › NOPOL', groupValueUniverse, state.fleetColFilters, state.fleetSort, renderFleetTable));
-  FLEET_COLUMNS.forEach(c=>{
-    const values = [...new Set(leafRows.map(d=>c.display(d)))].sort();
-    theadRow1.appendChild(renderFilterableHeaderCell('fleet', c.key, c.label, values, state.fleetColFilters, state.fleetSort, renderFleetTable));
-  });
+  const groupHeaderLabel = topField ? `${levelLabelForField(topField)} › NOPOL › Trip (TGL SPJ)` : 'NOPOL › Trip (TGL SPJ)';
+  const th0 = document.createElement('th'); th0.textContent = groupHeaderLabel;
+  theadRow1.appendChild(th0);
+  FLEET_COLUMNS.forEach(c=>{ const th = document.createElement('th'); th.textContent = c.label; theadRow1.appendChild(th); });
+  detailCols.forEach(c=>{ const th = document.createElement('th'); th.textContent = c.label; theadRow1.appendChild(th); });
   const thead = document.createElement('thead'); thead.appendChild(theadRow1);
   const table = document.getElementById('fleetTable');
   table.innerHTML = '';
@@ -1718,10 +1990,20 @@ async function onDateFilterChange(){
 }
 document.getElementById('fDateFrom').addEventListener('change', onDateFilterChange);
 document.getElementById('fDateTo').addEventListener('change', onDateFilterChange);
+document.getElementById('btnOpenCalendar').addEventListener('click', (e)=>{ e.stopPropagation(); toggleCalendarPopover(); });
+// Any click INSIDE the popover must not bubble to the document-level "click outside closes it"
+// listener below — same fix pattern as the group-filter selAll/selNone bug (v6): renderCalendarPopover()
+// rebuilds the popover's innerHTML on every nav/day click, detaching the just-clicked element from the
+// DOM before the event finishes bubbling, which would make pop.contains(e.target) false-positive as
+// "outside click" and instantly close the calendar after every single interaction.
+document.getElementById('calendarPopover').addEventListener('click', (e)=> e.stopPropagation());
+document.addEventListener('click', (e)=>{
+  const pop = document.getElementById('calendarPopover');
+  if(pop.style.display!=='none' && !pop.contains(e.target) && e.target.id!=='btnOpenCalendar') pop.style.display='none';
+});
 
 document.getElementById('btnClearFilters').addEventListener('click', async ()=>{
   DIMENSIONS.forEach(d=> state[d.key] = new Set(ALLV[d.key]));
-  state.tahun = new Set(ALLV.tahun||[]); state.bulan = new Set(ALLV.bulan||[]);
   document.getElementById('fDateFrom').value = '';
   document.getElementById('fDateTo').value = '';
   if(manifest){
