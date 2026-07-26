@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = '2026-07-26.14';
+window.APP_VERSION = '2026-07-26.15';
 (function(){
   fetch('version.json?_=' + Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.json() : null; })
@@ -214,8 +214,16 @@ td.grouplabel{white-space:nowrap;}
    NATASYA.PT") could still drag the whole column wide again. table-layout:fixed forces the browser
    to honor the declared width instead of measuring content, which is what actually keeps this
    column compact regardless of how long any individual row's label gets. */
-#fleetTable{table-layout:fixed;}
-#fleetTable th:first-child, #fleetTable td.grouplabel{width:130px; max-width:130px; overflow:hidden; text-overflow:ellipsis;}
+/* REVISED 2026-07-27 per Rendy: previous table-layout:fixed + fixed 130px label column made
+   NOPOL/kategori/distrik text truncate with ellipsis - not what was wanted. Switched back to
+   table-layout:auto so the label column is free-width and always shows the full text (wraps
+   instead of cutting off). To keep the row from ballooning sideways, the numeric metric columns
+   (Jumlah Trip/Tonase/Avg Waiting/Avg Dwell/Avg Cycle) are instead pinned narrow via nth-child,
+   with their headers allowed to wrap onto 2 lines instead of forcing the column wide. */
+#fleetTable{table-layout:auto;}
+#fleetTable th:first-child, #fleetTable td.grouplabel{white-space:normal; word-break:break-word;}
+#fleetTable th:nth-child(n+2):nth-child(-n+6){white-space:normal; width:64px; max-width:64px;}
+#fleetTable td:nth-child(n+2):nth-child(-n+6){white-space:nowrap;}
 tr.lvl-subtotal td{font-weight:700;background:#FAFAFA;}
 tr.lvl-subtotal td.grouplabel{border-left:3px solid var(--accent);}
 tr.lvl-leaf td.grouplabel{padding-left:26px;color:var(--sub);font-weight:400;}
