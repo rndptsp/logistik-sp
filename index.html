@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = '2026-07-26.6';
+window.APP_VERSION = '2026-07-26.11';
 (function(){
   fetch('version.json?_=' + Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.json() : null; })
@@ -207,6 +207,9 @@ tbody tr:hover{background:var(--panel2);}
 /* Compact-form pivot table (Excel-style): single Group column, indented per level, level-1 rows
    are bold subtotal rows for their level-2 children. */
 td.grouplabel{white-space:nowrap;}
+/* Armada's NOPOL/group column was blowing out the table width (2026-07-26) - cap it and ellipsize
+   instead of letting long labels force horizontal scroll on every other column. */
+#fleetTable td.grouplabel{max-width:105px; overflow:hidden; text-overflow:ellipsis;}
 tr.lvl-subtotal td{font-weight:700;background:#FAFAFA;}
 tr.lvl-subtotal td.grouplabel{border-left:3px solid var(--accent);}
 tr.lvl-leaf td.grouplabel{padding-left:26px;color:var(--sub);font-weight:400;}
@@ -805,7 +808,22 @@ function renderSinglePills(containerId, items, currentVal, onChange){
 function populateFilters(){
   levelRefreshCallbacks = [];
   const gf = document.getElementById('groupFilters'); gf.innerHTML='';
-  DIMENSIONS.forEach(d=> createPivotFilter(gf, d.key, d.label, uniqSorted(RE, d.field), d.field));
+  DIMENSIONS.forEach(d=>{
+    let vals;
+    if(d.key==='expeditur'){
+      // Union of RE + SO vendor names, not RE alone (fixed 2026-07-26). SO now carries vendor
+      // labels that never appear in realisasi.csv's own EXPEDITUR_NAMA for the same physical
+      // route (e.g. 'SBA' - Semen Andalas self-hauling through Medan/Deli Serdang/Binjai/Langkat/
+      // Asahan, which realisasi tags 'ANGKUT SENDIRI' instead). A RE-only filter list would still
+      // show all SO rows correctly when Expeditur is unfiltered, but the moment the user restricted
+      // the Expeditur checklist to specific vendors, isRestricted('expeditur') would go true and
+      // 'SBA' - having no checkbox to keep it checked - would silently vanish from every SO figure.
+      vals = [...new Set([...RE.map(r=>normVal(r[d.field])), ...SO.map(r=>normVal(r.EXPEDITUR_NAMA))])].filter(v=>v!==BLANK).sort();
+    } else {
+      vals = uniqSorted(RE, d.field);
+    }
+    createPivotFilter(gf, d.key, d.label, vals, d.field);
+  });
 
   renderDatePresets();
 
@@ -998,6 +1016,7 @@ function soTonaseFor(f, extraMatch){
     if(isRestricted('distributor') && !f.distributor.has(normVal(r.DISTRIBUTOR))) return false;
     if(isRestricted('source') && !f.source.has(normVal(r.SOURCE))) return false;
     if(isRestricted('incoterm') && !f.incoterm.has(normVal(r.INCOTERM))) return false;
+    if(isRestricted('expeditur') && !f.expeditur.has(normVal(r.EXPEDITUR_NAMA))) return false;
     if(extraMatch && !extraMatch(r)) return false;
     return true;
   }).reduce((s,r)=>s+(+r.TONASE_KIRIM||0),0);
@@ -1215,7 +1234,27 @@ function targetForBucket(bk, gran, f, scope, sourceTypeOverride){
   });
   return any ? round2(total) : null;
 }
-const SO_FIELD_MAP = {NAMA_PROPINSI:'PROPINSI', NAMA_AREA_DISTRIK:'NAMA_DISTRIK', DISTRIBUTOR:'DISTRIBUTOR', SOURCE_PLANT:'SOURCE', INCOTERM:'INCOTERM'};
+// EXPEDITUR_NAMA added 2026-07-26: so.csv previously had NO vendor field at all (a gap since the
+// very first build, not just July) - every vendor row in a per-Expeditur drill-down showed the
+// identical company-wide SO total. Fixed by attributing each SO row to a vendor: rows dated before
+// 2026-04-10 go 100% to SILOG (pre-contract era, confirmed by Rendy - "before 10-april everything
+// is under silog"); rows on/after that date are split by each district's contract-quota share from
+// route_vendor_volume.json (single-vendor districts get 100%, multi-vendor districts get their
+// TONASE_KIRIM exploded into weighted per-vendor rows). Two pockets had no route_vendor_volume.json
+// entry and were resolved manually against the July "Target Bulan Juli 2026 - Kirim" workbook
+// (confirmed by Rendy 2026-07-26): Kota Medan/Kab. Deli Serdang/Kota Binjai/Kab. Langkat/Kab. Asahan
+// (19,330 ton) -> EXPEDITUR_NAMA='SBA' - this is Semen Andalas (a different SIG plant) self-hauling
+// its own product through routes this area covers, NOT a PT Semen Padang contracted vendor, so it
+// has no route_vendor_volume.json entry by design and should be EXCLUDED from any SO-vs-CONTRACT
+// vendor consistency comparison (no contract share exists to compare against). Kota Pematangsiantar
+// (669 ton) -> SILOG (real vendor per the same manual target file; route_vendor_volume.json simply
+// lacks this one small district). 'SBA' does not exist in realisasi.csv's own EXPEDITUR_NAMA field
+// (that dataset tags the same physical route 'ANGKUT SENDIRI' instead) - populateFilters() unions
+// RE + SO vendor names for the Expeditur filter specifically so 'SBA' still gets a checkbox and
+// doesn't silently drop out of SO figures whenever the Expeditur filter is restricted (fixed
+// 2026-07-26, see populateFilters()). See fix_sba_pematangsiantar.py and attribute_so_vendor.py for
+// the full attribution methodology.
+const SO_FIELD_MAP = {NAMA_PROPINSI:'PROPINSI', NAMA_AREA_DISTRIK:'NAMA_DISTRIK', DISTRIBUTOR:'DISTRIBUTOR', SOURCE_PLANT:'SOURCE', INCOTERM:'INCOTERM', EXPEDITUR_NAMA:'EXPEDITUR_NAMA'};
 const TARGET_TYPE_LABELS = {SNOP:'Target SNOP', CONTRACT:'Vol. Kontrak', RKAP:'Target RKAP'};
 // Solid, clearly distinct per type (not the old dashed black/gray/blue, which read too similarly
 // against the red bars from a distance).
@@ -2030,11 +2069,11 @@ function renderSummaryTable(){
 }
 
 /* ================= FLEET / CYCLE TIME (Armada) =================
-   Rebuilt 2026-07-26: hierarchy now FOLLOWS the Summary table's active drill-down level
-   (state.levels[0]) as the top tier, then NOPOL, then individual trips (TGL_SPJ) as the deepest
-   tier — per explicit instruction. If no Summary drill-down is active, NOPOL becomes the top tier
-   directly. NOPOL groups default COLLAPSED (their per-trip rows hidden) since a truck can have many
-   trips and there can be 1000+ trucks — click a NOPOL row to expand and see its individual trips.
+   Rebuilt 2026-07-26 (v2): hierarchy is now 5 fixed usage-pattern categories (see
+   FLEET_CATEGORY_DEFS / truckCategory below) → NOPOL → per-trip detail, replacing the earlier
+   Summary-drilldown-driven top tier. Categories and NOPOL groups both default COLLAPSED since
+   there can be 1000+ trucks — click a category to expand, then a NOPOL to see its district x
+   expeditur breakdown, then "Lihat N trip individual" to see raw trip rows.
    Per-trip fields (jam antri/masuk/keluar, waiting/dwell, berat kosong/isi/real) are opt-in via the
    column picker button, since showing all of them by default would make every trip row very wide. */
 const FLEET_COLUMNS = [
@@ -2080,8 +2119,12 @@ function avgCycleHoursFor(sortedRowsByDate){
   for(let i=1;i<sortedRowsByDate.length;i++) gaps.push((sortedRowsByDate[i]._d - sortedRowsByDate[i-1]._d)/3600000);
   return gaps.reduce((a,b)=>a+b,0)/gaps.length;
 }
-function toggleFleetTop(key){
-  if(state.fleetCollapsedTop.has(key)) state.fleetCollapsedTop.delete(key); else state.fleetCollapsedTop.add(key);
+function toggleFleetCategory(key){
+  if(state.fleetCollapsedCat.has(key)) state.fleetCollapsedCat.delete(key); else state.fleetCollapsedCat.add(key);
+  renderFleetTable();
+}
+function toggleFleetOpenNopol(key){
+  if(state.fleetOpenNopol.has(key)) state.fleetOpenNopol.delete(key); else state.fleetOpenNopol.add(key);
   renderFleetTable();
 }
 function toggleFleetNopol(key){
@@ -2105,115 +2148,140 @@ function renderFleetColumnPicker(){
     el.appendChild(b);
   });
 }
+/* ================= ARMADA 5-CATEGORY STRUCTURE (2026-07-26) =================
+   Replaced the old Provinsi/Distrik-driven top grouping with 5 mutually-exclusive usage-pattern
+   categories, per Rendy's explicit request - the summary table above already gives the Provinsi/
+   Distrik breakdown, so Armada's job is now specifically "how is this truck actually being used."
+   Value filters (Provinsi/Distrik/Expeditur/... checklists + date range + row-focus) still apply
+   as before - only the grouping structure changed. Categories, in priority order (mutually
+   exclusive - every truck lands in exactly one):
+     1. Sekali Jalan   - exactly 1 trip in the current selection
+     2. Dedicated      - 2+ trips, but always the same 1 expeditur AND same 1 distrik
+     3. Multi-Expeditur- 2+ distinct expeditur, but only 1 distrik
+     4. Multi-Distrik  - 2+ distinct distrik, but only 1 expeditur
+     5. Multi Keduanya - 2+ distinct expeditur AND 2+ distinct distrik
+*/
+const FLEET_CATEGORY_DEFS = [
+  {key:'onetime', label:'Sekali Jalan (1 trip)'},
+  {key:'dedicated', label:'Dedicated (1 expeditur, 1 distrik)'},
+  {key:'multiExp', label:'Multi-Expeditur (distrik tetap 1)'},
+  {key:'multiDist', label:'Multi-Distrik (expeditur tetap 1)'},
+  {key:'multiBoth', label:'Multi-Expeditur & Distrik'},
+];
+function truckCategory(trips, nExp, nDist){
+  if(trips<=1) return 'onetime';
+  if(nExp===1 && nDist===1) return 'dedicated';
+  if(nExp>1 && nDist===1) return 'multiExp';
+  if(nExp===1 && nDist>1) return 'multiDist';
+  return 'multiBoth';
+}
 function renderFleetTable(){
   const f = getFilterState();
   const rows = applyRowFocus(filteredRE(f)).filter(r=>r._d);
-  state.fleetCollapsedTop = state.fleetCollapsedTop || new Set();   // top-tier keys with children hidden
-  state.fleetExpandedNopol = state.fleetExpandedNopol || new Set(); // NOPOL keys ("top|||nopol") with per-trip rows shown
+  state.fleetCollapsedCat = state.fleetCollapsedCat || new Set(FLEET_CATEGORY_DEFS.map(c=>c.key)); // default: all 5 collapsed
+  state.fleetOpenNopol = state.fleetOpenNopol || new Set();      // NOPOL with district x expeditur breakdown shown
+  state.fleetExpandedNopol = state.fleetExpandedNopol || new Set(); // NOPOL with full trip list also shown
   state.fleetDetailCols = state.fleetDetailCols || new Set();
   renderFleetColumnPicker();
 
-  const topField = state.levels.length ? state.levels[0] : null;
   const detailCols = FLEET_DETAIL_COLUMN_DEFS.filter(c=>state.fleetDetailCols.has(c.key));
+  function distinctCount(rowsForCount, field){ return new Set(rowsForCount.map(r=>normVal(r[field]))).size; }
 
-  // ---- group: top (optional) -> NOPOL -> raw trip rows ----
-  const byTop = new Map(); // topKey -> Map(NOPOL -> rows[])
+  // ---- group all filtered rows by NOPOL, compute usage stats + category ----
+  const byNopol = new Map();
   rows.forEach(r=>{
-    const topKey = topField ? normVal(r[topField]) : '__ALL__';
-    if(!byTop.has(topKey)) byTop.set(topKey, new Map());
-    const byNopol = byTop.get(topKey);
     if(!byNopol.has(r.NOPOL)) byNopol.set(r.NOPOL, []);
     byNopol.get(r.NOPOL).push(r);
   });
-  // Global per-NOPOL rows across the WHOLE filtered selection, independent of topField - a truck's
-  // # Expeditur / # Route must reflect its true total diversity even when it's currently listed
-  // under just one top-level bucket (e.g. drilled by Provinsi, but the truck also ran in another
-  // province under a different expeditur).
-  const globalByNopol = new Map();
-  rows.forEach(r=>{
-    if(!globalByNopol.has(r.NOPOL)) globalByNopol.set(r.NOPOL, []);
-    globalByNopol.get(r.NOPOL).push(r);
-  });
-  function distinctCount(rowsForCount, field){ return new Set(rowsForCount.map(r=>normVal(r[field]))).size; }
-
-  function nopolStats(trs, nopol){
+  const byCategory = new Map(FLEET_CATEGORY_DEFS.map(c=>[c.key, []]));
+  byNopol.forEach((trs, nopol)=>{
     const sorted = trs.slice().sort((a,b)=>a._d-b._d);
-    const globalRows = globalByNopol.get(nopol) || trs;
-    return {trips: sorted.length, avgCycleHours: avgCycleHoursFor(sorted), tonase: aggMetric(sorted,'TONASE'), sorted,
-      nExp: distinctCount(globalRows,'EXPEDITUR_NAMA'), nRoute: distinctCount(globalRows,'NAMA_AREA_DISTRIK')};
-  }
-  function topStats(topKey){
-    const byNopol = byTop.get(topKey);
-    const allRows = [...byNopol.values()].flat();
-    const truckUnik = byNopol.size;
-    let allGaps = [];
-    byNopol.forEach(trs=>{
-      const sorted = trs.slice().sort((a,b)=>a._d-b._d);
-      for(let i=1;i<sorted.length;i++) allGaps.push((sorted[i]._d-sorted[i-1]._d)/3600000);
-    });
-    return {trips: allRows.length, truckUnik, avgCycleHours: allGaps.length?allGaps.reduce((a,b)=>a+b,0)/allGaps.length:null, tonase: aggMetric(allRows,'TONASE'), allRows,
-      nExp: distinctCount(allRows,'EXPEDITUR_NAMA'), nRoute: distinctCount(allRows,'NAMA_AREA_DISTRIK')};
-  }
+    const nExp = distinctCount(trs,'EXPEDITUR_NAMA');
+    const nDist = distinctCount(trs,'NAMA_AREA_DISTRIK');
+    const cat = truckCategory(trs.length, nExp, nDist);
+    byCategory.get(cat).push({nopol, trs, sorted, nExp, nDist,
+      avgCycleHours: avgCycleHoursFor(sorted), tonase: aggMetric(sorted,'TONASE')});
+  });
 
-  const topKeys = [...byTop.keys()].sort();
-  const totalTruckUnik = new Set(rows.map(r=>r.NOPOL)).size; // counted once overall even if active under >1 top group
+  const totalTruckUnik = byNopol.size;
   const totalTrip = rows.length;
   const util = totalTruckUnik>0 ? (totalTrip/totalTruckUnik) : 0;
   const summaryRow = `<tr style="background:var(--panel2);"><td colspan="${FLEET_COLUMNS.length+detailCols.length}" style="text-align:left;color:var(--sub);font-size:11px;">
-    Total truk unik (keseluruhan, tidak dobel-hitung): ${totalTruckUnik.toLocaleString('id-ID')} ·
-    Total trip: ${totalTrip.toLocaleString('id-ID')} · Utilisasi rata-rata: ${util.toFixed(2)}x per truk (= Ritase) ·
-    <span style="color:var(--red);">#Expeditur/#Distrik &gt;1 = truk ini terpakai lintas expeditur/distrik</span>
+    Total truk unik: ${totalTruckUnik.toLocaleString('id-ID')} · Total trip: ${totalTrip.toLocaleString('id-ID')} · Utilisasi rata-rata: ${util.toFixed(2)}x per truk (= Ritase)
   </td></tr>`;
 
   function tripRowHtml(r, indentPx){
     const tonaseTd = `<td>${fmtNum(r.TONASE)}</td>`;
     const detailTds = detailCols.map(c=>`<td>${c.get(r)}</td>`).join('');
     const tglDisplay = (r.TGL_SPJ||'-').toString().slice(0,10);
-    // trips/avgCycle/#Expeditur/#Route N/A at trip grain (single row, nothing to count) - tonase shown separately below
-    return `<tr class="lvl-leaf"><td class="grouplabel" style="padding-left:${indentPx}px;">${tglDisplay} <span style="color:var(--sub);">(${r.NO_SPJ||''})</span></td>${'<td>-</td>'.repeat(2)}${tonaseTd}${'<td>-</td>'.repeat(2)}${detailTds}</tr>`;
+    return `<tr class="lvl-leaf"><td class="grouplabel" style="padding-left:${indentPx}px;">${tglDisplay} <span style="color:var(--sub);">(${r.NO_SPJ||''}) — ${r.NAMA_AREA_DISTRIK||'-'} / ${r.EXPEDITUR_NAMA||'-'}</span></td>${'<td>-</td>'.repeat(2)}${tonaseTd}${'<td>-</td>'.repeat(2)}${detailTds}</tr>`;
   }
 
-  function nopolRowsHtml(topKey, byNopol, indentBase){
-    const nopols = [...byNopol.keys()].sort();
-    return nopols.map(nopol=>{
-      const trs = byNopol.get(nopol);
-      const stats = nopolStats(trs, nopol);
-      const nopolKey = topKey+'|||'+nopol;
-      const expanded = state.fleetExpandedNopol.has(nopolKey);
-      const caret = expanded ? '▼' : '▶';
-      const crossFlag = (stats.nExp>1 || stats.nRoute>1);
-      const cellStyle = crossFlag ? ' style="color:var(--red);font-weight:600;"' : '';
-      const nopolRow = `<tr class="lvl-leaf" data-nopolkey="${escapeAttr(nopolKey)}" onclick="toggleFleetNopol(this.dataset.nopolkey)" style="cursor:pointer;" title="Klik untuk lihat/sembunyikan trip individual${crossFlag ? ' — truk ini lintas expeditur/distrik' : ''}">
-        <td class="grouplabel" style="padding-left:${indentBase}px;"><span class="lvl-caret">${caret}</span> ${nopol}${crossFlag ? ' <span style="color:var(--red);" title="Lintas expeditur/distrik">⚠</span>' : ''}</td>
-        <td>${stats.trips.toLocaleString('id-ID')}</td><td>${stats.avgCycleHours!=null?stats.avgCycleHours.toFixed(1):'-'}</td><td>${fmtNum(stats.tonase)}</td>
-        <td${cellStyle}>${stats.nExp}</td><td${cellStyle}>${stats.nRoute}</td>
-        ${detailCols.map(c=>`<td>${detailAggValue(c, trs)}</td>`).join('')}</tr>`;
-      const tripRows = expanded ? stats.sorted.map(r=>tripRowHtml(r, indentBase+20)).join('') : '';
-      return nopolRow + tripRows;
-    }).join('');
+  // District x Expeditur combo breakdown for a truck - answers "show detail route/expeditur" on click.
+  function nopolBreakdownRows(nopol, trs, indentPx){
+    const combos = new Map(); // "distrik|||exp" -> {distrik, exp, trips, tonase}
+    trs.forEach(r=>{
+      const key = normVal(r.NAMA_AREA_DISTRIK)+'|||'+normVal(r.EXPEDITUR_NAMA);
+      if(!combos.has(key)) combos.set(key, {distrik:r.NAMA_AREA_DISTRIK||'-', exp:r.EXPEDITUR_NAMA||'-', trips:0, tonase:0});
+      const c = combos.get(key);
+      c.trips++; c.tonase += (+r.TONASE||0);
+    });
+    const sortedCombos = [...combos.values()].sort((a,b)=>b.trips-a.trips);
+    const comboRows = sortedCombos.map(c=>
+      `<tr class="lvl-leaf" style="background:var(--panel2);"><td class="grouplabel" style="padding-left:${indentPx}px;color:var(--sub);">↳ ${c.distrik} — ${c.exp}</td>
+        <td>${c.trips.toLocaleString('id-ID')}</td><td>-</td><td>${fmtNum(c.tonase)}</td><td>-</td><td>-</td>
+        ${detailCols.map(()=>'<td>-</td>').join('')}</tr>`).join('');
+    const tripsKey = 'trips|||'+nopol;
+    const tripsOpen = state.fleetExpandedNopol.has(tripsKey);
+    const toggleTripsRow = `<tr class="lvl-leaf" data-tripskey="${escapeAttr(tripsKey)}" onclick="event.stopPropagation();toggleFleetNopol(this.dataset.tripskey)" style="cursor:pointer;background:var(--panel2);">
+      <td class="grouplabel" style="padding-left:${indentPx}px;color:var(--accent);">${tripsOpen?'▼':'▸'} Lihat ${trs.length} trip individual</td>
+      <td colspan="${1+FLEET_COLUMNS.length-1+detailCols.length}"></td></tr>`;
+    const sortedTrips = tripsOpen ? trs.slice().sort((a,b)=>a._d-b._d).map(r=>tripRowHtml(r, indentPx+20)).join('') : '';
+    return comboRows + toggleTripsRow + sortedTrips;
+  }
+
+  function nopolRowHtml(item){
+    const {nopol, trs, avgCycleHours, tonase, nExp, nDist} = item;
+    const open = state.fleetOpenNopol.has(nopol);
+    const caret = open ? '▼' : '▶';
+    const crossFlag = (nExp>1 || nDist>1);
+    const cellStyle = crossFlag ? ' style="color:var(--red);font-weight:600;"' : '';
+    const nopolRow = `<tr class="lvl-leaf" data-nopolkey="${escapeAttr(nopol)}" onclick="toggleFleetOpenNopol(this.dataset.nopolkey)" style="cursor:pointer;" title="Klik untuk lihat rincian distrik/expeditur${crossFlag ? ' — truk ini lintas expeditur/distrik' : ''}">
+      <td class="grouplabel" style="padding-left:20px;"><span class="lvl-caret">${caret}</span> ${nopol}${crossFlag ? ' <span style="color:var(--red);" title="Lintas expeditur/distrik">⚠</span>' : ''}</td>
+      <td>${trs.length.toLocaleString('id-ID')}</td><td>${avgCycleHours!=null?avgCycleHours.toFixed(1):'-'}</td><td>${fmtNum(tonase)}</td>
+      <td${cellStyle}>${nExp}</td><td${cellStyle}>${nDist}</td>
+      ${detailCols.map(c=>`<td>${detailAggValue(c, trs)}</td>`).join('')}</tr>`;
+    const breakdown = open ? nopolBreakdownRows(nopol, trs, 36) : '';
+    return nopolRow + breakdown;
   }
 
   let bodyHtml = summaryRow;
-  if(topField){
-    bodyHtml += topKeys.map(topKey=>{
-      const stats = topStats(topKey);
-      const isCollapsed = state.fleetCollapsedTop.has(topKey);
-      const caret = isCollapsed ? '▶' : '▼';
-      const topRow = `<tr class="lvl-subtotal" data-topkey="${escapeAttr(topKey)}" onclick="toggleFleetTop(this.dataset.topkey)" style="cursor:pointer;">
-        <td class="grouplabel"><span class="lvl-caret">${caret}</span> ${topKey} <span style="font-weight:400;color:var(--sub);">(${stats.truckUnik.toLocaleString('id-ID')} truk)</span></td>
-        <td>${stats.trips.toLocaleString('id-ID')}</td><td>${stats.avgCycleHours!=null?stats.avgCycleHours.toFixed(1):'-'}</td><td>${fmtNum(stats.tonase)}</td>
-        <td>${stats.nExp}</td><td>${stats.nRoute}</td>
-        ${detailCols.map(c=>`<td>${detailAggValue(c, stats.allRows)}</td>`).join('')}</tr>`;
-      const nopolRows = isCollapsed ? '' : nopolRowsHtml(topKey, byTop.get(topKey), 20);
-      return topRow + nopolRows;
-    }).join('');
-  } else {
-    bodyHtml += nopolRowsHtml('__ALL__', byTop.get('__ALL__') || new Map(), 0);
-  }
+  bodyHtml += FLEET_CATEGORY_DEFS.map(catDef=>{
+    const items = byCategory.get(catDef.key).sort((a,b)=>a.nopol.localeCompare(b.nopol));
+    const isCollapsed = state.fleetCollapsedCat.has(catDef.key);
+    const caret = isCollapsed ? '▶' : '▼';
+    // Category header carries the operational-metrics summary (avg cycle/waiting/dwell/ritase) so
+    // it's visible the moment you expand a category, without needing the detail-column picker.
+    const allCatRows = items.flatMap(it=>it.trs);
+    const catTonase = aggMetric(allCatRows,'TONASE');
+    const catWaiting = aggMetric(allCatRows,'WAITING');
+    const catDwell = aggMetric(allCatRows,'DWELL');
+    const catTrips = allCatRows.length;
+    const catRitase = items.length ? (catTrips/items.length) : 0;
+    const catCycleGaps = [];
+    items.forEach(it=>{ if(it.avgCycleHours!=null) catCycleGaps.push(it.avgCycleHours); });
+    const catAvgCycle = catCycleGaps.length ? catCycleGaps.reduce((a,b)=>a+b,0)/catCycleGaps.length : null;
+    const catRow = `<tr class="lvl-subtotal" data-catkey="${escapeAttr(catDef.key)}" onclick="toggleFleetCategory(this.dataset.catkey)" style="cursor:pointer;">
+      <td class="grouplabel"><span class="lvl-caret">${caret}</span> ${catDef.label} <span style="font-weight:400;color:var(--sub);">(${items.length.toLocaleString('id-ID')} truk)</span></td>
+      <td>${catTrips.toLocaleString('id-ID')}</td><td>${catAvgCycle!=null?catAvgCycle.toFixed(1):'-'}</td><td>${fmtNum(catTonase)}</td>
+      <td colspan="2" style="font-weight:400;color:var(--sub);text-align:left;">Avg Waiting: ${catWaiting!=null?catWaiting.toFixed(1):'-'} jam · Avg Dwell: ${catDwell!=null?catDwell.toFixed(1):'-'} jam · Ritase: ${catRitase.toFixed(2)}x</td>
+      ${detailCols.map(c=>`<td>${detailAggValue(c, allCatRows)}</td>`).join('')}</tr>`;
+    const nopolRows = isCollapsed ? '' : items.map(nopolRowHtml).join('');
+    return catRow + nopolRows;
+  }).join('');
 
   const theadRow1 = document.createElement('tr');
-  const groupHeaderLabel = topField ? `${levelLabelForField(topField)} › NOPOL › Trip (TGL SPJ)` : 'NOPOL › Trip (TGL SPJ)';
-  const th0 = document.createElement('th'); th0.textContent = groupHeaderLabel;
+  const th0 = document.createElement('th'); th0.textContent = 'Kategori › NOPOL › Rincian';
   theadRow1.appendChild(th0);
   FLEET_COLUMNS.forEach(c=>{ const th = document.createElement('th'); th.textContent = c.label; theadRow1.appendChild(th); });
   detailCols.forEach(c=>{ const th = document.createElement('th'); th.textContent = c.label; theadRow1.appendChild(th); });
