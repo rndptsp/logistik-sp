@@ -2,6 +2,39 @@
 <html lang="id">
 <head>
 <meta charset="UTF-8">
+<!-- Best-effort cache hints - GitHub Pages is a static host and can't send real Cache-Control
+     HTTP response headers, so these meta tags are NOT a guarantee (many browsers ignore
+     http-equiv cache directives for the disk cache entirely). The real fix is the version-check
+     script below, which force-reloads automatically when a new deploy is detected - these tags
+     are just an extra nudge, not the mechanism actually doing the work. -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<script>
+/* ================= AUTO VERSION CHECK (2026-07-26) =================
+   Fixes: someone else opens the dashboard on a stale cached copy after I ship an update, and I
+   have no way to reach into their browser to fix it. Self-healing instead of relying on the user
+   knowing to hard-refresh: fetch a tiny version.json with cache:'no-store' (bypasses disk cache
+   even when the HTML shell itself doesn't), compare to the version baked into THIS loaded copy,
+   and force a cache-busted reload if they differ. Runs once per detected version via
+   sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
+   MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
+window.APP_VERSION = '2026-07-26.1';
+(function(){
+  fetch('version.json?_=' + Date.now(), {cache:'no-store'})
+    .then(function(r){ return r.ok ? r.json() : null; })
+    .then(function(v){
+      if(v && v.v && v.v !== window.APP_VERSION){
+        var alreadyTriedFor = sessionStorage.getItem('dashVersionReloadedFor');
+        if(alreadyTriedFor !== v.v){
+          try{ sessionStorage.setItem('dashVersionReloadedFor', v.v); }catch(e){}
+          location.href = location.pathname + '?v=' + encodeURIComponent(v.v) + '&_=' + Date.now();
+        }
+      }
+    })
+    .catch(function(){ /* offline/blocked - fail silently, never break the page over this */ });
+})();
+</script>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Outbound Logistic Dashboard — PT Semen Padang</title>
 <link rel="manifest" href="manifest.webmanifest">
@@ -207,6 +240,7 @@ footer{text-align:center;font-size:11px;color:var(--sub);padding:18px 20px 26px;
 #gateOverlay{position:fixed;inset:0;background:linear-gradient(135deg,#7A1F1F,#3d0f0f);z-index:9999;display:flex;align-items:center;justify-content:center;padding:20px;}
 #gateOverlay.hidden{display:none;}
 .gatebox{background:#fff;border-radius:12px;padding:32px 28px;max-width:360px;width:100%;box-shadow:0 20px 60px rgba(0,0,0,.35);text-align:center;}
+.gatelogo{width:72px;height:72px;margin:0 auto 14px;display:block;}
 .gatebox h2{font-size:16px;margin:0 0 4px;color:#1A1A1A;}
 .gatebox p.gatesub{font-size:12px;color:var(--sub);margin:0 0 20px;}
 .gatebox input[type=password]{width:100%;box-sizing:border-box;padding:10px 12px;font-size:14px;border:1px solid var(--border);border-radius:8px;margin-bottom:12px;}
@@ -252,6 +286,7 @@ window.addEventListener('error', function(e){
 
 <div id="gateOverlay">
   <div class="gatebox">
+    <img class="gatelogo" src="icon-192.png" alt="PT Semen Padang">
     <h2>Outbound Logistic Dashboard</h2>
     <p class="gatesub">Data internal — masukkan kata sandi untuk membuka.</p>
     <form id="gateForm" autocomplete="off">
@@ -537,6 +572,44 @@ function mtdProrationRatio(year, month){
   const partialWeight = weekdayWeightSum(year, month, cutoff);
   return fullWeight>0 ? partialWeight/fullWeight : 0;
 }
+/* ================= TARGET STD — Selected-To-Date proration (2026-07-26) =================
+   Renamed from "Target MTD": that name always meant "prorated from day 1 through today/last-
+   data-day," ignoring whatever date range was actually selected in the filter bar - so a narrowed
+   selection (e.g. custom range Jul 5-15) still compared Realisasi for just those days against a
+   Target MTD built for the WHOLE month-to-date, understating/overstating %Achievement. Fix:
+   prorate against the selected range's actual from/to for each month, not always day-1-to-cutoff.
+   When "from" happens to be day 1 (the common case - MTD-style viewing), this reduces to exactly
+   the old Target MTD number, so nothing changes for that usage - confirmed w/ Rendy 2026-07-26. */
+function stdDayRangeForMonth(year, month, f){
+  const dim = daysInMonth(year, month);
+  const noFilterActive = !f || (!f.from && !f.to);
+  if(noFilterActive){
+    // No date filter selected at all -> preserve old default MTD behavior: day 1 through the
+    // latest actual data day (LAST_DATA_DAY_CACHE), same as mtdProrationRatio() above.
+    return {fromDay: 1, toDay: Math.min(LAST_DATA_DAY_CACHE[year+'-'+month] || 0, dim)};
+  }
+  let fromDay = 1, toDay = dim;
+  if(f.from){
+    if(f.from.getFullYear()===year && f.from.getMonth()+1===month) fromDay = f.from.getDate();
+    else if(f.from.getFullYear()>year || (f.from.getFullYear()===year && f.from.getMonth()+1>month)) fromDay = dim+1; // range starts after this month -> excluded
+  }
+  if(f.to){
+    if(f.to.getFullYear()===year && f.to.getMonth()+1===month) toDay = f.to.getDate();
+    else if(f.to.getFullYear()<year || (f.to.getFullYear()===year && f.to.getMonth()+1<month)) toDay = 0; // range ends before this month -> excluded
+  }
+  return {fromDay, toDay};
+}
+function stdProrationRatio(year, month, fromDay, toDay){
+  const dim = daysInMonth(year, month);
+  toDay = Math.max(0, Math.min(toDay, dim));
+  fromDay = Math.max(1, Math.min(fromDay, dim+1));
+  if(toDay < fromDay) return 0;
+  const fullWeight = weekdayWeightSum(year, month, dim);
+  if(fullWeight<=0) return 0;
+  const throughTo = weekdayWeightSum(year, month, toDay);
+  const throughFromMinus1 = fromDay>1 ? weekdayWeightSum(year, month, fromDay-1) : 0;
+  return (throughTo - throughFromMinus1) / fullWeight;
+}
 
 /* ================= FILTER DIMENSIONS (Excel-pivot style: state set = currently INCLUDED values,
    full by default; unchecking a box removes it from the set) ================= */
@@ -554,7 +627,8 @@ const DIMENSIONS = [
 const ALLV = {}; // dim key -> full sorted list of values
 const state = {
   gran:'daily', value:'TONASE', chartType:'stackedbar',
-  levels: [], // ordered list of DIMENSIONS[].field, in click order. Drives BOTH the summary
+  levels: ['NAMA_PROPINSI'], // default: table grouped by Provinsi on load (confirmed 2026-07-26) -
+              // ordered list of DIMENSIONS[].field, in click order. Drives BOTH the summary
               // table's drill-down (level 1 = first field clicked, level 2 = second, ...) and the
               // chart's series-split (uses levels[0] only, to keep the chart to a sane series count).
               // NOT a value filter — value filtering is the separate ▾ checklist popover below.
@@ -702,6 +776,7 @@ function populateFilters(){
 
   renderSinglePills('pChartType', [
     {value:'bar',label:'Bar'},{value:'stackedbar',label:'Stacked Bar'},{value:'line',label:'Line'},{value:'area',label:'Area'},
+    {value:'achievbars',label:'%Achievement + Tren'},
   ], state.chartType, v=>{ state.chartType=v; renderAll(); });
 
   renderValueList();
@@ -999,7 +1074,8 @@ function targetForGroup(rowsInGroup, f, scope){
     const t = targetForScope(+y, +m, f, scopedQuery);
     if(t.full!=null){
       full += t.full; kontrak += t.kontrak;
-      mtd += t.full * mtdProrationRatio(+y, +m);
+      const {fromDay, toDay} = stdDayRangeForMonth(+y, +m, f);
+      mtd += t.full * stdProrationRatio(+y, +m, fromDay, toDay); // `mtd` field name kept internally (many call sites), now represents Target STD
       if(t.foundAny) foundAny=true;
     }
   });
@@ -1198,6 +1274,57 @@ function computeSeries(f){
   return {bucketKeys, datasets: datasetsRaw, targetDatasets};
 }
 
+/* ================= %ACHIEVEMENT + TREN chart type (2026-07-26) =================
+   Inspired by a reference chart Rendy shared (bars = %-per-day labeled directly on the bar, two
+   overlaid lines for a volume comparison). Our data doesn't have "Sell In/Sell Out/Stock" - the
+   closest honest mapping is: bars = %Achievement per bucket (Realisasi ÷ Target STD, labeled),
+   lines = Realisasi Tonase vs Target Tonase for that same bucket. Deliberately collapsed to Total
+   only (no per-group split) even if a drill-down level is active - a reference-matching bar+2-line
+   combo with N group-lines layered on top would be unreadable clutter, and the summary table
+   below already gives full per-group numbers. Uses the same default target-priority fallback
+   (SNOP -> RKAP -> CONTRACT) as the %Achievement KPI card / table column, not a specific toggle. */
+function computeAchievBarsSeries(f){
+  const rows = applyRowFocus(filteredRE(f));
+  const buckets = new Map();
+  rows.forEach(r=>{
+    const bk = bucketKey(r, f.gran);
+    if(bk==null) return;
+    if(!buckets.has(bk)) buckets.set(bk, []);
+    buckets.get(bk).push(r);
+  });
+  const bucketKeys = [...buckets.keys()].sort();
+  const targetCapable = levelsAreTargetCapable(state.levels);
+  const tonase = bucketKeys.map(bk => aggMetric(buckets.get(bk), 'TONASE'));
+  const target = bucketKeys.map(bk => targetCapable ? targetForBucket(bk, f.gran, f, {}, undefined) : null);
+  const achievPct = bucketKeys.map((bk,i)=> (target[i]!=null && target[i]>0) ? round2(tonase[i]/target[i]*100) : null);
+  return {bucketKeys, tonase, target, achievPct};
+}
+/* Draws the %Achievement value directly above/inside each bar - no external datalabels plugin
+   (this file bundles everything locally on purpose, see the note near <head>), so a small custom
+   Chart.js plugin does the same job with plain canvas text. Registered once, only active on charts
+   that opt in via options.plugins.achievBarLabels.enabled, so it never touches the other chart
+   types. */
+const achievBarLabelsPlugin = {
+  id: 'achievBarLabels',
+  afterDatasetsDraw(chart, args, opts){
+    if(!opts || !opts.enabled) return;
+    const {ctx} = chart;
+    const meta = chart.getDatasetMeta(0);
+    if(!meta || meta.type!=='bar') return;
+    ctx.save();
+    ctx.font = '600 10px system-ui, sans-serif';
+    ctx.fillStyle = '#3d0f0f';
+    ctx.textAlign = 'center';
+    meta.data.forEach((bar, i)=>{
+      const val = chart.data.datasets[0].data[i];
+      if(val==null) return;
+      ctx.fillText(val.toFixed(1)+'%', bar.x, bar.y - 6);
+    });
+    ctx.restore();
+  }
+};
+if(typeof Chart !== 'undefined' && Chart.register) Chart.register(achievBarLabelsPlugin);
+
 function chartLabel(bk, gran){
   if(gran==='monthly'){ const [y,m] = bk.split('-'); return `${MONTH_NAMES_ID[+m]} ${y}`; }
   return bk;
@@ -1226,9 +1353,6 @@ function renderTargetToggles(){
 
 function renderChart(){
   const f = getFilterState();
-  const {bucketKeys, datasets, targetDatasets} = computeSeries(f);
-  const labels = bucketKeys.map(bk=>chartLabel(bk, f.gran));
-  const chartGroupField = state.levels.length ? state.levels[0] : null;
   const focusBanner = document.getElementById('rowFocusBanner');
   if(state.rowFocus.length){
     focusBanner.style.display = 'flex';
@@ -1238,6 +1362,45 @@ function renderChart(){
     focusBanner.innerHTML = '';
   }
   document.getElementById('groupByLabel').textContent = levelsBreadcrumb();
+
+  if(f.chartType==='achievbars'){
+    document.getElementById('chartTitle').textContent =
+      `% Achievement + Tren Realisasi vs Target — ${({hourly:'Per Jam',daily:'Harian',weekly:'Mingguan (mulai Senin)',monthly:'Bulanan',quarterly:'Kuartalan'})[f.gran]} (Total)`;
+    const {bucketKeys, tonase, target, achievPct} = computeAchievBarsSeries(f);
+    const labels = bucketKeys.map(bk=>chartLabel(bk, f.gran));
+    if(chartInstance) chartInstance.destroy();
+    const ctx = document.getElementById('mainChart').getContext('2d');
+    chartInstance = new Chart(ctx, {
+      data: {
+        labels,
+        datasets: [
+          {type:'bar', label:'% Achievement', data:achievPct, backgroundColor:'#D9D9D9', borderRadius:3, yAxisID:'yPct', order:2},
+          {type:'line', label:'Realisasi (ton)', data:tonase, borderColor:'#1F5FA8', backgroundColor:'#1F5FA8', borderWidth:2.5, pointRadius:2, tension:0.25, fill:false, yAxisID:'yTon', order:1},
+          {type:'line', label:'Target (ton)', data:target, borderColor:'#E2211D', backgroundColor:'#E2211D', borderWidth:2.5, pointRadius:2, tension:0.25, fill:false, yAxisID:'yTon', order:1},
+        ]
+      },
+      options: {
+        responsive:true, maintainAspectRatio:false,
+        interaction:{mode:'index', intersect:false},
+        layout:{padding:{top:20, right:12, bottom:8, left:8}},
+        plugins:{
+          legend:{labels:{color:'#1A1A1A', boxWidth:12, font:{size:10}, padding:16}},
+          tooltip:{mode:'index', intersect:false, callbacks:{label:(c)=> c.dataset.label==='% Achievement' ? `${c.formattedValue}%` : `${c.dataset.label}: ${Number(c.raw).toLocaleString('id-ID')} ton`}},
+          achievBarLabels:{enabled:true},
+        },
+        scales:{
+          x:{ticks:{color:'#6B6B6B', font:{size:10}, autoSkip:true, maxRotation:60, minRotation:0}, grid:{display:false}},
+          yPct:{position:'left', ticks:{color:'#6B6B6B', font:{size:10}, callback:v=>v+'%'}, grid:{color:'#F0F0F0'}},
+          yTon:{position:'right', ticks:{color:'#6B6B6B', font:{size:10}}, grid:{display:false}},
+        }
+      }
+    });
+    return;
+  }
+
+  const {bucketKeys, datasets, targetDatasets} = computeSeries(f);
+  const labels = bucketKeys.map(bk=>chartLabel(bk, f.gran));
+  const chartGroupField = state.levels.length ? state.levels[0] : null;
   document.getElementById('chartTitle').textContent =
     `${VALUE_LABELS[f.value]} — ${({hourly:'Per Jam',daily:'Harian',weekly:'Mingguan (mulai Senin)',monthly:'Bulanan',quarterly:'Kuartalan'})[f.gran]}${chartGroupField ? ' per '+levelLabelForField(chartGroupField) : ''}`;
 
@@ -1296,9 +1459,12 @@ function renderChart(){
         tooltip: {mode:'index', intersect:false},
       },
       scales: {
-        x: {stacked, offset:true, ticks:{color:'#6B6B6B', font:{size:10}, autoSkip:true, maxRotation:60, minRotation:0}, grid:{color:'#EAEAEA'}},
+        // Visual polish 2026-07-26 (per reference chart Rendy shared): dropped the vertical
+        // gridlines entirely (pure visual noise on a category axis with clear tick labels already)
+        // and lightened the horizontal ones so the data itself reads first.
+        x: {stacked, offset:true, ticks:{color:'#6B6B6B', font:{size:10}, autoSkip:true, maxRotation:60, minRotation:0}, grid:{display:false}},
         xEdge: {type:'category', labels, offset:false, display:false, position:'bottom'},
-        y: {stacked, ticks:{color:'#6B6B6B', font:{size:10}}, grid:{color:'#EAEAEA'}},
+        y: {stacked, ticks:{color:'#6B6B6B', font:{size:10}}, grid:{color:'#F0F0F0'}},
       }
     }
   });
@@ -1353,6 +1519,7 @@ function renderKPIs(){
     notes.push('Filter Distributor/Source/Incoterm aktif — target tetap dihitung pada level Provinsi/Distrik/Expeditur yang aktif (tidak bisa menyempit ke Distributor/Source/Incoterm), karena data target tidak punya dimensi tersebut.');
   }
   notes.push('Tonase (MTD) / Tonase Bulan Lalu (MTD LM) / % vs Bulan Lalu SELALU memakai periode bulan berjalan (tanggal 1 s.d. hari data realisasi terakhir) dan padanannya 1 bulan sebelumnya — TIDAK mengikuti rentang tanggal yang dipilih di atas, dan mengabaikan checklist Tahun/Bulan karena harus bisa menjangkau di luar keduanya. KPI/grafik/tabel lain tetap mengikuti filter tanggal yang dipilih seperti biasa.');
+  notes.push('Target STD (Selected-To-Date) pada tabel di bawah mengikuti rentang tanggal yang dipilih di atas — jika rentang tidak dimulai tanggal 1, Target STD dihitung khusus untuk rentang tersebut (bukan dari awal bulan). Jika "dari" = tanggal 1, Target STD = Target MTD seperti biasa.');
   gapEl.style.display = 'block';
   gapEl.textContent = notes.join(' ');
 }
@@ -1373,10 +1540,10 @@ function fmtPct(val){ return val!=null ? val.toFixed(1)+'%' : 'N/A'; }
 const TABLE_COLUMNS = [
   {key:'kontrak', label:'Vol Kontrak (ton)', get:d=>d.targetOK&&d.foundAny?d.kontrak:null, render:d=>fmtNum(d.targetOK&&d.foundAny?d.kontrak:null), display:d=>fmtNum(d.targetOK&&d.foundAny?d.kontrak:null)},
   {key:'full', label:'Target FM (ton)', get:d=>d.targetOK&&d.foundAny?d.full:null, render:d=>fmtNum(d.targetOK&&d.foundAny?d.full:null), display:d=>fmtNum(d.targetOK&&d.foundAny?d.full:null)},
-  {key:'mtd', label:'Target MTD (ton)', get:d=>d.targetOK&&d.foundAny?d.mtd:null, render:d=>fmtNum(d.targetOK&&d.foundAny?d.mtd:null), display:d=>fmtNum(d.targetOK&&d.foundAny?d.mtd:null)},
-  {key:'tonase', label:'Vol. MTD (ton)', get:d=>d.tonase, render:d=>fmtNum(d.tonase), display:d=>fmtNum(d.tonase)},
+  {key:'mtd', label:'Target STD (ton)', get:d=>d.targetOK&&d.foundAny?d.mtd:null, render:d=>fmtNum(d.targetOK&&d.foundAny?d.mtd:null), display:d=>fmtNum(d.targetOK&&d.foundAny?d.mtd:null)},
+  {key:'tonase', label:'Vol. STD (ton)', get:d=>d.tonase, render:d=>fmtNum(d.tonase), display:d=>fmtNum(d.tonase)},
   {key:'achiev', label:'%Achiev', get:d=>d.achiev, render:d=>`<span class="pct-cell" style="background:${pctColor(d.achiev)}">${fmtPct(d.achiev)}</span>`, display:d=>fmtPct(d.achiev)},
-  {key:'gapMTD', label:'Gap MTD (ton)', get:d=>d.targetOK&&d.foundAny?d.gapMTD:null, render:d=>fmtGap(d.targetOK&&d.foundAny?d.gapMTD:null), display:d=>fmtGap(d.targetOK&&d.foundAny?d.gapMTD:null).replace(/<[^>]+>/g,'')},
+  {key:'gapMTD', label:'Gap STD (ton)', get:d=>d.targetOK&&d.foundAny?d.gapMTD:null, render:d=>fmtGap(d.targetOK&&d.foundAny?d.gapMTD:null), display:d=>fmtGap(d.targetOK&&d.foundAny?d.gapMTD:null).replace(/<[^>]+>/g,'')},
   {key:'gapToFM', label:'Gap to FM (ton)', get:d=>d.targetOK&&d.foundAny?d.gapToFM:null, render:d=>fmtGap(d.targetOK&&d.foundAny?d.gapToFM:null), display:d=>fmtGap(d.targetOK&&d.foundAny?d.gapToFM:null).replace(/<[^>]+>/g,'')},
   {key:'so', label:'SO (ton)', get:d=>d.so, render:d=>fmtNum(d.so), display:d=>fmtNum(d.so)},
   {key:'ofpct', label:'%OF', get:d=>d.ofpct, render:d=>`<span class="pct-cell" style="background:${pctColor(d.ofpct)}">${fmtPct(d.ofpct)}</span>`, display:d=>fmtPct(d.ofpct)},
@@ -1828,15 +1995,28 @@ const FLEET_COLUMNS = [
   {key:'tonase', label:'Total Tonase (ton)', get:d=>d.tonase, render:d=>fmtNum(d.tonase), display:d=>fmtNum(d.tonase)},
 ];
 const FLEET_DETAIL_COLUMN_DEFS = [
-  {key:'JAM_ANTRI', label:'Jam Antri', get:r=>r.JAM_ANTRI||'-'},
-  {key:'JAM_MASUK', label:'Jam Masuk', get:r=>r.JAM_MASUK||'-'},
-  {key:'JAM_KELUAR', label:'Jam Keluar', get:r=>r.JAM_KELUAR||'-'},
-  {key:'WAITING_TIME_JAM', label:'Waiting (jam)', get:r=>r.WAITING_TIME_JAM!=null?Number(r.WAITING_TIME_JAM).toFixed(1):'-'},
-  {key:'DWELL_TIME_JAM', label:'Dwell (jam)', get:r=>r.DWELL_TIME_JAM!=null?Number(r.DWELL_TIME_JAM).toFixed(1):'-'},
-  {key:'BERAT_KOSONG', label:'Berat Kosong', get:r=>r.BERAT_KOSONG!=null?fmtNum(r.BERAT_KOSONG):'-'},
-  {key:'BERAT_ISI', label:'Berat Isi', get:r=>r.BERAT_ISI!=null?fmtNum(r.BERAT_ISI):'-'},
-  {key:'BERAT_REAL', label:'Berat Real', get:r=>r.BERAT_REAL!=null?fmtNum(r.BERAT_REAL):'-'},
+  {key:'JAM_ANTRI', label:'Jam Antri', agg:'none', get:r=>r.JAM_ANTRI||'-'},
+  {key:'JAM_MASUK', label:'Jam Masuk', agg:'none', get:r=>r.JAM_MASUK||'-'},
+  {key:'JAM_KELUAR', label:'Jam Keluar', agg:'none', get:r=>r.JAM_KELUAR||'-'},
+  {key:'WAITING_TIME_JAM', label:'Waiting (jam)', agg:'avg', get:r=>r.WAITING_TIME_JAM!=null?Number(r.WAITING_TIME_JAM).toFixed(1):'-'},
+  {key:'DWELL_TIME_JAM', label:'Dwell (jam)', agg:'avg', get:r=>r.DWELL_TIME_JAM!=null?Number(r.DWELL_TIME_JAM).toFixed(1):'-'},
+  {key:'BERAT_KOSONG', label:'Berat Kosong', agg:'sum', get:r=>r.BERAT_KOSONG!=null?fmtNum(r.BERAT_KOSONG):'-'},
+  {key:'BERAT_ISI', label:'Berat Isi', agg:'sum', get:r=>r.BERAT_ISI!=null?fmtNum(r.BERAT_ISI):'-'},
+  {key:'BERAT_REAL', label:'Berat Real', agg:'sum', get:r=>r.BERAT_REAL!=null?fmtNum(r.BERAT_REAL):'-'},
 ];
+/* Group-level (top-tier / NOPOL) aggregate for a detail column, shown BEFORE drilling into
+   individual trip rows. agg:'avg' -> mean (Waiting/Dwell, can't sum meaningfully across trips);
+   agg:'sum' -> total (Berat Kosong/Isi/Real, tonnage-like); agg:'none' -> always '-' (Jam Antri/
+   Masuk/Keluar are clock-times, no sane group aggregate) - user confirmed this split 2026-07-26. */
+function detailAggValue(col, rows){
+  if(col.agg === 'avg' || col.agg === 'sum'){
+    const vals = rows.map(r=>Number(r[col.key])).filter((v,i)=>!isNaN(v) && rows[i][col.key]!=null);
+    if(!vals.length) return '-';
+    const total = vals.reduce((a,b)=>a+b,0);
+    return col.agg==='avg' ? (total/vals.length).toFixed(1) : fmtNum(total);
+  }
+  return '-';
+}
 function avgCycleHoursFor(sortedRowsByDate){
   if(sortedRowsByDate.length<2) return null;
   const gaps=[];
@@ -1902,7 +2082,7 @@ function renderFleetTable(){
       const sorted = trs.slice().sort((a,b)=>a._d-b._d);
       for(let i=1;i<sorted.length;i++) allGaps.push((sorted[i]._d-sorted[i-1]._d)/3600000);
     });
-    return {trips: allRows.length, truckUnik, avgCycleHours: allGaps.length?allGaps.reduce((a,b)=>a+b,0)/allGaps.length:null, tonase: aggMetric(allRows,'TONASE')};
+    return {trips: allRows.length, truckUnik, avgCycleHours: allGaps.length?allGaps.reduce((a,b)=>a+b,0)/allGaps.length:null, tonase: aggMetric(allRows,'TONASE'), allRows};
   }
 
   const topKeys = [...byTop.keys()].sort();
@@ -1933,7 +2113,7 @@ function renderFleetTable(){
       const nopolRow = `<tr class="lvl-leaf" data-nopolkey="${escapeAttr(nopolKey)}" onclick="toggleFleetNopol(this.dataset.nopolkey)" style="cursor:pointer;" title="Klik untuk lihat/sembunyikan trip individual">
         <td class="grouplabel" style="padding-left:${indentBase}px;"><span class="lvl-caret">${caret}</span> ${nopol}</td>
         <td>${stats.trips.toLocaleString('id-ID')}</td><td>${stats.avgCycleHours!=null?stats.avgCycleHours.toFixed(1):'-'}</td><td>${fmtNum(stats.tonase)}</td>
-        ${detailCols.map(()=>'<td>-</td>').join('')}</tr>`;
+        ${detailCols.map(c=>`<td>${detailAggValue(c, trs)}</td>`).join('')}</tr>`;
       const tripRows = expanded ? stats.sorted.map(r=>tripRowHtml(r, indentBase+20)).join('') : '';
       return nopolRow + tripRows;
     }).join('');
@@ -1948,7 +2128,7 @@ function renderFleetTable(){
       const topRow = `<tr class="lvl-subtotal" data-topkey="${escapeAttr(topKey)}" onclick="toggleFleetTop(this.dataset.topkey)" style="cursor:pointer;">
         <td class="grouplabel"><span class="lvl-caret">${caret}</span> ${topKey} <span style="font-weight:400;color:var(--sub);">(${stats.truckUnik.toLocaleString('id-ID')} truk)</span></td>
         <td>${stats.trips.toLocaleString('id-ID')}</td><td>${stats.avgCycleHours!=null?stats.avgCycleHours.toFixed(1):'-'}</td><td>${fmtNum(stats.tonase)}</td>
-        ${detailCols.map(()=>'<td>-</td>').join('')}</tr>`;
+        ${detailCols.map(c=>`<td>${detailAggValue(c, stats.allRows)}</td>`).join('')}</tr>`;
       const nopolRows = isCollapsed ? '' : nopolRowsHtml(topKey, byTop.get(topKey), 20);
       return topRow + nopolRows;
     }).join('');
@@ -2105,13 +2285,9 @@ function armSession(){
   document.addEventListener(evt, resetIdleTimer, {passive:true});
 });
 
-// Re-lock any time the tab/app is hidden (backgrounded) or the page is restored from
-// bfcache (e.g. phone browser switching apps then coming back) - "every time it opens"
-// requirement: don't rely on a still-live in-memory key just because the JS context survived.
-document.addEventListener('visibilitychange', ()=>{
-  if(document.visibilityState === 'hidden') lockSession();
-});
-window.addEventListener('pagehide', lockSession);
+// Note: previously also locked immediately on tab-hide/backgrounding (visibilitychange/pagehide).
+// Removed per user request - too aggressive in daily use. Session now locks ONLY after
+// IDLE_LOCK_MS (15 min) of no activity, regardless of tab switching.
 </script>
 </body>
 </html>
