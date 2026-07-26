@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = '2026-07-27.17';
+window.APP_VERSION = '2026-07-27.19';
 (function(){
   fetch('version.json?_=' + Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.json() : null; })
@@ -439,9 +439,25 @@ const loadedSoMonths = new Set();
 const reMonthLoadPromises = new Map();
 const soMonthLoadPromises = new Map();
 
+/* HIDDEN FROM WEBAPP, KEPT IN DATABASE - 2026-07-27 per Rendy: PP Belawan (plant code 79B4) is
+   Semen Andalas's own self-haul volume (realisasi.csv: EXPEDITUR_NAMA='ANGKUT SENDIRI',
+   613 rows; so.csv: EXPEDITUR_NAMA='SBA', 134 rows) - not part of PT Semen Padang's own Outbound
+   Logistic operation. Rendy's explicit instruction: "keep the data in the database, but do not
+   make it visible in the webapp" - so the underlying realisasi.csv/so.csv files are NOT touched
+   (still contain these rows, full audit trail preserved), but they're filtered out right here at
+   the data-loading boundary so they never enter RE/SO and therefore never appear in any chart,
+   table, or KPI. Filtered by plant code alone (KD_PLANT/PLANT === '79B4'), NOT by vendor name -
+   79H7 (Semen Baturaja/SMBR) also has some 'ANGKUT SENDIRI'-labeled rows but those legitimately
+   stay (confirmed earlier: that SMBR volume is correctly counted under Area 1/Semen Padang). */
+const HIDDEN_PLANT_CODE = '79B4';
 function toObjects(payload){
   const {header, rows} = payload;
-  return rows.map(r=>{ const o={}; for(let i=0;i<header.length;i++) o[header[i]]=r[i]; return o; });
+  const kdPlantIdx = header.indexOf('KD_PLANT');
+  const soPlantIdx = header.indexOf('PLANT');
+  const plantIdx = kdPlantIdx>=0 ? kdPlantIdx : soPlantIdx;
+  return rows
+    .filter(r=> plantIdx<0 || String(r[plantIdx])!==HIDDEN_PLANT_CODE)
+    .map(r=>{ const o={}; for(let i=0;i<header.length;i++) o[header[i]]=r[i]; return o; });
 }
 function b64ToBuf(b64){
   const bin = atob(b64);
