@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = '2026-07-26.1';
+window.APP_VERSION = '2026-07-26.2';
 (function(){
   fetch('version.json?_=' + Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.json() : null; })
@@ -409,6 +409,14 @@ let manifest = null;
 let cryptoKey = null;
 const loadedReMonths = new Set();
 const loadedSoMonths = new Set();
+// In-flight load promises, keyed by month - fixes a real bug found 2026-07-26 (verified: RE.length
+// went 9110 -> 20726 and 5808 NO_SPJ values ended up duplicated exactly 2x) caused by two
+// concurrent ensureMonthsLoaded() calls (e.g. changing "from" then "to" in quick succession)
+// BOTH checking "not loaded yet" before either had finished awaiting its fetch, so both concat'd
+// the same month's rows into RE. Fix: share ONE promise per month - a second concurrent caller
+// awaits the first's in-flight fetch instead of starting its own.
+const reMonthLoadPromises = new Map();
+const soMonthLoadPromises = new Map();
 
 function toObjects(payload){
   const {header, rows} = payload;
@@ -444,21 +452,53 @@ async function fetchAndDecrypt(url){
 /** Fetches + decrypts + merges any of the given "YYYY-MM" months not already loaded into RE/SO.
     Safe to call repeatedly - already-loaded months are skipped. Re-indexes dates only if anything
     new was actually added (cheap re-scan of the whole array; fine at this data volume). */
+/* Dedup safety net (belt-and-suspenders on top of the in-flight-promise fix above): NO_SPJ is the
+   shipment document number and should be unique across all of RE. If anything ever slips a
+   duplicate in anyway, this keeps totals honest instead of silently double-counting tonase. */
+function dedupReByNoSpj(){
+  const seen = new Set();
+  const before = RE.length;
+  RE = RE.filter(r=>{
+    const k = r.NO_SPJ;
+    if(k==null) return true; // don't drop rows with no SPJ number, nothing to dedup against
+    if(seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+  if(RE.length !== before) console.warn(`dedupReByNoSpj: removed ${before-RE.length} duplicate row(s)`);
+}
+function loadReMonth(m){
+  if(loadedReMonths.has(m)) return Promise.resolve(false);
+  if(!reMonthLoadPromises.has(m)){
+    const p = fetchAndDecrypt(`chunks/re_${m}.json`).then(payload=>{
+      RE = RE.concat(toObjects(payload));
+      loadedReMonths.add(m);
+      return true;
+    }).finally(()=> reMonthLoadPromises.delete(m));
+    reMonthLoadPromises.set(m, p);
+  }
+  return reMonthLoadPromises.get(m);
+}
+function loadSoMonth(m){
+  if(loadedSoMonths.has(m)) return Promise.resolve(false);
+  if(!soMonthLoadPromises.has(m)){
+    const p = fetchAndDecrypt(`chunks/so_${m}.json`).then(payload=>{
+      SO = SO.concat(toObjects(payload));
+      loadedSoMonths.add(m);
+      return true;
+    }).finally(()=> soMonthLoadPromises.delete(m));
+    soMonthLoadPromises.set(m, p);
+  }
+  return soMonthLoadPromises.get(m);
+}
 async function ensureMonthsLoaded(months){
-  const reToLoad = months.filter(m=> manifest.realisasi_months.includes(m) && !loadedReMonths.has(m));
-  const soToLoad = months.filter(m=> manifest.so_months.includes(m) && !loadedSoMonths.has(m));
-  for(const m of reToLoad){
-    const payload = await fetchAndDecrypt(`chunks/re_${m}.json`);
-    RE = RE.concat(toObjects(payload));
-    loadedReMonths.add(m);
-  }
-  for(const m of soToLoad){
-    const payload = await fetchAndDecrypt(`chunks/so_${m}.json`);
-    SO = SO.concat(toObjects(payload));
-    loadedSoMonths.add(m);
-  }
-  if(reToLoad.length){ reindexDates(); }
-  return reToLoad.length + soToLoad.length;
+  const reMonths = months.filter(m=> manifest.realisasi_months.includes(m));
+  const soMonths = months.filter(m=> manifest.so_months.includes(m));
+  const results = await Promise.all([...reMonths.map(loadReMonth), ...soMonths.map(loadSoMonth)]);
+  const addedAnyRe = results.slice(0, reMonths.length).some(Boolean);
+  const addedAnyTotal = results.filter(Boolean).length;
+  if(addedAnyRe){ dedupReByNoSpj(); reindexDates(); }
+  return addedAnyTotal;
 }
 function monthsInRange(fromDate, toDate){
   const months = [];
@@ -769,10 +809,7 @@ function populateFilters(){
 
   renderDatePresets();
 
-  renderSinglePills('pGranularity', [
-    {value:'hourly',label:'Hourly'},{value:'daily',label:'Daily'},{value:'weekly',label:'Weekly'},
-    {value:'monthly',label:'Monthly'},{value:'quarterly',label:'Quarterly'},
-  ], state.gran, v=>{ state.gran=v; renderAll(); });
+  renderGranularityPills();
 
   renderSinglePills('pChartType', [
     {value:'bar',label:'Bar'},{value:'stackedbar',label:'Stacked Bar'},{value:'line',label:'Line'},{value:'area',label:'Area'},
@@ -1725,19 +1762,29 @@ function escapeAttr(s){
   return String(s==null?'':s).replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 /* ================= DATE PRESETS + CUSTOM CALENDAR (replaces Tahun/Bulan checklists) ================= */
+function renderGranularityPills(){
+  renderSinglePills('pGranularity', [
+    {value:'hourly',label:'Hourly'},{value:'daily',label:'Daily'},{value:'weekly',label:'Weekly'},
+    {value:'monthly',label:'Monthly'},{value:'quarterly',label:'Quarterly'},
+  ], state.gran, v=>{ state.gran=v; renderAll(); });
+}
 function sameDay(a,b){ return a && b && a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate(); }
 function renderDatePresets(){
   const el = document.getElementById('datePresets');
   if(!el) return;
   el.innerHTML = '';
+  // English labels (2026-07-26, replacing the Indonesian ones) + a suggested granularity per
+  // preset so picking a wide range doesn't dump 300+ daily bars on the chart by default. This is
+  // only a DEFAULT suggestion, not a lock - the Granularitas pills above the chart still work
+  // independently and the user can change it right after picking a preset.
   const presets = [
-    {label:'Hari Ini', fn: ()=>{ const t=new Date(); return [t,t]; }},
-    {label:'7 Hari Terakhir', fn: ()=>{ const t=new Date(); const from=new Date(t); from.setDate(t.getDate()-6); return [from,t]; }},
-    {label:'Bulan Ini', fn: ()=>{ const t=new Date(); return [new Date(t.getFullYear(),t.getMonth(),1), t]; }},
-    {label:'Bulan Lalu', fn: ()=>{ const t=new Date(); return [new Date(t.getFullYear(),t.getMonth()-1,1), new Date(t.getFullYear(),t.getMonth(),0)]; }},
-    {label:'Kuartal Ini', fn: ()=>{ const t=new Date(); const qm=Math.floor(t.getMonth()/3)*3; return [new Date(t.getFullYear(),qm,1), t]; }},
-    {label:'Tahun Ini', fn: ()=>{ const t=new Date(); return [new Date(t.getFullYear(),0,1), t]; }},
-    {label:'Semua', fn: ()=>{ const dates = RE.map(r=>r._d).filter(Boolean); if(!dates.length) return [null,null]; return [new Date(Math.min(...dates)), new Date(Math.max(...dates))]; }},
+    {label:'Today', gran:'hourly', fn: ()=>{ const t=new Date(); return [t,t]; }},
+    {label:'Last 7 Days', gran:'daily', fn: ()=>{ const t=new Date(); const from=new Date(t); from.setDate(t.getDate()-6); return [from,t]; }},
+    {label:'This Month', gran:'daily', fn: ()=>{ const t=new Date(); return [new Date(t.getFullYear(),t.getMonth(),1), t]; }},
+    {label:'Last Month', gran:'daily', fn: ()=>{ const t=new Date(); return [new Date(t.getFullYear(),t.getMonth()-1,1), new Date(t.getFullYear(),t.getMonth(),0)]; }},
+    {label:'This Quarter', gran:'weekly', fn: ()=>{ const t=new Date(); const qm=Math.floor(t.getMonth()/3)*3; return [new Date(t.getFullYear(),qm,1), t]; }},
+    {label:'This Year', gran:'monthly', fn: ()=>{ const t=new Date(); return [new Date(t.getFullYear(),0,1), t]; }},
+    {label:'All Time', gran:'monthly', fn: ()=>{ const dates = RE.map(r=>r._d).filter(Boolean); if(!dates.length) return [null,null]; return [new Date(Math.min(...dates)), new Date(Math.max(...dates))]; }, granIfMultiYear:'quarterly'},
   ];
   presets.forEach(p=>{
     const b = document.createElement('button'); b.type='button'; b.className='pill';
@@ -1745,14 +1792,17 @@ function renderDatePresets(){
     b.addEventListener('click', async ()=>{
       const [from,to] = p.fn();
       if(!from || !to) return;
-      if(p.label==='Semua'){
-        // "Semua" may reach outside what's currently loaded (lazy monthly chunks) - ensure the
-        // full manifest range is fetched before setting the filter, otherwise it'd silently
-        // clip to whatever happens to be loaded already.
+      if(p.label==='All Time'){
+        // May reach outside what's currently loaded (lazy monthly chunks) - ensure the full
+        // manifest range is fetched before setting the filter, otherwise it'd silently clip to
+        // whatever happens to be loaded already.
         if(manifest){ try{ await ensureMonthsLoaded(manifest.realisasi_months||[]); }catch(err){ console.error('Gagal memuat seluruh bulan:', err); } }
       }
       document.getElementById('fDateFrom').value = fmtDate(from);
       document.getElementById('fDateTo').value = fmtDate(to);
+      const spansMultiYear = p.granIfMultiYear && to.getFullYear() > from.getFullYear();
+      state.gran = spansMultiYear ? p.granIfMultiYear : p.gran;
+      renderGranularityPills();
       await onDateFilterChange();
     });
     el.appendChild(b);
