@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = '2026-07-26.15';
+window.APP_VERSION = '2026-07-27.17';
 (function(){
   fetch('version.json?_=' + Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.json() : null; })
@@ -269,6 +269,11 @@ footer{text-align:center;font-size:11px;color:var(--sub);padding:18px 20px 26px;
 
 /* ===== Collapsible sections (KPI/chart/table/Armada/filter bar) ===== */
 .panel-head{cursor:pointer;user-select:none;}
+/* ADDED 2026-07-27 per Rendy: hint shown next to the Tren panel title while it's collapsed, so
+   people notice there's a chart to expand rather than skipping past the panel entirely. Hidden
+   again once expanded (the chart is already visible then, hint would be redundant) - toggled in
+   toggleSection() below. */
+.chart-hint{font-size:11px;color:var(--accent-dark,#B33A34);background:#FFF3F0;border:1px solid #F5CFC7;border-radius:12px;padding:3px 10px;font-weight:600;white-space:nowrap;}
 .panel-caret{display:inline-block;width:16px;color:var(--accent);}
 .panel-body.panel-collapsed{display:none;}
 #kpiPanelHead, #filterPanelHead{cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;padding:6px 2px;color:var(--accent-dark,#1A1A1A);}
@@ -367,6 +372,7 @@ window.addEventListener('error', function(e){
   <div class="panel">
     <div class="panel-head" onclick="toggleSection('chartBody')">
       <h2><span class="panel-caret" id="chartBody-caret">▶</span> <span id="chartTitle">Tren</span></h2>
+      <span class="chart-hint" id="chartHint">📊 Klik untuk lihat tren &amp; grafik</span>
     </div>
     <div class="panel-body panel-collapsed" id="chartBody">
       <div class="pillrow" id="targetToggleRow"></div>
@@ -381,7 +387,7 @@ window.addEventListener('error', function(e){
   <div class="panel">
     <div class="panel-head" onclick="toggleSection('summaryBody')">
       <h2><span class="panel-caret" id="summaryBody-caret">▼</span> Ringkasan — Level: <span id="groupByLabel">Tidak ada (Total)</span></h2>
-      <span class="sub" style="font-size:10px;color:var(--sub);">Warna %Achiev/%OF: hijau ≥100%, kuning→merah di bawah 100%. Target hanya tersedia bila semua level drill-down aktif = Provinsi/Distrik/Expeditur (tidak pernah untuk Distributor/Source/Incoterm). % vs LM = dibanding periode yang sama persis digeser mundur 1 bulan.</span>
+      <span class="sub" style="font-size:10px;color:var(--sub);">Warna %Achiev/%OF: hijau ≥100%, kuning→merah di bawah 100%. Target hanya tersedia bila semua level drill-down aktif = Provinsi/Distrik/Expeditur/Source (tidak untuk Distributor; Incoterm selalu FRC jadi tidak membatasi). % vs LM = dibanding periode yang sama persis digeser mundur 1 bulan.</span>
     </div>
     <div class="panel-body" id="summaryBody">
       <div class="tablewrap"><table id="summaryTable"></table></div>
@@ -930,14 +936,32 @@ function renderValueList(){
   });
 }
 /* Grouping is now driven by state.levels (ordered, click-toggled — see createPivotFilter above),
-   not a single selector. Target (Kontrak/RKAP/SNOP) only exists at Provinsi+Distrik+Expeditur
-   grain — if ANY active drill-down level is Distributor/Source/Incoterm, target is suppressed
+   not a single selector. Target (Kontrak/RKAP/SNOP) exists at Provinsi/Distrik/Expeditur/Source
+   grain as of 2026-07-27 (see SOURCE_PLANT note below); Incoterm is a no-op (always FRC). Only
+   Distributor has no target dimension — if it's an active drill-down level, target is suppressed
    entirely for both the table and the chart (volume/SO/trip metrics are unaffected). */
 const DIM_LABELS = {NAMA_PROPINSI:'Provinsi',NAMA_AREA_DISTRIK:'Distrik',DISTRIBUTOR:'Distributor',EXPEDITUR_NAMA:'Expeditur',SOURCE_PLANT:'Source',INCOTERM:'Incoterm'};
 function levelLabelForField(field){ return DIM_LABELS[field] || field; }
 function levelsBreadcrumb(){ return state.levels.length ? state.levels.map(levelLabelForField).join(' › ') : 'Tidak ada (Total)'; }
-const TARGET_CAPABLE_FIELDS = new Set(['NAMA_PROPINSI','NAMA_AREA_DISTRIK','EXPEDITUR_NAMA']);
-function levelsAreTargetCapable(levels){ return levels.every(l=> TARGET_CAPABLE_FIELDS.has(l)); }
+/* ADDED 2026-07-27 per Rendy: targets_monthly.csv now carries a SOURCE_PLANT column (dispatch/
+   loading point - CP INDARUNG/PP BENGKULU/GP DUMAI/PP BELAWAN - confirmed as the definition Rendy
+   wants, NOT the SNOP sheet's "PROD. PLANT" manufacturing-origin field, which disagreed with real
+   dispatch data for Bengkulu). Built from the July "Breakdown" sheet's real per-route Plant column
+   (Target Bulan Juli 2026 - Kirim (1) copy.xlsx), joined onto every SOURCE_TYPE (RKAP/SNOP/
+   CONTRACT alike) since which plant serves a route is a fixed structural fact, not month-dependent.
+   One genuinely dual-sourced route (Kota Bengkulu/SILOG, served by both CP Indarung and PP
+   Bengkulu) was split using the REAL observed realisasi.csv tonnage ratio (48.3%/51.7%), not a
+   guessed 50/50 - documented in that row's CATATAN. 2 routes (Pelabuhan Teluk Bayur jumbo-bag/NN,
+   Kota Pematangsiantar's no-vendor-code gap) have no plant data available and are left blank,
+   flagged in CATATAN, consistent with "don't fabricate, flag gaps" project rule - 0.28% of total
+   target tonnage. INCOTERM is NOT added here even though it's a group-by dimension: every row in
+   this dataset is already Incoterm=FRC (100%, confirmed via the source SNOP sheet's TERM column),
+   so grouping by Incoterm never actually restricts anything - it's handled as a trivial pass-
+   through below (TARGET_TRIVIAL_FIELDS), not a real scope key, since targets_monthly.csv has no
+   INCOTERM column to filter by. */
+const TARGET_CAPABLE_FIELDS = new Set(['NAMA_PROPINSI','NAMA_AREA_DISTRIK','EXPEDITUR_NAMA','SOURCE_PLANT']);
+const TARGET_TRIVIAL_FIELDS = new Set(['INCOTERM']);
+function levelsAreTargetCapable(levels){ return levels.every(l=> TARGET_CAPABLE_FIELDS.has(l) || TARGET_TRIVIAL_FIELDS.has(l)); }
 
 /* ================= FILTER STATE ================= */
 function getFilterState(){
@@ -1109,11 +1133,17 @@ function targetForScope(year, month, f, scope, sourceTypeOverride){
   if(scope.EXPEDITUR_NAMA!=null) expKodeList = expeditureKodesFromNames([scope.EXPEDITUR_NAMA]);
   else if(isRestricted('expeditur')) expKodeList = expeditureKodesFromNames([...f.expeditur]);
 
+  // SOURCE_PLANT added 2026-07-27 - same pattern as the other 3 scope dimensions above.
+  let sourcePlantList = null;
+  if(scope.SOURCE_PLANT!=null) sourcePlantList = [scope.SOURCE_PLANT];
+  else if(isRestricted('source')) sourcePlantList = [...f.source];
+
   function rowsFor(sourceType){
     let rows = TG.filter(t=>+t.TAHUN===year && +t.BULAN_NO===month && t.SOURCE_TYPE===sourceType
       && (provinsiList ? provinsiList.includes(t.PROVINSI) : true));
     if(distrikList) rows = rows.filter(t=> distrikList.includes(t.DISTRIK));
     if(expKodeList) rows = rows.filter(t=> expKodeList.includes(t.EXPEDITUR_KODE));
+    if(sourcePlantList) rows = rows.filter(t=> sourcePlantList.includes(t.SOURCE_PLANT));
     return rows;
   }
   let fullRows = [];
@@ -1138,9 +1168,9 @@ function targetForScope(year, month, f, scope, sourceTypeOverride){
 
 /** Target summed over every (year,month[,provinsi]) actually present in rowsInGroup — used for
     KPI cards / summary table where the period may span multiple months. `scope` is the same
-    {NAMA_PROPINSI, NAMA_AREA_DISTRIK, EXPEDITUR_NAMA} object as targetForScope(); pass {} for the
-    unfiltered/whole-selection KPI case. Returns null/unscopable if ANY currently active drill-down
-    level (state.levels) is Distributor/Source/Incoterm — target has no such dimension.
+    {NAMA_PROPINSI, NAMA_AREA_DISTRIK, EXPEDITUR_NAMA, SOURCE_PLANT} object as targetForScope();
+    pass {} for the unfiltered/whole-selection KPI case. Returns null/unscopable if ANY currently
+    active drill-down level (state.levels) is Distributor — target has no such dimension.
     Also returns `mtd` = Target MTD (Target FM prorated by the weekday-weight shape through the
     latest date with actual data in each of those months — see mtdProrationRatio above). */
 function targetForGroup(rowsInGroup, f, scope){
@@ -1174,7 +1204,13 @@ function targetForGroup(rowsInGroup, f, scope){
       if(t.foundAny) foundAny=true;
     }
   });
-  const unscopable = isRestricted('distributor') || isRestricted('source') || isRestricted('incoterm');
+  // CHANGED 2026-07-27: 'source' removed - targetForScope() above now genuinely scopes by
+  // SOURCE_PLANT when the Source filter is restricted, so it's no longer unscopable. 'incoterm'
+  // removed too - every row in targets_monthly.csv is Incoterm=FRC by construction (100% of this
+  // dataset's scope), so restricting the Incoterm filter never actually narrows the target query;
+  // treating it as unscopable would show a misleading N/A for a filter that isn't really doing
+  // anything. 'distributor' stays - no such dimension exists anywhere in target data.
+  const unscopable = isRestricted('distributor');
   return {full, kontrak, mtd: round2(mtd), foundAny, unscopable};
 }
 
@@ -1360,8 +1396,8 @@ function computeSeries(f){
 
   // Target overlay lines: independently toggleable per source type (state.targetToggle ->
   // SNOP / CONTRACT="Vol. Kontrak" / RKAP), only for Tonase view, and only when every active
-  // drill-down level AND the chart's own series-split dim are at Provinsi/Distrik/Expeditur grain
-  // — never rendered when Distributor/Source/Incoterm is involved anywhere.
+  // drill-down level AND the chart's own series-split dim are at Provinsi/Distrik/Expeditur/Source
+  // grain — never rendered when Distributor is involved anywhere (Incoterm is a no-op, doesn't block this).
   //
   // Stacked Bar is a special case: the bar's TOTAL height already represents the sum across every
   // group in the stack, so the target line must collapse to ONE cumulative line per type regardless
@@ -1636,9 +1672,9 @@ function renderKPIs(){
   const gapEl = document.getElementById('gapNote');
   const notes = [];
   if(!levelsAreTargetCapable(state.levels)){
-    notes.push('Target (SNOP/Vol. Kontrak/RKAP) tidak ditampilkan karena salah satu level drill-down yang aktif (Distributor/Source/Incoterm) tidak punya dimensi target — kolom Target/%Achiev untuk kombinasi ini adalah N/A, bukan 0.');
+    notes.push('Target (SNOP/Vol. Kontrak/RKAP) tidak ditampilkan karena level drill-down Distributor aktif — kolom Target/%Achiev untuk kombinasi ini adalah N/A, bukan 0. (Provinsi/Distrik/Expeditur/Source semua punya data target; Incoterm selalu FRC jadi tidak membatasi apa pun.)');
   } else if(unscopable){
-    notes.push('Filter Distributor/Source/Incoterm aktif — target tetap dihitung pada level Provinsi/Distrik/Expeditur yang aktif (tidak bisa menyempit ke Distributor/Source/Incoterm), karena data target tidak punya dimensi tersebut.');
+    notes.push('Filter Distributor aktif — target tetap dihitung pada level Provinsi/Distrik/Expeditur/Source yang aktif (tidak bisa menyempit ke Distributor), karena data target tidak punya dimensi tersebut.');
   }
   gapEl.style.display = notes.length ? 'block' : 'none';
   gapEl.textContent = notes.join(' ');
@@ -1985,7 +2021,11 @@ function toggleSection(bodyId){
   if(caret) caret.textContent = collapsed ? '▶' : '▼';
   // Chart canvas has zero size while its container is display:none; Chart.js renders based on
   // that zero size and stays blank when un-hidden unless we force a fresh render afterward.
-  if(bodyId==='chartBody' && !collapsed) renderChart();
+  if(bodyId==='chartBody'){
+    if(!collapsed) renderChart();
+    const hint = document.getElementById('chartHint');
+    if(hint) hint.style.display = collapsed ? 'inline-block' : 'none';
+  }
 }
 function handleSummaryRowClick(el){
   const {levels, parts} = JSON.parse(el.getAttribute('data-focus'));
