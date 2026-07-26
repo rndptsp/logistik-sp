@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = '2026-07-26.5';
+window.APP_VERSION = '2026-07-26.6';
 (function(){
   fetch('version.json?_=' + Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.json() : null; })
@@ -1555,8 +1555,7 @@ function renderKPIs(){
   } else if(unscopable){
     notes.push('Filter Distributor/Source/Incoterm aktif — target tetap dihitung pada level Provinsi/Distrik/Expeditur yang aktif (tidak bisa menyempit ke Distributor/Source/Incoterm), karena data target tidak punya dimensi tersebut.');
   }
-  notes.push('Tonase (MTD) / Tonase Bulan Lalu (MTD LM) / % vs Bulan Lalu SELALU memakai periode bulan berjalan (tanggal 1 s.d. hari data realisasi terakhir) dan padanannya 1 bulan sebelumnya — TIDAK mengikuti rentang tanggal yang dipilih di atas, dan mengabaikan checklist Tahun/Bulan karena harus bisa menjangkau di luar keduanya. KPI/grafik/tabel lain tetap mengikuti filter tanggal yang dipilih seperti biasa.');
-  gapEl.style.display = 'block';
+  gapEl.style.display = notes.length ? 'block' : 'none';
   gapEl.textContent = notes.join(' ');
 }
 
