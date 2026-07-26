@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = '2026-07-27.24';
+window.APP_VERSION = '2026-07-27.26';
 (function(){
   fetch('version.json?_=' + Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.json() : null; })
@@ -2293,12 +2293,24 @@ function truckCategory(trips, nExp, nDist){
 /* ================= ARMADA REVIEW 2 - ACTIVITY STATUS (2026-07-27) =================
    Added per Rendy's request: a second, independent grouping mode for the Armada table,
    toggled alongside REVIEW 1 (the existing 5 usage-pattern categories, unchanged).
-   3 mutually-exclusive categories, priority order 'baru' > 'aktif' > 'tidakAktif':
-     - Armada Baru      : truck's FIRST trip (within the currently active filter scope) falls
-                          within the last 14 days of the reference date.
-     - Armada Aktif     : truck's LAST trip falls within the last 30 days of the reference date
-                          (and it isn't already counted as 'baru').
+   4 mutually-exclusive categories, priority order 'baru' > 'reactivated'/'aktif' > 'tidakAktif':
+     - Armada Baru       : truck's FIRST trip (within the currently active filter scope) falls
+                           within the last 14 days of the reference date.
+     - Armada Reactivated: not 'baru'; truck's LAST trip (within scope) is within the last 30 days
+                           (i.e. currently active), AND the gap between that last trip and the trip
+                           immediately BEFORE it is >30 days.
+     - Armada Aktif      : not 'baru'/'reactivated'; truck's LAST trip falls within the last 30 days
+                           (gap before it, if any, was <=30 days - i.e. "regular", not a comeback).
      - Armada Tidak Aktif: truck's last trip is >30 days before the reference date.
+   Reactivated vs Aktif is decided ONLY by the single gap immediately preceding the most recent trip
+   in scope - not the max gap anywhere in the truck's history. Confirmed by Rendy 2026-07-27 with an
+   example: truck's trips are 30 Mar, 20 Jun, 10 Jul. If the filter/reference end date is in Juli
+   (last trip in scope = 10 Jul, gap before it = 20Jun->10Jul = 20 days <=30) -> Aktif. If the filter/
+   reference end date is in Juni instead (last trip in scope = 20 Jun, gap before it = 30Mar->20Jun =
+   ~82 days >30) -> Reactivated. So a truck that reactivated once but has since kept operating
+   regularly correctly settles into 'Aktif', not 'Reactivated' forever - the classification is
+   re-evaluated fresh each time using only the most recent gap, scoped to whatever the current filter
+   shows.
    Per Rendy's explicit decisions (2026-07-27):
      1. Reference "today" = the max TGL_SPJ found WITHIN the current filtered/row-focused rows
         (not the real calendar date) - so this keeps working sensibly even if live data lags.
@@ -2307,14 +2319,21 @@ function truckCategory(trips, nExp, nDist){
         which trips count toward a truck's first/last-seen date and can change its category. */
 const FLEET_CATEGORY_DEFS_REVIEW2 = [
   {key:'baru', label:'Armada Baru (trip pertama dalam 14 hari terakhir dari data)'},
+  {key:'reactivated', label:'Armada Reactivated (jeda >30 hari sebelum trip terakhir)'},
   {key:'aktif', label:'Armada Aktif (beroperasi dalam 30 hari terakhir dari data)'},
   {key:'tidakAktif', label:'Armada Tidak Aktif (>30 hari tidak beroperasi)'},
 ];
-function truckActivityCategory(firstMs, lastMs, refMs){
+function truckActivityCategory(sortedMsList, refMs){
   const DAY = 86400000;
+  const firstMs = sortedMsList[0], lastMs = sortedMsList[sortedMsList.length-1];
   if(refMs - firstMs <= 14*DAY) return 'baru';
-  if(refMs - lastMs <= 30*DAY) return 'aktif';
-  return 'tidakAktif';
+  const isCurrentlyActive = (refMs - lastMs) <= 30*DAY;
+  if(!isCurrentlyActive) return 'tidakAktif';
+  if(sortedMsList.length>=2){
+    const gapBeforeLast = (lastMs - sortedMsList[sortedMsList.length-2]) / DAY;
+    if(gapBeforeLast > 30) return 'reactivated';
+  }
+  return 'aktif';
 }
 function renderFleetTable(){
   const f = getFilterState();
@@ -2362,9 +2381,8 @@ function renderFleetTable(){
     const nDist = distinctCount(trs,'NAMA_AREA_DISTRIK');
     let cat;
     if(viewMode==='review2'){
-      const firstMs = sorted[0]._d.getTime?sorted[0]._d.getTime():sorted[0]._d;
-      const lastMs = sorted[sorted.length-1]._d.getTime?sorted[sorted.length-1]._d.getTime():sorted[sorted.length-1]._d;
-      cat = truckActivityCategory(firstMs, lastMs, refMs);
+      const sortedMsList = sorted.map(r=> r._d.getTime?r._d.getTime():r._d);
+      cat = truckActivityCategory(sortedMsList, refMs);
     } else {
       cat = truckCategory(trs.length, nExp, nDist);
     }
