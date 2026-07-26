@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = '2026-07-26.11';
+window.APP_VERSION = '2026-07-26.14';
 (function(){
   fetch('version.json?_=' + Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.json() : null; })
@@ -207,9 +207,15 @@ tbody tr:hover{background:var(--panel2);}
 /* Compact-form pivot table (Excel-style): single Group column, indented per level, level-1 rows
    are bold subtotal rows for their level-2 children. */
 td.grouplabel{white-space:nowrap;}
-/* Armada's NOPOL/group column was blowing out the table width (2026-07-26) - cap it and ellipsize
-   instead of letting long labels force horizontal scroll on every other column. */
-#fleetTable td.grouplabel{max-width:105px; overflow:hidden; text-overflow:ellipsis;}
+/* Armada's NOPOL/group column was blowing out the table width (2026-07-26). max-width alone
+   doesn't reliably cap a table column under auto layout - a nowrap cell's full untruncated text
+   still counts toward the browser's column-width calculation even though overflow/ellipsis clips
+   it visually, so a long district-x-expeditur breakdown label (e.g. "KAB. MERANGIN — NEISYA
+   NATASYA.PT") could still drag the whole column wide again. table-layout:fixed forces the browser
+   to honor the declared width instead of measuring content, which is what actually keeps this
+   column compact regardless of how long any individual row's label gets. */
+#fleetTable{table-layout:fixed;}
+#fleetTable th:first-child, #fleetTable td.grouplabel{width:130px; max-width:130px; overflow:hidden; text-overflow:ellipsis;}
 tr.lvl-subtotal td{font-weight:700;background:#FAFAFA;}
 tr.lvl-subtotal td.grouplabel{border-left:3px solid var(--accent);}
 tr.lvl-leaf td.grouplabel{padding-left:26px;color:var(--sub);font-weight:400;}
@@ -377,8 +383,6 @@ window.addEventListener('error', function(e){
   <div class="panel">
     <div class="panel-head" onclick="toggleSection('armadaBody')"><h2><span class="panel-caret" id="armadaBody-caret">▼</span> Armada — Cycle Time Truk Berulang</h2></div>
     <div class="panel-body" id="armadaBody">
-      <div style="padding:8px 16px 0;font-size:11px;color:var(--sub);">Kolom detail per-trip (tampil di baris trip individual saat NOPOL dibuka):</div>
-      <div class="pillrow" id="fleetColPicker" style="padding:4px 16px 8px;"></div>
       <div class="tablewrap"><table id="fleetTable"></table></div>
     </div>
   </div>
@@ -561,6 +565,33 @@ function bucketKey(r, gran){
   if(gran==='weekly') return isoWeekMonday(r._d);
   if(gran==='quarterly') return quarterKey(r._d);
   return monthKey(r._d);
+}
+/* Real [from,to] date range covered by a single chart bucket, used to scope SO/%OF lookups to
+   THAT bucket instead of the whole filter window. BUG FIXED 2026-07-26: computeSeries() used to
+   only narrow the SO date-range for gran==='daily' (via bDate) and silently fall back to the
+   full filter's from/to for weekly/monthly/quarterly — so every bucket on a Weekly/Monthly/
+   Quarterly chart showed the SAME (whole-range) SO total repeated, not that bucket's own SO.
+   Reachable via normal use: the "This Quarter"/"This Year"/"All Time" quick-range presets all
+   switch to non-daily granularity. Hourly is a separate, non-fixable case (buckets are by
+   time-of-day across every day in range, so there's no single date to scope SO to) and is left
+   using the whole filter window on purpose — flagged to Rendy as a UI limitation, not silently
+   "fixed" into something misleading. sampleDate = any row's real _d already known to belong to
+   this bucket (all rows sharing a bucketKey share the same underlying period). */
+function bucketDateRange(gran, bk, sampleDate){
+  if(gran==='daily') return {from: parseLocalDateInput(bk), to: parseLocalDateInput(bk)};
+  if(gran==='hourly' || !sampleDate) return {from: null, to: null};
+  if(gran==='weekly'){
+    const dayNum = (sampleDate.getDay()+6)%7; // 0=Mon..6=Sun, local
+    const mon = new Date(sampleDate.getFullYear(), sampleDate.getMonth(), sampleDate.getDate()-dayNum);
+    const sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate()+6);
+    return {from: mon, to: sun};
+  }
+  if(gran==='quarterly'){
+    const q = Math.floor(sampleDate.getMonth()/3);
+    return {from: new Date(sampleDate.getFullYear(), q*3, 1), to: new Date(sampleDate.getFullYear(), q*3+3, 0)};
+  }
+  // monthly
+  return {from: new Date(sampleDate.getFullYear(), sampleDate.getMonth(), 1), to: new Date(sampleDate.getFullYear(), sampleDate.getMonth()+1, 0)};
 }
 function round2(x){ return Math.round(x*100)/100; }
 
@@ -1299,16 +1330,20 @@ function computeSeries(f){
           if(!soKey) return true;
           return normVal(r[soKey])===ds.label;
         };
-        const bDate = f.gran==='daily' ? parseLocalDateInput(bk) : null;
-        const subF = Object.assign({}, f, {from: bDate||f.from, to: bDate||f.to});
+        // BUG FIXED 2026-07-26: was only scoping SO to this bucket's own date range for
+        // gran==='daily' - see bucketDateRange() comment above for the full explanation.
+        const sampleDate = grows.length ? grows[0]._d : null;
+        const {from: bFrom, to: bTo} = bucketDateRange(f.gran, bk, sampleDate);
+        const subF = Object.assign({}, f, {from: bFrom||f.from, to: bTo||f.to});
         const so = soTonaseFor(subF, extraMatch);
         if(f.value==='SO') return so;
         if(f.value==='OF') return so>0 ? round2(tonase/so*100) : null;
         if(f.value==='ACHIEV'){
           const scope = {};
           if(chartGroupField!=='NONE' && TARGET_CAPABLE_FIELDS.has(chartGroupField)) scope[chartGroupField]=ds.label;
-          const {full} = targetForGroup(grows, f, scope);
-          return full>0 ? round2(tonase/full*100) : null;
+          // %Achievement = Vol. MTD / Target MTD, not Target FM - same fix as renderKPIs()/buildRowMetrics().
+          const {mtd, foundAny} = targetForGroup(grows, f, scope);
+          return (mtd!=null && foundAny && mtd>0) ? round2(tonase/mtd*100) : null;
         }
         return null;
       });
@@ -1556,8 +1591,11 @@ function renderKPIs(){
   const waiting = aggMetric(rows,'WAITING');
   const dwell = aggMetric(rows,'DWELL');
   const so = soTonaseFor(f);
-  const {full, unscopable} = targetForGroup(rows, f, {});
-  const achiev = (full>0) ? tonase/full*100 : null;
+  // %Achievement = Vol. MTD / Target MTD (not Target FM) - fixed 2026-07-26 per Rendy: both sides
+  // of the ratio must be "as of today", otherwise a not-yet-finished month always reads artificially
+  // low against a full-month target it hasn't had the days to reach yet.
+  const {full, mtd, foundAny, unscopable} = targetForGroup(rows, f, {});
+  const achiev = (mtd!=null && foundAny && mtd>0) ? tonase/mtd*100 : null;
   const ofpct = so>0 ? tonase/so*100 : null;
 
   // Pinned to the real current-month MTD window regardless of the active date filter — see
@@ -1636,17 +1674,27 @@ function buildRowMetrics(parts, grows, lmGrows, f, levels, targetOK){
   const truck = new Set(grows.map(r=>r.NOPOL)).size;
   const waiting = aggMetric(grows,'WAITING');
   const dwell = aggMetric(grows,'DWELL');
+  // BUG FIXED 2026-07-26: extraMatch used to only check the DEEPEST active drill level (e.g. for a
+  // Provinsi>Expeditur leaf row, only EXPEDITUR_NAMA), silently ignoring Provinsi entirely - so a
+  // vendor's leaf-row SO summed that vendor's tonase across EVERY province, not just the one this
+  // row is under. That's why leaf rows summed to far MORE than their own subtotal row (confirmed:
+  // Jambi's subtotal SO read 41.381 ton while its own Expeditur children summed to 111.984 ton).
+  // Fix: match every active level's own field/part together (AND), not just the last one.
   let extraMatch = null;
   if(levels.length){
-    const lastField = levels[levels.length-1];
-    const soKey = SO_FIELD_MAP[lastField];
-    if(soKey){ const val = parts[parts.length-1]; extraMatch = (r)=> normVal(r[soKey])===val; }
+    const matchers = [];
+    levels.forEach((fld,i)=>{
+      const soKey = SO_FIELD_MAP[fld];
+      if(soKey){ const val = parts[i]; matchers.push(r=> normVal(r[soKey])===val); }
+    });
+    if(matchers.length) extraMatch = (r)=> matchers.every(m=>m(r));
   }
   const so = soTonaseFor(f, extraMatch);
   const scope = {};
   levels.forEach((fld,i)=>{ if(TARGET_CAPABLE_FIELDS.has(fld)) scope[fld]=parts[i]; });
   const {full, kontrak, mtd, foundAny} = targetForGroup(grows, f, scope);
-  const achiev = (full>0) ? tonase/full*100 : null;
+  // %Achievement = Vol. MTD / Target MTD, not Target FM - same fix as the KPI card, see renderKPIs().
+  const achiev = (mtd!=null && foundAny && mtd>0) ? tonase/mtd*100 : null;
   const ofpct = so>0 ? tonase/so*100 : null;
   const gapMTD = (mtd!=null && foundAny) ? tonase - mtd : null;   // Vol. MTD - Target MTD
   const gapToFM = (full!=null && foundAny) ? tonase - full : null; // Vol. MTD - Target FM
@@ -2076,43 +2124,19 @@ function renderSummaryTable(){
    expeditur breakdown, then "Lihat N trip individual" to see raw trip rows.
    Per-trip fields (jam antri/masuk/keluar, waiting/dwell, berat kosong/isi/real) are opt-in via the
    column picker button, since showing all of them by default would make every trip row very wide. */
+/* Same 6 columns at every level (category / NOPOL / district-expeditur breakdown / individual
+   trip), per Rendy 2026-07-26 - previously the #Expeditur/#Distrik counts were their own columns
+   and only category rows carried the Avg Waiting/Dwell/Ritase text; now everything below shares
+   one consistent shape and the cross-flag warning + ritase move into a single free-text Remark
+   column instead of dedicated numeric columns. */
 const FLEET_COLUMNS = [
-  {key:'trips', label:'Jumlah Trip', get:d=>d.trips, render:d=>d.trips!=null?d.trips.toLocaleString('id-ID'):'-', display:d=>d.trips!=null?d.trips.toLocaleString('id-ID'):'-'},
-  {key:'avgCycle', label:'Avg Cycle Time (jam)', get:d=>d.avgCycleHours, render:d=>d.avgCycleHours!=null?d.avgCycleHours.toFixed(1):'-', display:d=>d.avgCycleHours!=null?d.avgCycleHours.toFixed(1):'-'},
-  {key:'tonase', label:'Total Tonase (ton)', get:d=>d.tonase, render:d=>fmtNum(d.tonase), display:d=>fmtNum(d.tonase)},
-  // Cross-expeditur / cross-route visibility, added 2026-07-26 per Rendy: "show if armada move
-  // across expeditur or across rute" - computed from the truck's TOTAL rows across the whole
-  // filtered selection (not just its rows under the currently-open top-level group), so a truck
-  // shared between two provinces/expeditur still reads its TRUE diversity wherever it's listed.
-  {key:'nExp', label:'# Expeditur', get:d=>d.nExp, render:d=>d.nExp!=null?d.nExp.toLocaleString('id-ID'):'-', display:d=>d.nExp!=null?d.nExp.toLocaleString('id-ID'):'-'},
-  // Uses NAMA_AREA_DISTRIK, not the ROUTE field - verified 2026-07-26 that ROUTE is a single
-  // constant value ('ZR0002') across all 31,914 rows in the dataset, so it carries zero signal.
-  // District is the real proxy for "does this truck get used across multiple corridors."
-  {key:'nRoute', label:'# Distrik', get:d=>d.nRoute, render:d=>d.nRoute!=null?d.nRoute.toLocaleString('id-ID'):'-', display:d=>d.nRoute!=null?d.nRoute.toLocaleString('id-ID'):'-'},
+  {key:'trips', label:'Jumlah Trip'},
+  {key:'tonase', label:'Tonase (ton)'},
+  {key:'avgWaiting', label:'Avg Waiting (jam)'},
+  {key:'avgDwell', label:'Avg Dwell (jam)'},
+  {key:'avgCycle', label:'Avg Cycle Time (jam)'},
+  {key:'remark', label:'Remark'},
 ];
-const FLEET_DETAIL_COLUMN_DEFS = [
-  {key:'JAM_ANTRI', label:'Jam Antri', agg:'none', get:r=>r.JAM_ANTRI||'-'},
-  {key:'JAM_MASUK', label:'Jam Masuk', agg:'none', get:r=>r.JAM_MASUK||'-'},
-  {key:'JAM_KELUAR', label:'Jam Keluar', agg:'none', get:r=>r.JAM_KELUAR||'-'},
-  {key:'WAITING_TIME_JAM', label:'Waiting (jam)', agg:'avg', get:r=>r.WAITING_TIME_JAM!=null?Number(r.WAITING_TIME_JAM).toFixed(1):'-'},
-  {key:'DWELL_TIME_JAM', label:'Dwell (jam)', agg:'avg', get:r=>r.DWELL_TIME_JAM!=null?Number(r.DWELL_TIME_JAM).toFixed(1):'-'},
-  {key:'BERAT_KOSONG', label:'Berat Kosong', agg:'sum', get:r=>r.BERAT_KOSONG!=null?fmtNum(r.BERAT_KOSONG):'-'},
-  {key:'BERAT_ISI', label:'Berat Isi', agg:'sum', get:r=>r.BERAT_ISI!=null?fmtNum(r.BERAT_ISI):'-'},
-  {key:'BERAT_REAL', label:'Berat Real', agg:'sum', get:r=>r.BERAT_REAL!=null?fmtNum(r.BERAT_REAL):'-'},
-];
-/* Group-level (top-tier / NOPOL) aggregate for a detail column, shown BEFORE drilling into
-   individual trip rows. agg:'avg' -> mean (Waiting/Dwell, can't sum meaningfully across trips);
-   agg:'sum' -> total (Berat Kosong/Isi/Real, tonnage-like); agg:'none' -> always '-' (Jam Antri/
-   Masuk/Keluar are clock-times, no sane group aggregate) - user confirmed this split 2026-07-26. */
-function detailAggValue(col, rows){
-  if(col.agg === 'avg' || col.agg === 'sum'){
-    const vals = rows.map(r=>Number(r[col.key])).filter((v,i)=>!isNaN(v) && rows[i][col.key]!=null);
-    if(!vals.length) return '-';
-    const total = vals.reduce((a,b)=>a+b,0);
-    return col.agg==='avg' ? (total/vals.length).toFixed(1) : fmtNum(total);
-  }
-  return '-';
-}
 function avgCycleHoursFor(sortedRowsByDate){
   if(sortedRowsByDate.length<2) return null;
   const gaps=[];
@@ -2130,23 +2154,6 @@ function toggleFleetOpenNopol(key){
 function toggleFleetNopol(key){
   if(state.fleetExpandedNopol.has(key)) state.fleetExpandedNopol.delete(key); else state.fleetExpandedNopol.add(key);
   renderFleetTable();
-}
-function toggleFleetDetailCol(key){
-  if(state.fleetDetailCols.has(key)) state.fleetDetailCols.delete(key); else state.fleetDetailCols.add(key);
-  renderFleetTable();
-}
-function renderFleetColumnPicker(){
-  const el = document.getElementById('fleetColPicker');
-  if(!el) return;
-  el.innerHTML = '';
-  FLEET_DETAIL_COLUMN_DEFS.forEach(c=>{
-    const b = document.createElement('button'); b.type = 'button';
-    b.className = 'pill' + (state.fleetDetailCols.has(c.key) ? ' active' : '');
-    b.textContent = c.label;
-    b.title = 'Tampilkan/sembunyikan kolom ini pada baris per-trip';
-    b.addEventListener('click', ()=> toggleFleetDetailCol(c.key));
-    el.appendChild(b);
-  });
 }
 /* ================= ARMADA 5-CATEGORY STRUCTURE (2026-07-26) =================
    Replaced the old Provinsi/Distrik-driven top grouping with 5 mutually-exclusive usage-pattern
@@ -2181,11 +2188,18 @@ function renderFleetTable(){
   state.fleetCollapsedCat = state.fleetCollapsedCat || new Set(FLEET_CATEGORY_DEFS.map(c=>c.key)); // default: all 5 collapsed
   state.fleetOpenNopol = state.fleetOpenNopol || new Set();      // NOPOL with district x expeditur breakdown shown
   state.fleetExpandedNopol = state.fleetExpandedNopol || new Set(); // NOPOL with full trip list also shown
-  state.fleetDetailCols = state.fleetDetailCols || new Set();
-  renderFleetColumnPicker();
 
-  const detailCols = FLEET_DETAIL_COLUMN_DEFS.filter(c=>state.fleetDetailCols.has(c.key));
   function distinctCount(rowsForCount, field){ return new Set(rowsForCount.map(r=>normVal(r[field]))).size; }
+  // Six-column row cell builder shared by every level (category/NOPOL/breakdown/trip) so the table
+  // reads consistently top to bottom - see the FLEET_COLUMNS comment above.
+  function metricTds({trips, tonase, avgWaiting, avgDwell, avgCycle, remark}){
+    return `<td>${trips!=null?trips.toLocaleString('id-ID'):'-'}</td>`
+      + `<td>${tonase!=null?fmtNum(tonase):'-'}</td>`
+      + `<td>${avgWaiting!=null?avgWaiting.toFixed(1):'-'}</td>`
+      + `<td>${avgDwell!=null?avgDwell.toFixed(1):'-'}</td>`
+      + `<td>${avgCycle!=null?avgCycle.toFixed(1):'-'}</td>`
+      + `<td>${remark||'-'}</td>`;
+  }
 
   // ---- group all filtered rows by NOPOL, compute usage stats + category ----
   const byNopol = new Map();
@@ -2200,57 +2214,60 @@ function renderFleetTable(){
     const nDist = distinctCount(trs,'NAMA_AREA_DISTRIK');
     const cat = truckCategory(trs.length, nExp, nDist);
     byCategory.get(cat).push({nopol, trs, sorted, nExp, nDist,
-      avgCycleHours: avgCycleHoursFor(sorted), tonase: aggMetric(sorted,'TONASE')});
+      avgCycleHours: avgCycleHoursFor(sorted), tonase: aggMetric(sorted,'TONASE'),
+      avgWaiting: aggMetric(trs,'WAITING'), avgDwell: aggMetric(trs,'DWELL')});
   });
 
   const totalTruckUnik = byNopol.size;
   const totalTrip = rows.length;
   const util = totalTruckUnik>0 ? (totalTrip/totalTruckUnik) : 0;
-  const summaryRow = `<tr style="background:var(--panel2);"><td colspan="${FLEET_COLUMNS.length+detailCols.length}" style="text-align:left;color:var(--sub);font-size:11px;">
+  const summaryRow = `<tr style="background:var(--panel2);"><td colspan="${1+FLEET_COLUMNS.length}" style="text-align:left;color:var(--sub);font-size:11px;">
     Total truk unik: ${totalTruckUnik.toLocaleString('id-ID')} · Total trip: ${totalTrip.toLocaleString('id-ID')} · Utilisasi rata-rata: ${util.toFixed(2)}x per truk (= Ritase)
   </td></tr>`;
 
   function tripRowHtml(r, indentPx){
-    const tonaseTd = `<td>${fmtNum(r.TONASE)}</td>`;
-    const detailTds = detailCols.map(c=>`<td>${c.get(r)}</td>`).join('');
     const tglDisplay = (r.TGL_SPJ||'-').toString().slice(0,10);
-    return `<tr class="lvl-leaf"><td class="grouplabel" style="padding-left:${indentPx}px;">${tglDisplay} <span style="color:var(--sub);">(${r.NO_SPJ||''}) — ${r.NAMA_AREA_DISTRIK||'-'} / ${r.EXPEDITUR_NAMA||'-'}</span></td>${'<td>-</td>'.repeat(2)}${tonaseTd}${'<td>-</td>'.repeat(2)}${detailTds}</tr>`;
+    // Individual trip: tonase/waiting/dwell are this trip's OWN real numbers, not an average -
+    // trips-count and cycle-time have no meaning for a single trip (cycle is the GAP between two
+    // trips), so those stay '-'. Fixed 2026-07-26 per Rendy ("take real data to show in the table")
+    // - previously waiting/dwell were also dashed out here even though the real value was on hand.
+    const waiting = r.WAITING_TIME_JAM!=null ? Number(r.WAITING_TIME_JAM) : null;
+    const dwell = r.DWELL_TIME_JAM!=null ? Number(r.DWELL_TIME_JAM) : null;
+    const label = `${tglDisplay} <span style="color:var(--sub);">(${r.NO_SPJ||''}) — ${r.NAMA_AREA_DISTRIK||'-'} / ${r.EXPEDITUR_NAMA||'-'}</span>`;
+    return `<tr class="lvl-leaf"><td class="grouplabel" style="padding-left:${indentPx}px;">${label}</td>${metricTds({trips:null, tonase:r.TONASE, avgWaiting:waiting, avgDwell:dwell, avgCycle:null, remark:null})}</tr>`;
   }
 
   // District x Expeditur combo breakdown for a truck - answers "show detail route/expeditur" on click.
   function nopolBreakdownRows(nopol, trs, indentPx){
-    const combos = new Map(); // "distrik|||exp" -> {distrik, exp, trips, tonase}
+    const combos = new Map(); // "distrik|||exp" -> {distrik, exp, rows:[]}
     trs.forEach(r=>{
       const key = normVal(r.NAMA_AREA_DISTRIK)+'|||'+normVal(r.EXPEDITUR_NAMA);
-      if(!combos.has(key)) combos.set(key, {distrik:r.NAMA_AREA_DISTRIK||'-', exp:r.EXPEDITUR_NAMA||'-', trips:0, tonase:0});
-      const c = combos.get(key);
-      c.trips++; c.tonase += (+r.TONASE||0);
+      if(!combos.has(key)) combos.set(key, {distrik:r.NAMA_AREA_DISTRIK||'-', exp:r.EXPEDITUR_NAMA||'-', rows:[]});
+      combos.get(key).rows.push(r);
     });
-    const sortedCombos = [...combos.values()].sort((a,b)=>b.trips-a.trips);
-    const comboRows = sortedCombos.map(c=>
-      `<tr class="lvl-leaf" style="background:var(--panel2);"><td class="grouplabel" style="padding-left:${indentPx}px;color:var(--sub);">↳ ${c.distrik} — ${c.exp}</td>
-        <td>${c.trips.toLocaleString('id-ID')}</td><td>-</td><td>${fmtNum(c.tonase)}</td><td>-</td><td>-</td>
-        ${detailCols.map(()=>'<td>-</td>').join('')}</tr>`).join('');
+    const sortedCombos = [...combos.values()].sort((a,b)=>b.rows.length-a.rows.length);
+    const comboRows = sortedCombos.map(c=>{
+      const cells = metricTds({trips:c.rows.length, tonase:aggMetric(c.rows,'TONASE'), avgWaiting:aggMetric(c.rows,'WAITING'), avgDwell:aggMetric(c.rows,'DWELL'), avgCycle:null, remark:null});
+      return `<tr class="lvl-leaf" style="background:var(--panel2);"><td class="grouplabel" style="padding-left:${indentPx}px;color:var(--sub);">↳ ${c.distrik} — ${c.exp}</td>${cells}</tr>`;
+    }).join('');
     const tripsKey = 'trips|||'+nopol;
     const tripsOpen = state.fleetExpandedNopol.has(tripsKey);
     const toggleTripsRow = `<tr class="lvl-leaf" data-tripskey="${escapeAttr(tripsKey)}" onclick="event.stopPropagation();toggleFleetNopol(this.dataset.tripskey)" style="cursor:pointer;background:var(--panel2);">
       <td class="grouplabel" style="padding-left:${indentPx}px;color:var(--accent);">${tripsOpen?'▼':'▸'} Lihat ${trs.length} trip individual</td>
-      <td colspan="${1+FLEET_COLUMNS.length-1+detailCols.length}"></td></tr>`;
+      <td colspan="${FLEET_COLUMNS.length}"></td></tr>`;
     const sortedTrips = tripsOpen ? trs.slice().sort((a,b)=>a._d-b._d).map(r=>tripRowHtml(r, indentPx+20)).join('') : '';
     return comboRows + toggleTripsRow + sortedTrips;
   }
 
   function nopolRowHtml(item){
-    const {nopol, trs, avgCycleHours, tonase, nExp, nDist} = item;
+    const {nopol, trs, avgCycleHours, tonase, avgWaiting, avgDwell, nExp, nDist} = item;
     const open = state.fleetOpenNopol.has(nopol);
     const caret = open ? '▼' : '▶';
     const crossFlag = (nExp>1 || nDist>1);
-    const cellStyle = crossFlag ? ' style="color:var(--red);font-weight:600;"' : '';
+    const remark = crossFlag ? `<span style="color:var(--red);font-weight:600;">⚠ Lintas ${nExp} expeditur, ${nDist} distrik</span>` : '-';
+    const cells = metricTds({trips:trs.length, tonase, avgWaiting, avgDwell, avgCycle:avgCycleHours, remark});
     const nopolRow = `<tr class="lvl-leaf" data-nopolkey="${escapeAttr(nopol)}" onclick="toggleFleetOpenNopol(this.dataset.nopolkey)" style="cursor:pointer;" title="Klik untuk lihat rincian distrik/expeditur${crossFlag ? ' — truk ini lintas expeditur/distrik' : ''}">
-      <td class="grouplabel" style="padding-left:20px;"><span class="lvl-caret">${caret}</span> ${nopol}${crossFlag ? ' <span style="color:var(--red);" title="Lintas expeditur/distrik">⚠</span>' : ''}</td>
-      <td>${trs.length.toLocaleString('id-ID')}</td><td>${avgCycleHours!=null?avgCycleHours.toFixed(1):'-'}</td><td>${fmtNum(tonase)}</td>
-      <td${cellStyle}>${nExp}</td><td${cellStyle}>${nDist}</td>
-      ${detailCols.map(c=>`<td>${detailAggValue(c, trs)}</td>`).join('')}</tr>`;
+      <td class="grouplabel" style="padding-left:20px;"><span class="lvl-caret">${caret}</span> ${nopol}${crossFlag ? ' <span style="color:var(--red);" title="Lintas expeditur/distrik">⚠</span>' : ''}</td>${cells}</tr>`;
     const breakdown = open ? nopolBreakdownRows(nopol, trs, 36) : '';
     return nopolRow + breakdown;
   }
@@ -2260,8 +2277,6 @@ function renderFleetTable(){
     const items = byCategory.get(catDef.key).sort((a,b)=>a.nopol.localeCompare(b.nopol));
     const isCollapsed = state.fleetCollapsedCat.has(catDef.key);
     const caret = isCollapsed ? '▶' : '▼';
-    // Category header carries the operational-metrics summary (avg cycle/waiting/dwell/ritase) so
-    // it's visible the moment you expand a category, without needing the detail-column picker.
     const allCatRows = items.flatMap(it=>it.trs);
     const catTonase = aggMetric(allCatRows,'TONASE');
     const catWaiting = aggMetric(allCatRows,'WAITING');
@@ -2271,11 +2286,9 @@ function renderFleetTable(){
     const catCycleGaps = [];
     items.forEach(it=>{ if(it.avgCycleHours!=null) catCycleGaps.push(it.avgCycleHours); });
     const catAvgCycle = catCycleGaps.length ? catCycleGaps.reduce((a,b)=>a+b,0)/catCycleGaps.length : null;
+    const cells = metricTds({trips:catTrips, tonase:catTonase, avgWaiting:catWaiting, avgDwell:catDwell, avgCycle:catAvgCycle, remark:`Ritase: ${catRitase.toFixed(2)}x`});
     const catRow = `<tr class="lvl-subtotal" data-catkey="${escapeAttr(catDef.key)}" onclick="toggleFleetCategory(this.dataset.catkey)" style="cursor:pointer;">
-      <td class="grouplabel"><span class="lvl-caret">${caret}</span> ${catDef.label} <span style="font-weight:400;color:var(--sub);">(${items.length.toLocaleString('id-ID')} truk)</span></td>
-      <td>${catTrips.toLocaleString('id-ID')}</td><td>${catAvgCycle!=null?catAvgCycle.toFixed(1):'-'}</td><td>${fmtNum(catTonase)}</td>
-      <td colspan="2" style="font-weight:400;color:var(--sub);text-align:left;">Avg Waiting: ${catWaiting!=null?catWaiting.toFixed(1):'-'} jam · Avg Dwell: ${catDwell!=null?catDwell.toFixed(1):'-'} jam · Ritase: ${catRitase.toFixed(2)}x</td>
-      ${detailCols.map(c=>`<td>${detailAggValue(c, allCatRows)}</td>`).join('')}</tr>`;
+      <td class="grouplabel"><span class="lvl-caret">${caret}</span> ${catDef.label} <span style="font-weight:400;color:var(--sub);">(${items.length.toLocaleString('id-ID')} truk)</span></td>${cells}</tr>`;
     const nopolRows = isCollapsed ? '' : items.map(nopolRowHtml).join('');
     return catRow + nopolRows;
   }).join('');
@@ -2284,7 +2297,6 @@ function renderFleetTable(){
   const th0 = document.createElement('th'); th0.textContent = 'Kategori › NOPOL › Rincian';
   theadRow1.appendChild(th0);
   FLEET_COLUMNS.forEach(c=>{ const th = document.createElement('th'); th.textContent = c.label; theadRow1.appendChild(th); });
-  detailCols.forEach(c=>{ const th = document.createElement('th'); th.textContent = c.label; theadRow1.appendChild(th); });
   const thead = document.createElement('thead'); thead.appendChild(theadRow1);
   const table = document.getElementById('fleetTable');
   table.innerHTML = '';
