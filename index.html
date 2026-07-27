@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = '2026-07-27.30';
+window.APP_VERSION = '2026-07-27.33';
 (function(){
   fetch('version.json?_=' + Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.json() : null; })
@@ -744,8 +744,16 @@ const DIMENSIONS = [
 ];
 const ALLV = {}; // dim key -> full sorted list of values
 const state = {
-  gran:'daily', value:'TONASE', chartType:'stackedbar',
-  levels: ['NAMA_PROPINSI'], // default: table grouped by Provinsi on load (confirmed 2026-07-26) -
+  gran:'daily', value:'TONASE',
+  // Default chart changed 2026-07-27 per Rendy: open on the %Achievement + Tren view (was Stacked
+  // Bar) with no drill-down grouping active (was grouped by Provinsi) - so the first thing anyone
+  // sees on load is the single company-wide %Achievement trend (already shown as plain text via
+  // achievBarLabelsPlugin, always-on for this chart type), not a per-province breakdown they have
+  // to click into. The separate "Tampilkan Nilai di Grafik" toggle stays OFF by default though -
+  // Rendy confirmed no toggle button should start in its active state ("no active button").
+  chartType:'achievbars',
+  showValueLabels: false,
+  levels: [], // no drill-down grouping active by default (table starts as one "Total" row) -
               // ordered list of DIMENSIONS[].field, in click order. Drives BOTH the summary
               // table's drill-down (level 1 = first field clicked, level 2 = second, ...) and the
               // chart's series-split (uses levels[0] only, to keep the chart to a sane series count).
@@ -1555,6 +1563,30 @@ function fmtChartValueLabel(val, dsLabel){
   if(dsLabel==='% Achievement' || dsLabel==='% OF') return val.toFixed(1)+'%';
   return Math.round(val).toLocaleString('id-ID');
 }
+/* Collision handling added 2026-07-27 per Rendy ("number still on top each other, there must be
+   rule") - two distinct overlap failure modes, both fixed here:
+   1. VERTICAL: when 2+ datasets are close in value at the same x (e.g. several province lines
+      converging, or a stacked-bar segment sitting near another series), their labels' natural
+      draw positions (point.y + a fixed offset) land on top of each other. Fixed by grouping every
+      label candidate by x-index, sorting top-to-bottom by the point's own canvas y, then walking
+      down and forcing each next label's y to be at least MIN_GAP_Y below the previous one already
+      placed - so the label ordering always matches the values' visual stacking order, just spaced
+      out enough to stay legible, instead of literally overlapping.
+   2. HORIZONTAL: when there are many x categories (e.g. a full month of daily buckets, or hourly),
+      each category's own column is narrower than a label's rendered text width, so adjacent
+      categories' labels smear into each other left-to-right. Fixed by measuring the actual
+      per-category pixel width from the chart area and thinning out labels (only every Nth
+      category) whenever that width is less than a legible minimum - rather than showing every
+      single one and letting them collide. */
+const MIN_GAP_Y = 11; // px between stacked label baselines - ~1 line of the 9px label font + padding
+function estimateLabelStep(chart, numCategories){
+  if(numCategories<=1) return 1;
+  const areaWidth = chart.chartArea ? (chart.chartArea.right-chart.chartArea.left) : 0;
+  const perCategoryPx = areaWidth / numCategories;
+  const MIN_LEGIBLE_PX = 30; // rough width needed for a short thousands-formatted number at 9px bold
+  if(perCategoryPx >= MIN_LEGIBLE_PX) return 1;
+  return Math.ceil(MIN_LEGIBLE_PX / Math.max(perCategoryPx, 1));
+}
 const valueLabelsPlugin = {
   id: 'valueLabels',
   afterDatasetsDraw(chart, args, opts){
@@ -1563,19 +1595,39 @@ const valueLabelsPlugin = {
     ctx.save();
     ctx.font = '600 9px system-ui, sans-serif';
     ctx.textAlign = 'center';
+
+    const numCategories = (chart.data.labels||[]).length;
+    const step = estimateLabelStep(chart, numCategories);
+
+    // Gather every label candidate, grouped by x-index, so overlap can be resolved per-index.
+    const byIndex = new Map();
     chart.data.datasets.forEach((ds, dIdx)=>{
       if(ds.isTarget) return;               // target overlay lines - own toggle already, skip to avoid clutter
       if(ds.label==='% Achievement') return; // already labeled by achievBarLabelsPlugin
       const meta = chart.getDatasetMeta(dIdx);
       if(!meta || meta.hidden) return;
+      const isBar = meta.type==='bar';
       const color = (typeof ds.borderColor==='string' && ds.borderColor) || '#1A1A1A';
-      ctx.fillStyle = color;
       meta.data.forEach((el, i)=>{
+        if(i % step !== 0) return; // horizontal thinning - only every Nth category when tight
         const val = ds.data[i];
         if(val==null || !el) return;
-        const isBar = meta.type==='bar';
-        const yOffset = isBar ? -6 : -8;
-        ctx.fillText(fmtChartValueLabel(val, ds.label), el.x, el.y + yOffset);
+        if(!byIndex.has(i)) byIndex.set(i, []);
+        byIndex.get(i).push({pointY: el.y, x: el.x, baseOffset: isBar ? -6 : -8, color, text: fmtChartValueLabel(val, ds.label)});
+      });
+    });
+
+    byIndex.forEach(points=>{
+      // Sort top-to-bottom by the point's OWN position (smaller canvas y = visually higher/larger
+      // value) so labels keep the same relative order as the data they're labeling.
+      points.sort((a,b)=>a.pointY-b.pointY);
+      let prevY = null;
+      points.forEach(p=>{
+        let y = p.pointY + p.baseOffset;
+        if(prevY!=null && y < prevY + MIN_GAP_Y) y = prevY + MIN_GAP_Y;
+        prevY = y;
+        ctx.fillStyle = p.color;
+        ctx.fillText(p.text, p.x, y);
       });
     });
     ctx.restore();
