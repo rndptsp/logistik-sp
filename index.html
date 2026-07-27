@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = '2026-07-27.29';
+window.APP_VERSION = '2026-07-27.30';
 (function(){
   fetch('version.json?_=' + Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.json() : null; })
@@ -379,6 +379,9 @@ window.addEventListener('error', function(e){
     </div>
     <div class="panel-body panel-collapsed" id="chartBody">
       <div class="pillrow" id="targetToggleRow"></div>
+      <div class="pillrow">
+        <button type="button" id="valueLabelsToggleBtn" class="pill" onclick="event.stopPropagation();toggleValueLabels()" title="Tampilkan angka nilai di atas setiap bar/titik garis pada grafik">🏷️ Tampilkan Nilai di Grafik</button>
+      </div>
       <div id="rowFocusBanner" class="rowfocus-banner" style="display:none;"></div>
       <div class="chart-body">
         <div class="value-list" id="valueList"></div>
@@ -1535,6 +1538,57 @@ const achievBarLabelsPlugin = {
 };
 if(typeof Chart !== 'undefined' && Chart.register) Chart.register(achievBarLabelsPlugin);
 
+/* ================= VALUE LABELS TOGGLE (2026-07-27) =================
+   Added per Rendy's request: an on/off toggle to show each bar/line-point's own numeric value
+   directly on the chart, on top of the bar or above the line - independent of the %Achievement
+   labels above (those are a separate, always-on plugin for a different metric). Applies to both
+   chart branches in renderChart(): the main bar/line/area/stackedbar chart's real data series, and
+   the achievbars chart's Realisasi(ton)/Target(ton) lines. Deliberately skips: target overlay lines
+   in the main chart (ds.isTarget - they already have their own show/hide toggle buttons and would
+   clutter fast when 3 target lines + several province bars are all visible at once) and the
+   '% Achievement' bar dataset in the achievbars chart (already labeled by achievBarLabelsPlugin
+   above - would otherwise double-label the same bar). state.showValueLabels persists across
+   re-renders same as any other chart option; default OFF since most views (stacked bars with many
+   groups, multi-province lines) would be unreadably busy with it always on. */
+function fmtChartValueLabel(val, dsLabel){
+  if(val==null) return '';
+  if(dsLabel==='% Achievement' || dsLabel==='% OF') return val.toFixed(1)+'%';
+  return Math.round(val).toLocaleString('id-ID');
+}
+const valueLabelsPlugin = {
+  id: 'valueLabels',
+  afterDatasetsDraw(chart, args, opts){
+    if(!opts || !opts.enabled) return;
+    const {ctx} = chart;
+    ctx.save();
+    ctx.font = '600 9px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    chart.data.datasets.forEach((ds, dIdx)=>{
+      if(ds.isTarget) return;               // target overlay lines - own toggle already, skip to avoid clutter
+      if(ds.label==='% Achievement') return; // already labeled by achievBarLabelsPlugin
+      const meta = chart.getDatasetMeta(dIdx);
+      if(!meta || meta.hidden) return;
+      const color = (typeof ds.borderColor==='string' && ds.borderColor) || '#1A1A1A';
+      ctx.fillStyle = color;
+      meta.data.forEach((el, i)=>{
+        const val = ds.data[i];
+        if(val==null || !el) return;
+        const isBar = meta.type==='bar';
+        const yOffset = isBar ? -6 : -8;
+        ctx.fillText(fmtChartValueLabel(val, ds.label), el.x, el.y + yOffset);
+      });
+    });
+    ctx.restore();
+  }
+};
+if(typeof Chart !== 'undefined' && Chart.register) Chart.register(valueLabelsPlugin);
+function toggleValueLabels(){
+  state.showValueLabels = !state.showValueLabels;
+  const btn = document.getElementById('valueLabelsToggleBtn');
+  if(btn) btn.classList.toggle('active', state.showValueLabels);
+  renderChart();
+}
+
 function chartLabel(bk, gran){
   if(gran==='monthly'){ const [y,m] = bk.split('-'); return `${MONTH_NAMES_ID[+m]} ${y}`; }
   return bk;
@@ -1597,6 +1651,7 @@ function renderChart(){
           legend:{labels:{color:'#1A1A1A', boxWidth:12, font:{size:10}, padding:16}},
           tooltip:{mode:'index', intersect:false, callbacks:{label:(c)=> c.dataset.label==='% Achievement' ? `${c.formattedValue}%` : `${c.dataset.label}: ${Number(c.raw).toLocaleString('id-ID')} ton`}},
           achievBarLabels:{enabled:true},
+          valueLabels:{enabled: !!state.showValueLabels},
         },
         scales:{
           x:{ticks:{color:'#6B6B6B', font:{size:10}, autoSkip:true, maxRotation:60, minRotation:0}, grid:{display:false}},
@@ -1667,6 +1722,7 @@ function renderChart(){
         legend: {labels:{color:'#1A1A1A', boxWidth:12, font:{size:10}, padding:16,
           filter: (item, data)=> !(data.datasets[item.datasetIndex] || {}).isTarget}},
         tooltip: {mode:'index', intersect:false},
+        valueLabels: {enabled: !!state.showValueLabels},
       },
       scales: {
         // Visual polish 2026-07-26 (per reference chart Rendy shared): dropped the vertical
