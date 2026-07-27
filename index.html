@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = '2026-07-27.35';
+window.APP_VERSION = '2026-07-27.36';
 (function(){
   fetch('version.json?_=' + Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.json() : null; })
@@ -162,11 +162,20 @@ input[type=date]{background:#fff;color:var(--text);border:1px solid var(--border
 .pvitem:hover{background:var(--panel2);}
 .pvitem input{margin:0;}
 
-.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;padding:14px 20px;}
-.kpi{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:12px 14px;}
+/* KPI panel redesigned 2026-07-27 per Rendy's reference screenshot: two rows (Performance -
+   color-graded with a target/comparison badge and a gap-insight sentence; Informasi - plain
+   reference numbers), each card carrying a colored top decoration bar. */
+.kpi-section-title{font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.04em;padding:12px 20px 0;}
+.kpi-section-title:first-child{padding-top:14px;}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;padding:8px 20px 14px;}
+.kpi{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:14px 14px 12px;position:relative;overflow:hidden;}
+.kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:var(--kpi-color, var(--border));}
 .kpi .lbl{font-size:10px;color:var(--sub);text-transform:uppercase;letter-spacing:.03em;font-weight:600;}
-.kpi .val{font-size:20px;font-weight:700;margin-top:4px;}
+.kpi .val-row{display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-top:5px;flex-wrap:wrap;}
+.kpi .val{font-size:20px;font-weight:700;}
 .kpi .val small{font-size:11px;color:var(--sub);font-weight:400;}
+.kpi .badge{font-size:11px;font-weight:700;white-space:nowrap;}
+.kpi .insight{font-size:11px;color:var(--sub);margin-top:6px;line-height:1.4;}
 
 main{padding:0 20px 30px;}
 .panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;margin-bottom:16px;overflow:hidden;}
@@ -369,7 +378,7 @@ window.addEventListener('error', function(e){
 <div class="gapnote" id="gapNote" style="display:none;"></div>
 
 <div id="kpiPanelHead" onclick="toggleSection('kpiRow')"><span class="panel-caret" id="kpiRow-caret">▼</span> KPI Ringkasan</div>
-<div class="kpis panel-body" id="kpiRow"></div>
+<div class="panel-body" id="kpiRow"></div>
 
 <main>
   <div class="panel">
@@ -1828,27 +1837,63 @@ function renderKPIs(){
   const lmTonase = aggMetric(lmRows, 'TONASE');
   const vsLM = pctOfLM(tonase, lmTonase); // ratio: current ÷ LM × 100, e.g. 116,9% (not "+16,9%")
 
-  const cards = [
-    // Added 2026-07-27 per Rendy, first 3 cards: Vol. Kontrak / Target (priority chain) / Target
-    // RKAP, all prorated to MTD (STD - Selected-To-Date, follows the active date filter same as
-    // everything else here). 'N/A' when target data isn't available for the current drill-down
-    // (e.g. Distributor level active) or when RKAP specifically has no coverage this month.
-    ['Vol. Kontrak (MTD)', (foundAny && !unscopable && kontrakMtd!=null) ? `${kontrakMtd.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>` : 'N/A'],
-    ['Target (MTD)', (foundAny && !unscopable && mtd!=null) ? `${mtd.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>` : 'N/A'],
-    ['Target RKAP (MTD)', (rkapFoundAny && !unscopable && rkapMtd!=null) ? `${rkapMtd.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>` : 'N/A'],
-    ['Tonase (MTD)', `${tonase.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>`],
-    ['Tonase LM (MTD)', `${lmTonase.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>`],
-    ['% vs Bulan Lalu', vsLM!=null ? `${vsLM.toFixed(1)}%` : 'N/A'],
-    ['Total SO', `${so.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>`],
-    ['% Achievement', achiev!=null ? `${achiev.toFixed(1)}%` : 'N/A'],
-    ['% OF', ofpct!=null ? `${ofpct.toFixed(1)}%` : 'N/A'],
-    ['Jumlah Trip', trip.toLocaleString('id-ID')],
-    ['Truk Unik', truck.toLocaleString('id-ID')],
-    ['Avg Waiting Time', waiting!=null ? `${waiting.toFixed(1)} <small>jam</small>` : 'N/A'],
-    ['Avg Dwell Time', dwell!=null ? `${dwell.toFixed(1)} <small>jam</small>` : 'N/A'],
-  ];
-  document.getElementById('kpiRow').innerHTML = cards.map(([l,v])=>
-    `<div class="kpi"><div class="lbl">${l}</div><div class="val">${v}</div></div>`).join('');
+  // ================= KPI PANEL REDESIGN (2026-07-27) =================
+  // Two rows per Rendy's reference: PERFORMANCE (color-graded green->red by pctColor, a target/
+  // comparison badge, and a short real-data gap-insight sentence) and INFORMASI (plain reference
+  // numbers, neutral top bar, no grading - there's no "good/bad" direction for a trip count).
+  const NEUTRAL_BAR = '#C9CDD3';
+  const targetGapText = (foundAny && !unscopable && mtd!=null)
+    ? (tonase>=mtd
+        ? `Melampaui Target MTD sebesar ${fmtNum(tonase-mtd)} ton`
+        : `Kurang ${fmtNum(Math.abs(tonase-mtd))} ton dari Target MTD (${fmtNum(mtd)} ton)`)
+    : 'Target MTD tidak tersedia untuk drill-down ini';
+  const ofGapText = (so>0)
+    ? (tonase>=so
+        ? `Realisasi melebihi SO sebesar ${fmtNum(tonase-so)} ton`
+        : `Realisasi masih ${fmtNum(Math.abs(tonase-so))} ton di bawah SO (${fmtNum(so)} ton)`)
+    : 'Data SO tidak tersedia untuk drill-down ini';
+  const lmGapText = (vsLM!=null)
+    ? (vsLM>=100
+        ? `Tumbuh dibanding bulan lalu (LM: ${fmtNum(lmTonase)} ton)`
+        : `Melemah dibanding bulan lalu (LM: ${fmtNum(lmTonase)} ton)`)
+    : 'Data bulan lalu tidak tersedia untuk perbandingan';
+
+  function perfCard(label, pct, valueText, badgeText, insight){
+    const color = pctColor(pct);
+    return `<div class="kpi" style="--kpi-color:${color}">
+      <div class="lbl">${label}</div>
+      <div class="val-row"><div class="val">${valueText}</div><div class="badge" style="color:${color}">${badgeText}</div></div>
+      <div class="insight">${insight}</div>
+    </div>`;
+  }
+  function infoCard(label, valueHtml){
+    return `<div class="kpi" style="--kpi-color:${NEUTRAL_BAR}"><div class="lbl">${label}</div><div class="val-row"><div class="val">${valueHtml}</div></div></div>`;
+  }
+
+  const perfCardsHtml = [
+    perfCard('% Achievement', achiev, achiev!=null?`${achiev.toFixed(1)}%`:'N/A', 'Target 100%', targetGapText),
+    perfCard('% OF', ofpct, ofpct!=null?`${ofpct.toFixed(1)}%`:'N/A', 'Target 100%', ofGapText),
+    perfCard('% vs Bulan Lalu', vsLM, vsLM!=null?`${vsLM.toFixed(1)}%`:'N/A', 'Target 100%', lmGapText),
+  ].join('');
+
+  const infoCardsHtml = [
+    // Vol. Kontrak / Target (priority chain) / Target RKAP added 2026-07-27, all prorated to MTD
+    // (STD - Selected-To-Date, follows the active date filter same as everything else here).
+    infoCard('Vol. Kontrak (MTD)', (foundAny && !unscopable && kontrakMtd!=null) ? `${kontrakMtd.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>` : 'N/A'),
+    infoCard('Target (MTD)', (foundAny && !unscopable && mtd!=null) ? `${mtd.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>` : 'N/A'),
+    infoCard('Target RKAP (MTD)', (rkapFoundAny && !unscopable && rkapMtd!=null) ? `${rkapMtd.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>` : 'N/A'),
+    infoCard('Tonase (MTD)', `${tonase.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>`),
+    infoCard('Tonase LM (MTD)', `${lmTonase.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>`),
+    infoCard('Total SO', `${so.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>`),
+    infoCard('Jumlah Trip', trip.toLocaleString('id-ID')),
+    infoCard('Truk Unik', truck.toLocaleString('id-ID')),
+    infoCard('Avg Waiting Time', waiting!=null ? `${waiting.toFixed(1)} <small>jam</small>` : 'N/A'),
+    infoCard('Avg Dwell Time', dwell!=null ? `${dwell.toFixed(1)} <small>jam</small>` : 'N/A'),
+  ].join('');
+
+  document.getElementById('kpiRow').innerHTML =
+    `<div class="kpi-section-title">Performance</div><div class="kpis">${perfCardsHtml}</div>` +
+    `<div class="kpi-section-title">Informasi</div><div class="kpis">${infoCardsHtml}</div>`;
 
   const gapEl = document.getElementById('gapNote');
   const notes = [];
