@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = '2026-07-27.33';
+window.APP_VERSION = '2026-07-27.34';
 (function(){
   fetch('version.json?_=' + Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.json() : null; })
@@ -380,7 +380,7 @@ window.addEventListener('error', function(e){
     <div class="panel-body panel-collapsed" id="chartBody">
       <div class="pillrow" id="targetToggleRow"></div>
       <div class="pillrow">
-        <button type="button" id="valueLabelsToggleBtn" class="pill" onclick="event.stopPropagation();toggleValueLabels()" title="Tampilkan angka nilai di atas setiap bar/titik garis pada grafik">🏷️ Tampilkan Nilai di Grafik</button>
+        <button type="button" id="valueLabelsToggleBtn" class="pill active" onclick="event.stopPropagation();toggleValueLabels()" title="Tampilkan angka nilai di atas setiap bar/titik garis pada grafik">🏷️ Tampilkan Nilai di Grafik</button>
       </div>
       <div id="rowFocusBanner" class="rowfocus-banner" style="display:none;"></div>
       <div class="chart-body">
@@ -747,12 +747,12 @@ const state = {
   gran:'daily', value:'TONASE',
   // Default chart changed 2026-07-27 per Rendy: open on the %Achievement + Tren view (was Stacked
   // Bar) with no drill-down grouping active (was grouped by Provinsi) - so the first thing anyone
-  // sees on load is the single company-wide %Achievement trend (already shown as plain text via
+  // sees on load is the single company-wide %Achievement trend (shown as plain text mid-bar via
   // achievBarLabelsPlugin, always-on for this chart type), not a per-province breakdown they have
-  // to click into. The separate "Tampilkan Nilai di Grafik" toggle stays OFF by default though -
-  // Rendy confirmed no toggle button should start in its active state ("no active button").
+  // to click into. showValueLabels flipped back ON by final instruction ("default nilai grafik
+  // on") - the button starts active too (see the HTML button's class below).
   chartType:'achievbars',
-  showValueLabels: false,
+  showValueLabels: true,
   levels: [], // no drill-down grouping active by default (table starts as one "Total" row) -
               // ordered list of DIMENSIONS[].field, in click order. Drives BOTH the summary
               // table's drill-down (level 1 = first field clicked, level 2 = second, ...) and the
@@ -1520,11 +1520,13 @@ function computeAchievBarsSeries(f){
   const achievPct = bucketKeys.map((bk,i)=> (target[i]!=null && target[i]>0) ? round2(tonase[i]/target[i]*100) : null);
   return {bucketKeys, tonase, target, achievPct};
 }
-/* Draws the %Achievement value directly above/inside each bar - no external datalabels plugin
-   (this file bundles everything locally on purpose, see the note near <head>), so a small custom
-   Chart.js plugin does the same job with plain canvas text. Registered once, only active on charts
-   that opt in via options.plugins.achievBarLabels.enabled, so it never touches the other chart
-   types. */
+/* Draws the %Achievement value inside each bar, vertically centered - no external datalabels
+   plugin (this file bundles everything locally on purpose, see the note near <head>), so a small
+   custom Chart.js plugin does the same job with plain canvas text. Registered once, only active on
+   charts that opt in via options.plugins.achievBarLabels.enabled, so it never touches the other
+   chart types. Moved from above-the-bar to mid-bar 2026-07-27 per Rendy ("move achievement % into
+   mid of bar") - vertical center = midpoint between the bar's value-end (bar.y) and its 0-baseline
+   (bar.base), works regardless of the bar's height or whether the value is above/below the axis. */
 const achievBarLabelsPlugin = {
   id: 'achievBarLabels',
   afterDatasetsDraw(chart, args, opts){
@@ -1536,10 +1538,12 @@ const achievBarLabelsPlugin = {
     ctx.font = '600 10px system-ui, sans-serif';
     ctx.fillStyle = '#3d0f0f';
     ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
     meta.data.forEach((bar, i)=>{
       const val = chart.data.datasets[0].data[i];
       if(val==null) return;
-      ctx.fillText(val.toFixed(1)+'%', bar.x, bar.y - 6);
+      const midY = (bar.base!=null) ? (bar.y + bar.base) / 2 : bar.y;
+      ctx.fillText(val.toFixed(1)+'%', bar.x, midY);
     });
     ctx.restore();
   }
