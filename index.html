@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = '2026-07-27.34';
+window.APP_VERSION = '2026-07-27.35';
 (function(){
   fetch('version.json?_=' + Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.json() : null; })
@@ -1206,15 +1206,21 @@ function targetForScope(year, month, f, scope, sourceTypeOverride){
     pass {} for the unfiltered/whole-selection KPI case. Returns null/unscopable if ANY currently
     active drill-down level (state.levels) is Distributor — target has no such dimension.
     Also returns `mtd` = Target MTD (Target FM prorated by the weekday-weight shape through the
-    latest date with actual data in each of those months — see mtdProrationRatio above). */
-function targetForGroup(rowsInGroup, f, scope){
+    latest date with actual data in each of those months — see mtdProrationRatio above), and
+    `kontrakMtd` = Vol. Kontrak (the CONTRACT source specifically) prorated the same way - added
+    2026-07-27 per Rendy for the new "Vol. Kontrak MTD" KPI card.
+    `sourceTypeOverride` (added 2026-07-27, same meaning as targetForScope's own param): when set,
+    forces `full`/`mtd` to come from that ONE source type only (e.g. 'RKAP') instead of the usual
+    SNOP->RKAP->CONTRACT priority chain - used for the "Target RKAP MTD" KPI card so it shows RKAP's
+    own number even in months where SNOP would otherwise have taken priority. */
+function targetForGroup(rowsInGroup, f, scope, sourceTypeOverride){
   if(!levelsAreTargetCapable(state.levels)){
-    return {full:null, kontrak:null, mtd:null, foundAny:false, unscopable:true};
+    return {full:null, kontrak:null, kontrakMtd:null, mtd:null, foundAny:false, unscopable:true};
   }
   scope = scope || {};
   const monthsSeen = new Set();
   rowsInGroup.forEach(r=>{ if(r._d) monthsSeen.add(`${r._d.getFullYear()}|${r._d.getMonth()+1}|${r.NAMA_PROPINSI}`); });
-  let full=0, kontrak=0, mtd=0, foundAny=false;
+  let full=0, kontrak=0, mtd=0, kontrakMtd=0, foundAny=false;
   monthsSeen.forEach(key=>{
     const [y,m,prov] = key.split('|');
     // BUG FIXED 2026-07-25: this used to early-return (skip) unless `prov` matched an explicit
@@ -1230,11 +1236,13 @@ function targetForGroup(rowsInGroup, f, scope){
     // province) combo contributes its own correctly-scoped slice exactly once, and an aggregate/
     // Total view correctly sums each province's real target instead of repeating the national total.
     const scopedQuery = Object.assign({}, scope, {NAMA_PROPINSI: scope.NAMA_PROPINSI!=null ? scope.NAMA_PROPINSI : prov});
-    const t = targetForScope(+y, +m, f, scopedQuery);
+    const t = targetForScope(+y, +m, f, scopedQuery, sourceTypeOverride);
     if(t.full!=null){
       full += t.full; kontrak += t.kontrak;
       const {fromDay, toDay} = stdDayRangeForMonth(+y, +m, f);
-      mtd += t.full * stdProrationRatio(+y, +m, fromDay, toDay); // `mtd` field name kept internally (many call sites), now represents Target STD
+      const ratio = stdProrationRatio(+y, +m, fromDay, toDay);
+      mtd += t.full * ratio; // `mtd` field name kept internally (many call sites), now represents Target STD
+      kontrakMtd += t.kontrak * ratio;
       if(t.foundAny) foundAny=true;
     }
   });
@@ -1245,7 +1253,7 @@ function targetForGroup(rowsInGroup, f, scope){
   // treating it as unscopable would show a misleading N/A for a filter that isn't really doing
   // anything. 'distributor' stays - no such dimension exists anywhere in target data.
   const unscopable = isRestricted('distributor');
-  return {full, kontrak, mtd: round2(mtd), foundAny, unscopable};
+  return {full, kontrak, kontrakMtd: round2(kontrakMtd), mtd: round2(mtd), foundAny, unscopable};
 }
 
 /* ================= COLOR GRADING ================= */
@@ -1805,9 +1813,13 @@ function renderKPIs(){
   // %Achievement = Vol. MTD / Target MTD (not Target FM) - fixed 2026-07-26 per Rendy: both sides
   // of the ratio must be "as of today", otherwise a not-yet-finished month always reads artificially
   // low against a full-month target it hasn't had the days to reach yet.
-  const {full, mtd, foundAny, unscopable} = targetForGroup(rows, f, {});
+  const {full, mtd, kontrakMtd, foundAny, unscopable} = targetForGroup(rows, f, {});
   const achiev = (mtd!=null && foundAny && mtd>0) ? tonase/mtd*100 : null;
   const ofpct = so>0 ? tonase/so*100 : null;
+  // Added 2026-07-27 per Rendy: RKAP-specific MTD target, computed with an explicit sourceType
+  // override so it always shows RKAP's own number regardless of which source the SNOP->RKAP->
+  // CONTRACT priority chain picked for the main "Target MTD"/%Achievement figures above.
+  const {mtd: rkapMtd, foundAny: rkapFoundAny} = targetForGroup(rows, f, {}, 'RKAP');
 
   // Follows the SELECTED DATE FILTER (f), same as the table's Vol. MTD/%Achiev columns and every
   // other card here - reversed 2026-07-27 per Rendy, see the comment above matchRow() for why.
@@ -1817,6 +1829,13 @@ function renderKPIs(){
   const vsLM = pctOfLM(tonase, lmTonase); // ratio: current ÷ LM × 100, e.g. 116,9% (not "+16,9%")
 
   const cards = [
+    // Added 2026-07-27 per Rendy, first 3 cards: Vol. Kontrak / Target (priority chain) / Target
+    // RKAP, all prorated to MTD (STD - Selected-To-Date, follows the active date filter same as
+    // everything else here). 'N/A' when target data isn't available for the current drill-down
+    // (e.g. Distributor level active) or when RKAP specifically has no coverage this month.
+    ['Vol. Kontrak (MTD)', (foundAny && !unscopable && kontrakMtd!=null) ? `${kontrakMtd.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>` : 'N/A'],
+    ['Target (MTD)', (foundAny && !unscopable && mtd!=null) ? `${mtd.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>` : 'N/A'],
+    ['Target RKAP (MTD)', (rkapFoundAny && !unscopable && rkapMtd!=null) ? `${rkapMtd.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>` : 'N/A'],
     ['Tonase (MTD)', `${tonase.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>`],
     ['Tonase LM (MTD)', `${lmTonase.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>`],
     ['% vs Bulan Lalu', vsLM!=null ? `${vsLM.toFixed(1)}%` : 'N/A'],
