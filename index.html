@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = '2026-07-27.27';
+window.APP_VERSION = '2026-07-27.28';
 (function(){
   fetch('version.json?_=' + Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.json() : null; })
@@ -1023,21 +1023,17 @@ function matchRowLM(r, lm){
 /* % vs LM is a RATIO (current ÷ LM × 100), not a delta — e.g. 109.608/93.752×100 = 116,9%, not
    "+16,9%". Corrected 2026-07-25 per explicit instruction after the delta version shipped. */
 function pctOfLM(cur, prev){ if(prev==null || prev===0 || cur==null) return null; return round2(cur/prev*100); }
-/* "Total Realisasi" / "Tonase Bulan Lalu (LM)" / "% vs Bulan Lalu" KPI cards are pinned to the
-   REAL current-month MTD window (month start through the latest actual data day), independent of
-   whatever broader date range is selected in the filter bar for the rest of the dashboard (chart/
-   table/other cards) — confirmed 2026-07-25: these 3 cards must always answer "where are we this
-   month vs last month," never follow a wide custom date selection. Tahun/Bulan checkboxes are
-   ignored here too, same reasoning as getLMFilterState — MTD-right-now is defined outside them. */
-function currentMTDFilterState(f){
-  const mf = Object.assign({}, f);
-  const today = new Date();
-  const y = today.getFullYear(), m = today.getMonth()+1;
-  const cutoffDay = LAST_DATA_DAY_CACHE[y+'-'+m] || today.getDate();
-  mf.from = new Date(y, m-1, 1);
-  mf.to = new Date(y, m-1, cutoffDay);
-  return mf;
-}
+/* REVERSED 2026-07-27 per Rendy: "Tonase (MTD)" / "Tonase LM (MTD)" / "% vs Bulan Lalu" KPI cards
+   used to be force-pinned to the real current-month MTD window regardless of the active date
+   filter (confirmed 2026-07-25). That silently diverged from the summary table's "Vol. MTD"/
+   "%Achiev" columns whenever the filter bar's date range wasn't exactly month-start->last-data-day
+   (e.g. Jambi showed Tonase(MTD)=29.612 in the KPI card vs Vol.MTD=31.292 in the table, same label,
+   different numbers, no visible reason why). Root-caused by comparing both figures against real
+   data: the KPI card's forced window explained 29.612 exactly (Jambi 1-27 Juli), while the table's
+   number came from whatever the filter bar actually had selected - two different questions under
+   one "MTD" label. Rendy's call: these cards should follow the SELECTED DATE FILTER, same as the
+   table, not override it - "harusnya ikut selected date juga". currentMTDFilterState() removed;
+   all MTD-labeled figures now read from the same filteredRE(f) as everything else. */
 function matchRow(r, f){
   if(f.from && r._d && r._d < f.from) return false;
   if(f.to && r._d && r._d > new Date(f.to.getFullYear(),f.to.getMonth(),f.to.getDate(),23,59,59)) return false;
@@ -1697,21 +1693,16 @@ function renderKPIs(){
   const achiev = (mtd!=null && foundAny && mtd>0) ? tonase/mtd*100 : null;
   const ofpct = so>0 ? tonase/so*100 : null;
 
-  // Pinned to the real current-month MTD window regardless of the active date filter — see
-  // currentMTDFilterState() above. "Tonase" here means Tonase MTD, "Tonase Bulan Lalu (LM)" means
-  // Tonase MTD LM, and "% vs Bulan Lalu" is the ratio of those two MTD figures — not whatever the
-  // wider selected date range happens to be.
-  const mtdF = currentMTDFilterState(f);
-  const mtdRows = RE.filter(r=>matchRow(r, mtdF));
-  const mtdTonase = aggMetric(mtdRows, 'TONASE');
-  const mtdLmF = getLMFilterState(mtdF);
-  const mtdLmRows = RE.filter(r=>matchRowLM(r, mtdLmF));
-  const mtdLmTonase = aggMetric(mtdLmRows, 'TONASE');
-  const vsLM = pctOfLM(mtdTonase, mtdLmTonase); // ratio: current ÷ LM × 100, e.g. 116,9% (not "+16,9%")
+  // Follows the SELECTED DATE FILTER (f), same as the table's Vol. MTD/%Achiev columns and every
+  // other card here - reversed 2026-07-27 per Rendy, see the comment above matchRow() for why.
+  const lmF = getLMFilterState(f);
+  const lmRows = RE.filter(r=>matchRowLM(r, lmF));
+  const lmTonase = aggMetric(lmRows, 'TONASE');
+  const vsLM = pctOfLM(tonase, lmTonase); // ratio: current ÷ LM × 100, e.g. 116,9% (not "+16,9%")
 
   const cards = [
-    ['Tonase (MTD)', `${mtdTonase.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>`],
-    ['Tonase LM (MTD)', `${mtdLmTonase.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>`],
+    ['Tonase (MTD)', `${tonase.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>`],
+    ['Tonase LM (MTD)', `${lmTonase.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>`],
     ['% vs Bulan Lalu', vsLM!=null ? `${vsLM.toFixed(1)}%` : 'N/A'],
     ['Total SO', `${so.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>`],
     ['% Achievement', achiev!=null ? `${achiev.toFixed(1)}%` : 'N/A'],
