@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = '2026-07-27.36';
+window.APP_VERSION = '2026-07-27.37';
 (function(){
   fetch('version.json?_=' + Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.json() : null; })
@@ -168,6 +168,11 @@ input[type=date]{background:#fff;color:var(--text);border:1px solid var(--border
 .kpi-section-title{font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.04em;padding:12px 20px 0;}
 .kpi-section-title:first-child{padding-top:14px;}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;padding:8px 20px 14px;}
+/* Performance cards carry a badge+insight sentence (more content) so they need more min-width than
+   plain Informasi cards - both still one row each on a normal desktop width. Adjusted 2026-07-27
+   per Rendy ("maximum 2 row, adjust width"). */
+.kpis.kpis-perf{grid-template-columns:repeat(auto-fit,minmax(210px,1fr));}
+.kpis.kpis-info{grid-template-columns:repeat(auto-fit,minmax(120px,1fr));}
 .kpi{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:14px 14px 12px;position:relative;overflow:hidden;}
 .kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:4px;background:var(--kpi-color, var(--border));}
 .kpi .lbl{font-size:10px;color:var(--sub);text-transform:uppercase;letter-spacing:.03em;font-weight:600;}
@@ -1841,6 +1846,11 @@ function renderKPIs(){
   // Two rows per Rendy's reference: PERFORMANCE (color-graded green->red by pctColor, a target/
   // comparison badge, and a short real-data gap-insight sentence) and INFORMASI (plain reference
   // numbers, neutral top bar, no grading - there's no "good/bad" direction for a trip count).
+  // Revised again 2026-07-27 per Rendy: Tonase (MTD) and Avg Dwell Time moved INTO Performance
+  // (gap-from-target and gap-from-LM respectively); % vs Bulan Lalu moved OUT of Performance into
+  // Informasi ("tidak ada target" - a growth ratio has no fixed target to grade against, unlike
+  // the other 4 which each compare against something concrete: Target MTD, SO, Target MTD again,
+  // and LM dwell time).
   const NEUTRAL_BAR = '#C9CDD3';
   const targetGapText = (foundAny && !unscopable && mtd!=null)
     ? (tonase>=mtd
@@ -1857,6 +1867,17 @@ function renderKPIs(){
         ? `Tumbuh dibanding bulan lalu (LM: ${fmtNum(lmTonase)} ton)`
         : `Melemah dibanding bulan lalu (LM: ${fmtNum(lmTonase)} ton)`)
     : 'Data bulan lalu tidak tersedia untuk perbandingan';
+  // Dwell Time gap-from-LM: LOWER dwell is better (faster truck turnaround), so the pseudo-%
+  // used for color grading is inverted (lmDwell/dwell*100) - a dwell time BELOW last month's reads
+  // as "achievement" >100% (green), one ABOVE reads <100% (red), same visual language as the
+  // other 4 target/SO/LM-ton cards even though dwell's own "good direction" is downward.
+  const lmDwell = aggMetric(lmRows, 'DWELL');
+  const dwellPseudoPct = (dwell!=null && lmDwell!=null && dwell>0) ? (lmDwell/dwell)*100 : null;
+  const dwellGapText = (dwell!=null && lmDwell!=null)
+    ? (dwell<=lmDwell
+        ? `Membaik ${(lmDwell-dwell).toFixed(1)} jam dibanding bulan lalu (LM: ${lmDwell.toFixed(1)} jam)`
+        : `Memburuk ${(dwell-lmDwell).toFixed(1)} jam dibanding bulan lalu (LM: ${lmDwell.toFixed(1)} jam)`)
+    : 'Data dwell time bulan lalu tidak tersedia untuk perbandingan';
 
   function perfCard(label, pct, valueText, badgeText, insight){
     const color = pctColor(pct);
@@ -1870,10 +1891,12 @@ function renderKPIs(){
     return `<div class="kpi" style="--kpi-color:${NEUTRAL_BAR}"><div class="lbl">${label}</div><div class="val-row"><div class="val">${valueHtml}</div></div></div>`;
   }
 
+  const targetBadge = (foundAny && !unscopable && mtd!=null) ? `Target: ${fmtNum(mtd)} ton` : 'Target N/A';
   const perfCardsHtml = [
     perfCard('% Achievement', achiev, achiev!=null?`${achiev.toFixed(1)}%`:'N/A', 'Target 100%', targetGapText),
     perfCard('% OF', ofpct, ofpct!=null?`${ofpct.toFixed(1)}%`:'N/A', 'Target 100%', ofGapText),
-    perfCard('% vs Bulan Lalu', vsLM, vsLM!=null?`${vsLM.toFixed(1)}%`:'N/A', 'Target 100%', lmGapText),
+    perfCard('Tonase (MTD)', achiev, `${tonase.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>`, targetBadge, targetGapText),
+    perfCard('Avg Dwell Time', dwellPseudoPct, dwell!=null?`${dwell.toFixed(1)} <small>jam</small>`:'N/A', lmDwell!=null?`LM: ${lmDwell.toFixed(1)} jam`:'LM: N/A', dwellGapText),
   ].join('');
 
   const infoCardsHtml = [
@@ -1882,18 +1905,17 @@ function renderKPIs(){
     infoCard('Vol. Kontrak (MTD)', (foundAny && !unscopable && kontrakMtd!=null) ? `${kontrakMtd.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>` : 'N/A'),
     infoCard('Target (MTD)', (foundAny && !unscopable && mtd!=null) ? `${mtd.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>` : 'N/A'),
     infoCard('Target RKAP (MTD)', (rkapFoundAny && !unscopable && rkapMtd!=null) ? `${rkapMtd.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>` : 'N/A'),
-    infoCard('Tonase (MTD)', `${tonase.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>`),
     infoCard('Tonase LM (MTD)', `${lmTonase.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>`),
+    infoCard('% vs Bulan Lalu', vsLM!=null ? `${vsLM.toFixed(1)}%` : 'N/A'),
     infoCard('Total SO', `${so.toLocaleString('id-ID',{maximumFractionDigits:0})} <small>ton</small>`),
     infoCard('Jumlah Trip', trip.toLocaleString('id-ID')),
     infoCard('Truk Unik', truck.toLocaleString('id-ID')),
     infoCard('Avg Waiting Time', waiting!=null ? `${waiting.toFixed(1)} <small>jam</small>` : 'N/A'),
-    infoCard('Avg Dwell Time', dwell!=null ? `${dwell.toFixed(1)} <small>jam</small>` : 'N/A'),
   ].join('');
 
   document.getElementById('kpiRow').innerHTML =
-    `<div class="kpi-section-title">Performance</div><div class="kpis">${perfCardsHtml}</div>` +
-    `<div class="kpi-section-title">Informasi</div><div class="kpis">${infoCardsHtml}</div>`;
+    `<div class="kpi-section-title">Performance</div><div class="kpis kpis-perf">${perfCardsHtml}</div>` +
+    `<div class="kpi-section-title">Informasi</div><div class="kpis kpis-info">${infoCardsHtml}</div>`;
 
   const gapEl = document.getElementById('gapNote');
   const notes = [];
