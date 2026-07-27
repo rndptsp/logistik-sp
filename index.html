@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = '2026-07-27.28';
+window.APP_VERSION = '2026-07-27.29';
 (function(){
   fetch('version.json?_=' + Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.json() : null; })
@@ -455,7 +455,11 @@ const soMonthLoadPromises = new Map();
    the data-loading boundary so they never enter RE/SO and therefore never appear in any chart,
    table, or KPI. Filtered by plant code alone (KD_PLANT/PLANT === '79B4'), NOT by vendor name -
    79H7 (Semen Baturaja/SMBR) also has some 'ANGKUT SENDIRI'-labeled rows but those legitimately
-   stay (confirmed earlier: that SMBR volume is correctly counted under Area 1/Semen Padang). */
+   stay (confirmed earlier: that SMBR volume is correctly counted under Area 1/Semen Padang).
+   SOURCE_PLANT for these 22 SMBR rows was blank (no PLANT_NAMES mapping existed for the 79H7 code)
+   until Rendy asked 2026-07-27 to give it a real label - now backfilled to 'SMBR' in realisasi.csv/
+   the chunk data directly, and build_july_refresh.py's PLANT_NAMES updated so future monitoring
+   refreshes keep labeling it correctly instead of reverting to blank. */
 const HIDDEN_PLANT_CODE = '79B4';
 function toObjects(payload){
   const {header, rows} = payload;
