@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = '2026-07-27.46';
+window.APP_VERSION = '2026-07-27.47';
 (function(){
   fetch('version.json?_=' + Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.json() : null; })
@@ -1992,7 +1992,16 @@ function buildRowMetrics(parts, grows, lmGrows, f, levels, targetOK){
   const gapToFM = (full!=null && foundAny) ? tonase - full : null; // Vol. MTD - Target FM
   const lmTonase = aggMetric(lmGrows,'TONASE');
   const vsLM = pctOfLM(tonase, lmTonase);
-  return {parts, label: parts[parts.length-1], tonase, kontrak, full, mtd, achiev, so, ofpct,
+  // Leaf-row label must show every level BELOW the top (subtotal) level, not just the deepest one -
+  // fixed 2026-07-28 per Rendy's screenshot: with 3 active levels (e.g. Provinsi>Distributor>
+  // Expeditur), the leaf rows were grouped correctly internally (parts had all 3 values) but the
+  // label only showed parts[parts.length-1] (just "Expeditur"), so the Distributor tier was
+  // invisible - two different distributors both routing through the same Expeditur rendered as two
+  // identical-looking leaf rows with no way to tell them apart. Joining parts.slice(1) shows
+  // "Distributor › Expeditur" instead. parts[0] alone (level count 0/1, "Total"/single-level case)
+  // falls through to the `|| parts[0]` fallback since slice(1) is empty there.
+  const label = parts.slice(1).join(' › ') || parts[0];
+  return {parts, label, tonase, kontrak, full, mtd, achiev, so, ofpct,
     gapMTD, gapToFM, waiting, dwell, trip, truck, foundAny, lmTonase, vsLM, targetOK};
 }
 
