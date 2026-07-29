@@ -19,7 +19,11 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = '2026-07-27.47';
+<<<<<<< HEAD
+window.APP_VERSION = '2026-07-27.49';
+=======
+window.APP_VERSION = '2026-07-27.49';
+>>>>>>> 6e414e4c545b17f695bffa5462e26107c827b607
 (function(){
   fetch('version.json?_=' + Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.json() : null; })
@@ -243,9 +247,15 @@ td.grouplabel{white-space:nowrap;}
 #fleetTable td:nth-child(n+2):nth-child(-n+6){white-space:nowrap;}
 tr.lvl-subtotal td{font-weight:700;background:#FAFAFA;}
 tr.lvl-subtotal td.grouplabel{border-left:3px solid var(--accent);}
-tr.lvl-leaf td.grouplabel{padding-left:26px;color:var(--sub);font-weight:400;}
-tr.lvl-subtotal, tr.lvl-leaf{cursor:pointer;}
-tr.lvl-subtotal:hover, tr.lvl-leaf:hover{filter:brightness(0.97);}
+tr.lvl-leaf td.grouplabel{color:var(--sub);font-weight:400;}
+/* Mid-tier rows (any drill-down level between the top subtotal and the deepest/leaf level, e.g.
+   Distrik/Distributor when levels = Provinsi>Distrik>Distributor>Expeditur) - added 2026-07-28 for
+   the full recursive pivot tree (every level gets its own indent + subtotal, not just 2 tiers).
+   Slightly lighter than the top subtotal so the eye still reads depth order top->bottom. */
+tr.lvl-mid td{font-weight:600;background:#FCFCFC;}
+tr.lvl-mid td.grouplabel{border-left:2px solid var(--accent);}
+tr.lvl-subtotal, tr.lvl-leaf, tr.lvl-mid{cursor:pointer;}
+tr.lvl-subtotal:hover, tr.lvl-leaf:hover, tr.lvl-mid:hover{filter:brightness(0.97);}
 tr.row-focused td{background:#FDF1F0 !important;}
 tr.row-focused td.grouplabel{border-left:3px solid var(--accent-dark,var(--accent));}
 .lvl-caret{display:inline-block;width:16px;cursor:pointer;user-select:none;}
@@ -1992,7 +2002,14 @@ function buildRowMetrics(parts, grows, lmGrows, f, levels, targetOK){
   const gapToFM = (full!=null && foundAny) ? tonase - full : null; // Vol. MTD - Target FM
   const lmTonase = aggMetric(lmGrows,'TONASE');
   const vsLM = pctOfLM(tonase, lmTonase);
-  return {parts, label: parts[parts.length-1], tonase, kontrak, full, mtd, achiev, so, ofpct,
+  // Each node's label is just ITS OWN value at its own depth (e.g. the Distributor name, not
+  // "Distributor › Expeditur") - the full recursive pivot tree (2026-07-28, see buildLevelNode/
+  // renderTreeRows) conveys the hierarchy through indentation + a dedicated subtotal row per
+  // level, so the label no longer needs to fake that with string-joining like the short-lived
+  // 2-tier "join levels below the top" fix did. parts.length===1 (Total / single-level case)
+  // still just resolves to parts[0].
+  const label = parts[parts.length-1];
+  return {parts, label, tonase, kontrak, full, mtd, achiev, so, ofpct,
     gapMTD, gapToFM, waiting, dwell, trip, truck, foundAny, lmTonase, vsLM, targetOK};
 }
 
@@ -2292,6 +2309,91 @@ function expandAllSummaryGroups(){
   state.tableCollapsed.clear();
   renderSummaryTable();
 }
+
+/* ================= FULL RECURSIVE PIVOT TREE (2026-07-28) =================
+   Replaces the old fixed "top subtotal + flat leaf" 2-tier table with a proper Excel-pivot-style
+   "compact form": every active drill-down level (state.levels can have up to 6, one per DIMENSIONS
+   entry) gets its own indented row AND its own subtotal, all independently collapsible - not just
+   the first level. Per Rendy: "every level became a step down, like pivot compact form... subtotal
+   every level" (screenshot showed 3 levels flattened into 2 visual tiers, unreadable once >2 levels
+   were active).
+   buildLevelNode() recurses one dimension at a time; each node's own buildRowMetrics() call scopes
+   `levels`/`parts` to depth+1 (exactly the same targeting/SO-matching/target-lookup logic already
+   used for the old top-subtotal row - see the extraMatch comment inside buildRowMetrics - so every
+   node's numbers, not just the deepest ones, are a correct fresh roll-up of its own raw rows. */
+function buildLevelNode(rowsIn, lmRowsIn, levels, depth, partsSoFar, targetOK, f){
+  const byVal = new Map();
+  rowsIn.forEach(r=>{
+    const v = normVal(r[levels[depth]]);
+    if(!byVal.has(v)) byVal.set(v, []);
+    byVal.get(v).push(r);
+  });
+  const lmByVal = new Map();
+  lmRowsIn.forEach(r=>{
+    const v = normVal(r[levels[depth]]);
+    if(!lmByVal.has(v)) lmByVal.set(v, []);
+    lmByVal.get(v).push(r);
+  });
+  const isLeaf = depth === levels.length-1;
+  return [...byVal.keys()].map(v=>{
+    const parts = [...partsSoFar, v];
+    const grows = byVal.get(v);
+    const lmGrows = lmByVal.get(v) || [];
+    const d = buildRowMetrics(parts, grows, lmGrows, f, levels.slice(0, depth+1), targetOK);
+    d.depth = depth;
+    d.pathKey = parts.join('|||');
+    d.isLeaf = isLeaf;
+    if(!isLeaf) d.children = buildLevelNode(grows, lmGrows, levels, depth+1, parts, targetOK, f);
+    return d;
+  });
+}
+/** Recursively drops nodes that don't survive the column filters, then sorts each level's
+    siblings. Leaf nodes must pass the FULL rowPassesColFilters() (every metric column, same as the
+    old flat leaf rows did); non-leaf nodes are only checked against their own 'group' checkbox
+    (passesGroupFilterOnly - metric-column checklists were built from leaf values, so running them
+    against a subtotal's rolled-up numbers would incorrectly hide almost every multi-child group,
+    same reasoning as the pre-existing top-subtotal code this replaces) AND must retain at least
+    one surviving child, cascading all the way up. */
+function pruneAndSortTree(nodes, sortKey, sortDir){
+  const survivors = nodes.map(d=>{
+    if(d.isLeaf){
+      return rowPassesColFilters(d) ? d : null;
+    }
+    const kids = pruneAndSortTree(d.children, sortKey, sortDir);
+    if(!passesGroupFilterOnly(d, state.tableColFilters) || kids.length===0) return null;
+    d.children = kids;
+    return d;
+  }).filter(Boolean);
+  return sortRows(survivors, sortKey, sortDir);
+}
+function collectAllLabels(nodes, acc){
+  nodes.forEach(d=>{ acc.push(d.label); if(!d.isLeaf) collectAllLabels(d.children, acc); });
+  return acc;
+}
+function toggleTreeNode(pathKey){
+  if(state.tableCollapsed.has(pathKey)) state.tableCollapsed.delete(pathKey);
+  else state.tableCollapsed.add(pathKey);
+  renderSummaryTable();
+}
+function renderTreeRows(nodes){
+  return nodes.map(d=>{
+    const isCollapsed = state.tableCollapsed.has(d.pathKey);
+    const hasChildren = !d.isLeaf;
+    const caret = hasChildren ? (isCollapsed ? '▶' : '▼') : '';
+    const caretHtml = hasChildren
+      ? `<span class="lvl-caret" data-pathkey="${escapeAttr(d.pathKey)}" onclick="event.stopPropagation();toggleTreeNode(this.dataset.pathkey)" title="Klik untuk lipat/buka">${caret}</span> `
+      : '';
+    const indentPx = 10 + d.depth*18;
+    const rowClass = d.depth===0 ? 'lvl-subtotal' : (hasChildren ? 'lvl-mid' : 'lvl-leaf');
+    const focusLevels = state.levels.slice(0, d.depth+1);
+    const focusAttr = escapeAttr(JSON.stringify({levels: focusLevels, parts: d.parts}));
+    const selected = sameFocus(state.rowFocus, focusLevels.map((fld,i)=>({field:fld, value:d.parts[i]}))) ? ' row-focused' : '';
+    const row = `<tr class="${rowClass}${selected}" data-focus="${focusAttr}" onclick="handleSummaryRowClick(this)" title="Klik baris untuk fokuskan grafik+armada ke grup ini"><td class="grouplabel" style="padding-left:${indentPx}px">${caretHtml}${d.label}</td>${TABLE_COLUMNS.map(c=>`<td>${c.render(d)}</td>`).join('')}</tr>`;
+    const childHtml = (hasChildren && !isCollapsed) ? renderTreeRows(d.children) : '';
+    return row + childHtml;
+  }).join('');
+}
+
 function renderSummaryTable(){
   const f = getFilterState();
   const rows = filteredRE(f);
@@ -2325,10 +2427,14 @@ function renderSummaryTable(){
   // levels, universe=["Total"], to 2 levels, universe=[province/district names]) silently wipes
   // out the whole table: none of the new labels match the old universe's Set, so every row fails
   // rowPassesColFilters() and the table renders empty. (Caught in testing 2026-07-25.)
-  const topLabelsForFilter = new Set();
-  if(levels.length>=2) rows.forEach(r=> topLabelsForFilter.add(normVal(r[levels[0]])));
+  const allDepthLabelsForFilter = new Set();
+  let rawTreeForUniverse = null;
+  if(levels.length>=2){
+    rawTreeForUniverse = buildLevelNode(rows, lmRowsAll, levels, 0, [], targetOK, f);
+    collectAllLabels(rawTreeForUniverse, []).forEach(l=>allDepthLabelsForFilter.add(l));
+  }
   const groupUniversePre = levels.length>=2
-    ? [...new Set([...topLabelsForFilter, ...leafRows.map(d=>d.label)])].sort()
+    ? [...new Set([...allDepthLabelsForFilter, ...leafRows.map(d=>d.label)])].sort()
     : [...new Set(leafRows.map(d=>d.label))].sort();
   ensureColFilterSet(state.tableColFilters, 'group', groupUniversePre);
   TABLE_COLUMNS.forEach(c=>{
@@ -2338,45 +2444,13 @@ function renderSummaryTable(){
   let bodyHtml = '';
   let groupValueUniverse;
   if(levels.length >= 2){
-    // Compact form with subtotal rows: group leaf rows by their TOP level (parts[0]); the subtotal
-    // is the true roll-up of ALL of that group's raw realisasi rows (recomputed fresh, not summed
-    // from already-filtered children), so it stays correct regardless of the column filter below.
-    const byTop = new Map();
-    rows.forEach(r=>{
-      const top = normVal(r[levels[0]]);
-      if(!byTop.has(top)) byTop.set(top, []);
-      byTop.get(top).push(r);
-    });
-    const lmByTop = new Map();
-    lmRowsAll.forEach(r=>{
-      const top = normVal(r[levels[0]]);
-      if(!lmByTop.has(top)) lmByTop.set(top, []);
-      lmByTop.get(top).push(r);
-    });
-    let subtotals = [...byTop.keys()].map(top=>{
-      const grows = byTop.get(top);
-      const lmGrows = lmByTop.get(top) || [];
-      const d = buildRowMetrics([top], grows, lmGrows, f, [levels[0]], targetOK);
-      d.children = sortRows(leafRows.filter(lr=>lr.parts[0]===top), sortKey, sortDir).filter(lr=>rowPassesColFilters(lr));
-      return d;
-    });
-    groupValueUniverse = [...new Set([...subtotals.map(s=>s.label), ...leafRows.map(d=>d.label)])].sort();
-    subtotals = subtotals.filter(s=> passesGroupFilterOnly(s, state.tableColFilters) && s.children.length>0);
-    subtotals = sortRows(subtotals, sortKey, sortDir);
-    bodyHtml = subtotals.map(s=>{
-      const groupKey = s.parts[0];
-      const isCollapsed = state.tableCollapsed.has(groupKey);
-      const caret = isCollapsed ? '▶' : '▼';
-      const subtotalFocus = escapeAttr(JSON.stringify({levels:[levels[0]], parts:[groupKey]}));
-      const subtotalSelected = sameFocus(state.rowFocus, [{field:levels[0], value:groupKey}]) ? ' row-focused' : '';
-      const subtotalRow = `<tr class="lvl-subtotal${subtotalSelected}" data-focus="${subtotalFocus}" onclick="handleSummaryRowClick(this)" title="Klik baris untuk fokuskan grafik+armada ke grup ini"><td class="grouplabel"><span class="lvl-caret" data-groupkey="${escapeAttr(groupKey)}" onclick="event.stopPropagation();toggleSummaryGroup(this.dataset.groupkey)" title="Klik untuk lipat/buka">${caret}</span> ${s.label}</td>${TABLE_COLUMNS.map(c=>`<td>${c.render(s)}</td>`).join('')}</tr>`;
-      const childRows = isCollapsed ? '' : s.children.map(d=>{
-        const leafFocus = escapeAttr(JSON.stringify({levels, parts:d.parts}));
-        const leafSelected = sameFocus(state.rowFocus, levels.map((fld,i)=>({field:fld, value:d.parts[i]}))) ? ' row-focused' : '';
-        return `<tr class="lvl-leaf${leafSelected}" data-focus="${leafFocus}" onclick="handleSummaryRowClick(this)" title="Klik untuk fokuskan grafik+armada ke baris ini"><td class="grouplabel">${d.label}</td>${TABLE_COLUMNS.map(c=>`<td>${c.render(d)}</td>`).join('')}</tr>`;
-      }).join('');
-      return subtotalRow + childRows;
-    }).join('');
+    // Full recursive pivot tree - every level (not just the first) gets its own subtotal row,
+    // indent, and independent collapse/expand. See buildLevelNode/pruneAndSortTree/renderTreeRows
+    // above. rawTreeForUniverse (built just above, pre-filter) is reused here rather than
+    // rebuilt, then pruned+sorted against the CURRENT column filters.
+    groupValueUniverse = [...new Set(allDepthLabelsForFilter)].sort();
+    const tree = pruneAndSortTree(rawTreeForUniverse, sortKey, sortDir);
+    bodyHtml = renderTreeRows(tree);
   } else {
     groupValueUniverse = [...new Set(leafRows.map(d=>d.label))].sort();
     const visible = sortRows(leafRows.filter(lr=>rowPassesColFilters(lr)), sortKey, sortDir);
