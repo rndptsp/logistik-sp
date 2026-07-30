@@ -20,10 +20,14 @@
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
 <<<<<<< HEAD
+<<<<<<< HEAD
 window.APP_VERSION = '2026-07-27.52';
 =======
 window.APP_VERSION = '2026-07-27.52';
 >>>>>>> 6e414e4c545b17f695bffa5462e26107c827b607
+=======
+window.APP_VERSION = '2026-07-30.52';
+>>>>>>> f5a29fc80a1dece36877616b28c5ebf475161849
 (function(){
   fetch('version.json?_=' + Date.now(), {cache:'no-store'})
     .then(function(r){ return r.ok ? r.json() : null; })
@@ -573,7 +577,35 @@ async function ensureMonthsLoaded(months){
   const addedAnyRe = results.slice(0, reMonths.length).some(Boolean);
   const addedAnyTotal = results.filter(Boolean).length;
   if(addedAnyRe){ dedupReByNoSpj(); reindexDates(); }
+  // Bootstrap only loads current+previous month into RE/SO (see bootstrap()); populateFilters()
+  // then builds each dimension's "select all" checklist (ALLV[key] / state[key]) from THAT narrow
+  // slice. When a later-loaded month (e.g. January, loaded here on-demand) introduces a Provinsi/
+  // Distrik/Distributor/Expeditur/Source/Incoterm value that never appeared in the bootstrap
+  // window, matchRow()'s `f.<dim>.has(...)` check silently drops every row carrying that value -
+  // there's simply no checkbox for it, checked or not. This reproduced Rendy's "tidak bisa cek
+  // data dari 1 Januari" report even via the manual date picker (not just the 'All Time' pill):
+  // the January rows were correctly fetched into RE, but got filtered back out by a stale
+  // dimension-value universe. Fixed 2026-07-29 - refresh the universes whenever new rows land.
+  if(addedAnyTotal){ refreshFilterUniverses(); }
   return addedAnyTotal;
+}
+/** Re-derives each dimension's full value list from the current RE/SO (which may have grown since
+    the last populateFilters() call) and folds any brand-new values into state[key] as CHECKED,
+    preserving whatever the user already selected/deselected among previously-known values - then
+    rebuilds the filter-checklist DOM so the new checkboxes are actually visible. Must run every
+    time ensureMonthsLoaded() adds rows, not just once at bootstrap. */
+function refreshFilterUniverses(){
+  DIMENSIONS.forEach(d=>{
+    let vals;
+    if(d.key==='expeditur'){
+      vals = [...new Set([...RE.map(r=>normVal(r[d.field])), ...SO.map(r=>normVal(r.EXPEDITUR_NAMA))])].filter(v=>v!==BLANK).sort();
+    } else {
+      vals = uniqSorted(RE, d.field);
+    }
+    const prevAll = ALLV[d.key] || [];
+    vals.filter(v=> !prevAll.includes(v)).forEach(v=> state[d.key].add(v));
+  });
+  populateFilters();
 }
 function monthsInRange(fromDate, toDate){
   const months = [];
@@ -2184,14 +2216,19 @@ function renderDatePresets(){
     const b = document.createElement('button'); b.type='button'; b.className='pill';
     b.textContent = p.label;
     b.addEventListener('click', async ()=>{
-      const [from,to] = p.fn();
-      if(!from || !to) return;
       if(p.label==='All Time'){
-        // May reach outside what's currently loaded (lazy monthly chunks) - ensure the full
-        // manifest range is fetched before setting the filter, otherwise it'd silently clip to
-        // whatever happens to be loaded already.
+        // Fetch the full manifest range BEFORE calling p.fn() below - p.fn() for 'All Time'
+        // computes its [from,to] from RE.map(r=>r._d), i.e. whatever's ALREADY loaded. Bootstrap
+        // only loads current+previous month (see bootstrap()), so calling p.fn() first (as this
+        // used to do) would compute e.g. Jun-Jul instead of Jan-Jul: ensureMonthsLoaded ran
+        // afterward and did load January's rows into RE, but the [from,to] variables below had
+        // already been computed from the stale (narrow) RE and stayed stuck at Jun-Jul, so the
+        // date filter silently excluded January even though its data was sitting in memory.
+        // Fixed 2026-07-29 per Rendy: "saya tidak bisa cek data dari 1 januari di dashboard".
         if(manifest){ try{ await ensureMonthsLoaded(manifest.realisasi_months||[]); }catch(err){ console.error('Gagal memuat seluruh bulan:', err); } }
       }
+      const [from,to] = p.fn();
+      if(!from || !to) return;
       document.getElementById('fDateFrom').value = fmtDate(from);
       document.getElementById('fDateTo').value = fmtDate(to);
       const spansMultiYear = p.granIfMultiYear && to.getFullYear() > from.getFullYear();
