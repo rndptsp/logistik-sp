@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = '2026-08-02.69';
+window.APP_VERSION = '2026-08-02.70';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -767,7 +767,13 @@ function openBucketModal(key){
     groups[gk].level2.push({plat: plat||'-', alamat: alamat||'-', waktu: waktu||'-', tonase: tonase||0});
   }
 
-  function collectAllComponents(){
+  // includeBooking (2026-08-02 per Rendy: "potensi & prognose give same popup table, booking
+  // donot need to appear in potensi") - Booking trips are ALWAYS summed into bookingTon (needed
+  // for both buckets' reconciliation text), but only added as visible rows via addTrip() when
+  // includeBooking is true (Prognose). Potensi = Rilis+Antri+Timbang only, so its popup table
+  // should show just Antri/Timbang trips, not Booking ones - previously both buckets called this
+  // with no such gate, so Potensi and Prognose rendered the exact same trip list.
+  function collectAllComponents(includeBooking){
     let antriTon = 0, timbangTon = 0, bookingTon = 0;
     if(incoterm === 'FRC'){
       (PROGN_DATA.antriFRC||[]).filter(r=>{
@@ -794,8 +800,10 @@ function openBucketModal(key){
       (PROGN_DATA.bookingFRC||[]).filter(r=>{
         return String(Math.round(r['Kode Plant']))===plantCode && r['Incoterm']==='FRC' && r['Propinsi']===propinsi;
       }).forEach(r=>{
-        const gk = 'B|'+(r['District']||'-')+'|'+(r['Kode Transportir']||'-')+'|'+(r['Nama Distributor']||'-');
-        addTrip(gk, r['District']||'-', r['Kode Transportir']||'-', r['Nama Distributor']||'-', r['Volume'], r['Truk'], r['Alamat']||r['Nama Distributor'], r['Tanggal Prematch (10-40)']);
+        if(includeBooking){
+          const gk = 'B|'+(r['District']||'-')+'|'+(r['Kode Transportir']||'-')+'|'+(r['Nama Distributor']||'-');
+          addTrip(gk, r['District']||'-', r['Kode Transportir']||'-', r['Nama Distributor']||'-', r['Volume'], r['Truk'], r['Alamat']||r['Nama Distributor'], r['Tanggal Prematch (10-40)']);
+        }
         bookingTon += (r['Volume']||0);
       });
     } else {
@@ -816,8 +824,10 @@ function openBucketModal(key){
       (PROGN_DATA.bookingFOT||[]).filter(r=>{
         return String(Math.round(r['Kode Plant']))===plantCode && r['Incoterm']==='FOT' && r['Provinsi']===propinsi;
       }).forEach(r=>{
-        const gk = 'B|'+(r['Kota']||'-')+'|'+(r['Kode Ekspeditur']||'-')+'|'+(r['Nama Distributor']||'-');
-        addTrip(gk, r['Kota']||'-', r['Kode Ekspeditur']||'-', r['Nama Distributor']||'-', r['Qty'], r['Truk'], r['Alamat']||r['Nama Distributor'], r['Tanggal Prematch (10-40)']);
+        if(includeBooking){
+          const gk = 'B|'+(r['Kota']||'-')+'|'+(r['Kode Ekspeditur']||'-')+'|'+(r['Nama Distributor']||'-');
+          addTrip(gk, r['Kota']||'-', r['Kode Ekspeditur']||'-', r['Nama Distributor']||'-', r['Qty'], r['Truk'], r['Alamat']||r['Nama Distributor'], r['Tanggal Prematch (10-40)']);
+        }
         bookingTon += (r['Qty']||0);
       });
     }
@@ -840,23 +850,25 @@ function openBucketModal(key){
       ? '<span style="color:#2E9E4B;">Total data ('+pnf(usedRowsTon)+' ton) = angka tabel utama ('+pnf(cellValue)+' ton). Cocok.</span>'
       : '<span style="color:var(--accent-dark);">Total data ('+pnf(usedRowsTon)+' ton) vs angka tabel utama ('+pnf(cellValue)+' ton) \u2014 selisih '+pnf(diff)+' ton, perlu ditelusuri.</span>';
   } else if(bucket === 'potensi'){
-    const {antriTon, timbangTon, bookingTon} = collectAllComponents();
+    // includeBooking=false (2026-08-02 per Rendy) - Potensi's popup table now shows only
+    // Antri/Timbang trips, matching what Potensi actually is (Rilis+Antri+Timbang). Booking's ton
+    // total is still computed and mentioned in the text below, just not listed as rows anymore.
+    const {antriTon, timbangTon, bookingTon} = collectAllComponents(false);
     const rilisTon = rec.sudahRilis || 0;
-    usedRowsTon = antriTon + timbangTon + bookingTon; // full trip-level detail shown below (incl. Booking, for visibility)
+    usedRowsTon = antriTon + timbangTon;
     // Confirmed against real chunk data 2026-08-02 (CP Indarung FOT/Bengkulu book=108, FOT/Sumatera
     // Barat book=454): Potensi = Rilis + Antri + Timbang ONLY - Booking is NOT part of Potensi, it
-    // only enters at the Prognose stage. Reconciliation math must therefore exclude bookingTon even
-    // though the trip table below still lists Booking rows (they're "coming" trips, useful to see).
+    // only enters at the Prognose stage.
     const potensiFromParts = rilisTon + antriTon + timbangTon;
     const diff = Math.round((cellValue||0) - potensiFromParts);
     reconciliationNote = 'Rilis = '+pnf(rilisTon)+' ton (sudah termasuk di angka Potensi tabel utama; trip-nya tidak diulang di tabel bawah \u2014 lihat popup Sudah Rilis). ' +
-      'Data trip Antri + Timbang (belum rilis) = '+pnf(antriTon+timbangTon)+' ton. Booking = '+pnf(bookingTon)+' ton (ditampilkan di tabel bawah untuk visibilitas, tapi TIDAK termasuk dalam Potensi \u2014 Booking baru masuk di tahap Prognose). ' +
+      'Data trip Antri + Timbang (belum rilis) = '+pnf(antriTon+timbangTon)+' ton, ditampilkan di tabel bawah. Booking = '+pnf(bookingTon)+' ton (TIDAK ditampilkan di tabel bawah dan TIDAK termasuk dalam Potensi \u2014 Booking baru masuk di tahap Prognose). ' +
       'Total (Rilis + Antri + Timbang) = '+pnf(potensiFromParts)+' ton vs angka Potensi tabel utama = '+pnf(cellValue)+' ton. ' +
       (Math.abs(diff) < 1
         ? '<span style="color:#2E9E4B;">Cocok.</span>'
         : '<span style="color:var(--accent-dark);">Selisih '+pnf(diff)+' ton, perlu ditelusuri (kemungkinan snapshot Matching/Timbang tidak persis sinkron dengan waktu Prognosa dihitung).</span>');
   } else if(bucket === 'prognose'){
-    const {antriTon, timbangTon, bookingTon} = collectAllComponents();
+    const {antriTon, timbangTon, bookingTon} = collectAllComponents(true);
     const rilisTon = rec.sudahRilis || 0;
     const potensiVal = rec.potensi || 0;
     usedRowsTon = antriTon + timbangTon + bookingTon; // unique trip data, not double-counted
@@ -1145,46 +1157,57 @@ function openSoBreakdownModal(key){
   document.getElementById('prognModalOverlay').style.display = '';
 }
 
-// Added 2026-08-02 per Rendy ("SO+1,2,3 need to be clickable also"): same breakdown table as
-// openSoBreakdownModal, but scoped to ONE specific future day (snapshotDate + dayOffset) instead
-// of the whole month, matching what "Order H+1/H+2/H+3" means. Uses the same live SO dataset the
-// main SO popup uses (per-propinsi, not per-plant/incoterm - see soCellClickAttr's comment for
-// why), so this won't reconcile exactly to the displayed h{N}So figure, which is a separate
-// precomputed scalar from the source workbook's own "SO H1/H2/H3" sheets.
+// BUG FIXED 2026-08-02 (Rendy: "soh+1,2,3 tidak muncul rincian di popup"): this originally
+// filtered the browser's general Sales Order dataset (SO array) by exact delivery date - but that
+// dataset's TGL_KIRIM only ever covers the snapshot day itself (no forward-dated rows at all), so
+// this always returned zero rows regardless of plant/propinsi. The real per-day order book for
+// H+1/H+2/H+3 lives in three SEPARATE sheets in the source workbook ("SO H1"/"SO H2"/"SO H3"),
+// which were never ingested as row-level data before (only h1So/h2So/h3so's own aggregate scalar
+// was captured) - now extracted into PROGN_DATA.soH1/soH2/soH3.
+// IMPORTANT CAVEAT (found while fixing this, not yet resolved): summing these sheets' own Tonase
+// per plant does NOT reconcile with the h{N}So scalar shown in the main table (e.g. CP Indarung's
+// SO H1 sheet total = 2.038 ton vs the table's own H+1 SO figure of 27.545 ton for the same plant -
+// an order-of-magnitude gap, not a rounding difference). This suggests h1So/h2So/h3so in the
+// Prognosa sheet is a CUMULATIVE or differently-scoped figure, not a straight sum of "SO H1"'s own
+// rows - flagged to Rendy rather than assumed. This popup still shows the "SO H{N}" sheet's own
+// rows (real, useful order-book detail), just doesn't claim they reconcile to the header number.
 function openSoBreakdownModalDay(key){
   const [plantCode, incoterm, propinsi, dayOffsetStr] = key.split('|');
   const dayOffset = Number(dayOffsetStr);
   const plant = PROGN_DATA.plants.find(p=>p.plantCode===plantCode);
+  const sheetArr = ({1:PROGN_DATA.soH1, 2:PROGN_DATA.soH2, 3:PROGN_DATA.soH3}[dayOffset]) || [];
 
-  let snapY = new Date().getFullYear(), snapM = 8, snapD = 1;
-  if(PROGN_DATA && PROGN_DATA.snapshotDate){
-    const parts = PROGN_DATA.snapshotDate.split('-').map(Number);
-    snapY = parts[0]; snapM = parts[1]; snapD = parts[2];
-  }
-  const targetDate = new Date(snapY, snapM-1, snapD + dayOffset);
-  const ty = targetDate.getFullYear(), tm = targetDate.getMonth()+1, td = targetDate.getDate();
-  const dateLabel = String(td).padStart(2,'0')+'-'+String(tm).padStart(2,'0')+'-'+ty;
-
-  document.getElementById('prognModalTitle').textContent = (plant?plant.plantName:plantCode)+' — '+incoterm+' — '+propinsi+' — Rincian SO H+'+dayOffset+' ('+dateLabel+')';
+  document.getElementById('prognModalTitle').textContent = (plant?plant.plantName:plantCode)+' — '+incoterm+' — '+propinsi+' — Rincian SO H+'+dayOffset+' (sheet "SO H'+dayOffset+'")';
 
   const soArr = (typeof SO !== 'undefined' ? SO : []);
-  const rows = soArr.filter(r=> r.PROPINSI===propinsi && r._d && r._d.getFullYear()===ty && (r._d.getMonth()+1)===tm && r._d.getDate()===td);
+  const rows = sheetArr.filter(r=>{
+    const plantMatch = String(r['Plant'])===plantCode;
+    return plantMatch && r['Incoterm']===incoterm && r['Propinsi']===propinsi;
+  });
   let total = 0;
   const list = rows.map(r=>{
-    const t = r.TONASE_KIRIM||0;
+    const t = r['Tonase']||0;
     total += t;
-    return { district: r.NAMA_DISTRIK||'-', vendor: r.EXPEDITUR_NAMA||r.EXPEDITUR_KODE||'-', distributor: r.DISTRIBUTOR||'-', tonase: t };
+    const soRow = soArr.find(s=> s.SALES_ORDER!=null && r['Sales Order']!=null && Math.round(s.SALES_ORDER)===Math.round(r['Sales Order']));
+    return {
+      district: r['Nama Distrik']||'-',
+      vendor: soRow ? (soRow.EXPEDITUR_NAMA||soRow.EXPEDITUR_KODE||'-') : '-',
+      distributor: r['Distributor']||'-',
+      tglKirim: r['Tgl Kirim']||'-',
+      tonase: t
+    };
   }).sort((a,b)=> b.tonase - a.tonase);
 
-  let h = '<div style="font-size:11.5px;color:var(--sub);margin-bottom:10px;">Rincian SO untuk tanggal '+dateLabel+' (H+'+dayOffset+') di propinsi ini, dari dataset Sales Order dashboard &middot; Total baris di bawah: '+pnf(total)+' ton. Catatan: angka SO H+'+dayOffset+' pada tabel utama diambil langsung dari sheet "SO H'+dayOffset+'" snapshot Excel Prognosa dan bisa berbeda tipis dari total rincian ini (dua sumber data yang di-refresh terpisah) &mdash; rincian ini di-scope per propinsi &amp; tanggal saja (bukan per plant/incoterm), sama seperti rincian SO bulan berjalan.</div>';
+  let h = '<div style="font-size:11.5px;color:var(--sub);margin-bottom:10px;">Rincian dari sheet sumber "SO H'+dayOffset+'" untuk plant &amp; propinsi ini &middot; Total baris di bawah: '+pnf(total)+' ton. ' +
+    '<b>Catatan penting:</b> total rincian ini TIDAK selalu sama dengan angka SO H+'+dayOffset+' di tabel utama - kemungkinan angka tabel utama bersifat kumulatif atau punya cakupan berbeda dari sheet "SO H'+dayOffset+'" mentah (ditemukan saat memperbaiki popup ini, belum dikonfirmasi metodenya - selisihnya bisa besar, bukan sekadar beda tipis). Ekspeditur dicari via join Sales Order ke dataset SO utama; tampil "-" jika tidak ketemu.</div>';
   h += '<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--sub);">' +
-    '<th>District</th><th>Ekspeditur</th><th>Distributor</th><th style="text-align:right;">Tonase</th></tr></thead><tbody>';
+    '<th>District</th><th>Ekspeditur</th><th>Distributor</th><th>Tgl Kirim</th><th style="text-align:right;">Tonase</th></tr></thead><tbody>';
   if(list.length===0){
-    h += '<tr><td colspan="4" style="color:var(--sub);padding:14px 0;">Tidak ada data SO untuk propinsi ini di tanggal '+dateLabel+'.</td></tr>';
+    h += '<tr><td colspan="5" style="color:var(--sub);padding:14px 0;">Tidak ada baris di sheet "SO H'+dayOffset+'" untuk plant &amp; propinsi ini.</td></tr>';
   }
   list.forEach(r=>{
     h += '<tr style="border-bottom:1px solid var(--border);">' +
-      '<td>'+r.district+'</td><td>'+r.vendor+'</td><td>'+r.distributor+'</td>' +
+      '<td>'+r.district+'</td><td>'+r.vendor+'</td><td>'+r.distributor+'</td><td>'+r.tglKirim+'</td>' +
       '<td style="text-align:right;">'+pnf(r.tonase)+'</td></tr>';
   });
   h += '</tbody></table>';
