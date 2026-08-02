@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = '2026-08-02.68';
+window.APP_VERSION = '2026-08-02.69';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -513,7 +513,7 @@ async function ensurePrognoseLoaded(){
   if(prognLoadStarted) return null;
   prognLoadStarted = true;
   try{
-    PROGN_DATA = await fetchAndDecrypt('chunks/prognose_2026-08-02_0600.json');
+    PROGN_DATA = await fetchAndDecrypt('chunks/prognose_2026-08-02_2000.json');
     document.getElementById('prognSnapLabel').textContent = 'Snapshot: ' + PROGN_DATA.snapshotLabel;
     renderPrognose();
   }catch(err){
