@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = '2026-08-02.71';
+window.APP_VERSION = 'build.2026.08.02.23';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -513,7 +513,14 @@ async function ensurePrognoseLoaded(){
   if(prognLoadStarted) return null;
   prognLoadStarted = true;
   try{
-    PROGN_DATA = await fetchAndDecrypt('chunks/prognose_2026-08-02_2000.json');
+    // 2026-08-02 (Rendy: personnel need to run the refresh script without a Claude session -
+    // hardcoding the chunk filename here meant every new Prognose snapshot required editing this
+    // HTML file by hand). Now reads the filename from manifest.prognose_latest (a pointer the
+    // update script rewrites each run) - falls back to the last hardcoded filename only if an
+    // older manifest.json (without the pointer yet) is ever encountered, so this doesn't break on
+    // a partially-updated deploy.
+    const prognoseFile = (manifest && manifest.prognose_latest) ? manifest.prognose_latest : 'prognose_2026-08-02_2000.json';
+    PROGN_DATA = await fetchAndDecrypt('chunks/' + prognoseFile);
     document.getElementById('prognSnapLabel').textContent = 'Snapshot: ' + PROGN_DATA.snapshotLabel;
     renderPrognose();
   }catch(err){
