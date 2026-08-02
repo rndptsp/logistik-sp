@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = '2026-08-02.70';
+window.APP_VERSION = '2026-08-02.71';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -1481,9 +1481,16 @@ async function deriveKeyFromPassword(password){
   const enc = new TextEncoder();
   const salt = b64ToBuf(manifest.kdf.salt);
   const keyMaterial = await crypto.subtle.importKey('raw', enc.encode(password), 'PBKDF2', false, ['deriveKey']);
+  // BUG FIXED 2026-08-02 (Rendy: "it keep logout everytime i refresh. i said only logout after
+  // 15 min no activity"): extractable changed false->true so the derived key can be persisted to
+  // sessionStorage (see persistSessionKey/tryResumeSession below) and survive a page refresh -
+  // previously the key only ever lived in the `cryptoKey` JS variable, which is wiped on every
+  // reload regardless of the 15-min idle timer, forcing a fresh password entry on every refresh
+  // even seconds after unlocking. sessionStorage is tab-scoped and clears when the tab/browser
+  // closes, so this doesn't change the "close the tab = logged out" behavior, only fixes refresh.
   return crypto.subtle.deriveKey(
     {name:'PBKDF2', salt, iterations: manifest.kdf.iterations, hash: manifest.kdf.hash},
-    keyMaterial, {name:'AES-GCM', length: manifest.kdf.keyLength}, false, ['decrypt']
+    keyMaterial, {name:'AES-GCM', length: manifest.kdf.keyLength}, true, ['decrypt']
   );
 }
 async function decryptEnvelope(envelope){
@@ -4069,6 +4076,37 @@ document.getElementById('btnExport').addEventListener('click', ()=>{
 
 
 /* ================= INIT ================= */
+// Extracted 2026-08-02 (part of the "logout on every refresh" fix) so the same data-loading
+// sequence can run both after a fresh password (bootstrap) and after a silent session resume
+// (tryResumeSession) without duplicating this logic.
+async function loadCoreDataAndTargets(gateProgress){
+  const targetsPayload = await fetchAndDecrypt('chunks/targets.json');
+  TG = targetsPayload.rows.map(r=>{ const o={}; for(let i=0;i<targetsPayload.header.length;i++) o[targetsPayload.header[i]]=r[i]; return o; });
+  // Backfill SOURCE_PLANT for SNOP target rows (2026-08-02 per Rendy: "for sumatera utara the
+  // source should be PP Belawan SBA, not smbr") - every SNOP row in targets_monthly.csv has
+  // SOURCE_PLANT=null (the "Target District" sheet this was built from is province/district-
+  // level, not plant-level), so there was no way to scope-by-source-plant on target data at all.
+  // BUG FIXED 2026-08-02 (found via Rendy: "jambi target not correct with pp belawan uncheck"):
+  // this used to backfill EVERY EXPEDITUR_KODE='SBA' target row to 'PP BELAWAN SBA' regardless of
+  // province, on the assumption (true for REALISASI, where 'SBA' always means KD_PLANT=79B4) that
+  // the code was unambiguous. It is NOT unambiguous on the TARGET side: Kota Jambi has its own
+  // EXPEDITUR_KODE='SBA' row (Agustus SNOP, PROPORSI_PCT=50% - a genuine district-level vendor
+  // split from the Distrct-Transportir sheet, unrelated to Belawan) alongside Sumatera Utara's 5
+  // SBA rows (all PROPORSI_PCT=100%, the real self-haul-via-Belawan case) - so unchecking PP
+  // Belawan SBA in the Source filter was silently zeroing out part of Jambi's Target FM too, a
+  // province nowhere near Belawan port. Scoped to PROVINSI='SUMATERA UTARA' only - Jambi's SBA row
+  // now correctly stays SOURCE_PLANT=null (always kept, see the sourcePlantList filter fix below),
+  // unaffected by the PP Belawan SBA checkbox either way.
+  TG.forEach(t=>{ if(t.EXPEDITUR_KODE==='SBA' && t.PROVINSI==='SUMATERA UTARA' && !t.SOURCE_PLANT) t.SOURCE_PLANT = 'PP BELAWAN SBA'; });
+
+  if(gateProgress) gateProgress.textContent = 'Memuat data bulan berjalan...';
+  const today = new Date();
+  const curKey = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
+  const prev = new Date(today.getFullYear(), today.getMonth()-1, 1);
+  const prevKey = `${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,'0')}`;
+  await ensureMonthsLoaded([prevKey, curKey]);
+}
+
 async function bootstrap(password){
   const gateErr = document.getElementById('gateErr');
   const gateProgress = document.getElementById('gateProgress');
@@ -4084,35 +4122,12 @@ async function bootstrap(password){
     }
     gateProgress.textContent = 'Memverifikasi kata sandi...';
     cryptoKey = await deriveKeyFromPassword(password);
-    const targetsPayload = await fetchAndDecrypt('chunks/targets.json');
-    TG = targetsPayload.rows.map(r=>{ const o={}; for(let i=0;i<targetsPayload.header.length;i++) o[targetsPayload.header[i]]=r[i]; return o; });
-    // Backfill SOURCE_PLANT for SNOP target rows (2026-08-02 per Rendy: "for sumatera utara the
-    // source should be PP Belawan SBA, not smbr") - every SNOP row in targets_monthly.csv has
-    // SOURCE_PLANT=null (the "Target District" sheet this was built from is province/district-
-    // level, not plant-level), so there was no way to scope-by-source-plant on target data at all.
-    // BUG FIXED 2026-08-02 (found via Rendy: "jambi target not correct with pp belawan uncheck"):
-    // this used to backfill EVERY EXPEDITUR_KODE='SBA' target row to 'PP BELAWAN SBA' regardless of
-    // province, on the assumption (true for REALISASI, where 'SBA' always means KD_PLANT=79B4) that
-    // the code was unambiguous. It is NOT unambiguous on the TARGET side: Kota Jambi has its own
-    // EXPEDITUR_KODE='SBA' row (Agustus SNOP, PROPORSI_PCT=50% - a genuine district-level vendor
-    // split from the Distrct-Transportir sheet, unrelated to Belawan) alongside Sumatera Utara's 5
-    // SBA rows (all PROPORSI_PCT=100%, the real self-haul-via-Belawan case) - so unchecking PP
-    // Belawan SBA in the Source filter was silently zeroing out part of Jambi's Target FM too, a
-    // province nowhere near Belawan port. Scoped to PROVINSI='SUMATERA UTARA' only - Jambi's SBA row
-    // now correctly stays SOURCE_PLANT=null (always kept, see the sourcePlantList filter fix below),
-    // unaffected by the PP Belawan SBA checkbox either way.
-    TG.forEach(t=>{ if(t.EXPEDITUR_KODE==='SBA' && t.PROVINSI==='SUMATERA UTARA' && !t.SOURCE_PLANT) t.SOURCE_PLANT = 'PP BELAWAN SBA'; });
-
-    gateProgress.textContent = 'Memuat data bulan berjalan...';
-    const today = new Date();
-    const curKey = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}`;
-    const prev = new Date(today.getFullYear(), today.getMonth()-1, 1);
-    const prevKey = `${prev.getFullYear()}-${String(prev.getMonth()+1).padStart(2,'0')}`;
-    await ensureMonthsLoaded([prevKey, curKey]);
+    await loadCoreDataAndTargets(gateProgress);
 
     document.getElementById('gateOverlay').classList.add('hidden');
     populateFilters();
     renderAll();
+    await persistSessionKey();
     armSession();
     showLanding();
   }catch(err){
@@ -4135,6 +4150,80 @@ const IDLE_LOCK_MS = 15 * 60 * 1000;
 let idleTimer = null;
 let sessionArmed = false;
 
+// BUG FIXED 2026-08-02 (Rendy: "it keep logout everytime i refresh. i said only logout after
+// 15 min no activity"): sessionArmed/cryptoKey only ever lived as in-memory JS variables, which
+// are wiped on every page reload no matter how recently the user was active - so a refresh always
+// forced the password gate again, regardless of the 15-min idle timer. Fix: persist the derived
+// AES key + a rolling last-activity timestamp in sessionStorage (tab-scoped, cleared when the tab
+///browser closes - so "close the tab" still logs out, only "refresh" no longer does). On load,
+// tryResumeSession() checks whether a persisted key exists and is still within the 15-min window;
+// if so it silently re-derives state and skips the gate entirely.
+const SESSION_KEY_STORAGE = 'dashSessionKeyB64';
+const SESSION_ACTIVITY_STORAGE = 'dashSessionLastActivity';
+
+async function persistSessionKey(){
+  try{
+    const raw = await crypto.subtle.exportKey('raw', cryptoKey);
+    const bytes = new Uint8Array(raw);
+    let bin = '';
+    for(let i=0;i<bytes.length;i++) bin += String.fromCharCode(bytes[i]);
+    sessionStorage.setItem(SESSION_KEY_STORAGE, btoa(bin));
+    sessionStorage.setItem(SESSION_ACTIVITY_STORAGE, String(Date.now()));
+  }catch(e){ console.error('persistSessionKey failed (session will still work, just won\'t survive a refresh):', e); }
+}
+
+function touchSessionActivity(){
+  if(!sessionArmed) return;
+  try{ sessionStorage.setItem(SESSION_ACTIVITY_STORAGE, String(Date.now())); }catch(e){}
+}
+
+function clearPersistedSession(){
+  try{
+    sessionStorage.removeItem(SESSION_KEY_STORAGE);
+    sessionStorage.removeItem(SESSION_ACTIVITY_STORAGE);
+  }catch(e){}
+}
+
+async function tryResumeSession(){
+  let keyB64, lastActivity;
+  try{
+    keyB64 = sessionStorage.getItem(SESSION_KEY_STORAGE);
+    lastActivity = Number(sessionStorage.getItem(SESSION_ACTIVITY_STORAGE) || 0);
+  }catch(e){ return false; }
+  if(!keyB64 || !lastActivity) return false;
+  if(Date.now() - lastActivity >= IDLE_LOCK_MS){ clearPersistedSession(); return false; }
+
+  const gateProgress = document.getElementById('gateProgress');
+  try{
+    if(!manifest){
+      const res = await fetch('chunks/manifest.json');
+      if(!res.ok) throw new Error('Gagal memuat manifest.json (HTTP ' + res.status + ')');
+      manifest = await res.json();
+    }
+    const bin = atob(keyB64);
+    const bytes = new Uint8Array(bin.length);
+    for(let i=0;i<bin.length;i++) bytes[i] = bin.charCodeAt(i);
+    cryptoKey = await crypto.subtle.importKey('raw', bytes.buffer, {name:'AES-GCM', length: manifest.kdf.keyLength}, false, ['decrypt']);
+
+    if(gateProgress) gateProgress.textContent = 'Melanjutkan sesi...';
+    await loadCoreDataAndTargets(gateProgress);
+
+    document.getElementById('gateOverlay').classList.add('hidden');
+    populateFilters();
+    renderAll();
+    sessionStorage.setItem(SESSION_ACTIVITY_STORAGE, String(Date.now()));
+    armSession();
+    showLanding();
+    return true;
+  }catch(e){
+    console.error('tryResumeSession failed, falling back to password gate:', e);
+    clearPersistedSession();
+    cryptoKey = null;
+    if(gateProgress) gateProgress.textContent = '';
+    return false;
+  }
+}
+
 function lockSession(){
   if(!sessionArmed) return; // already locked / never unlocked
   sessionArmed = false;
@@ -4144,6 +4233,7 @@ function lockSession(){
   loadedReMonths.clear();
   loadedSoMonths.clear();
   manifest = null; // force a fresh manifest fetch + full re-derivation on next unlock
+  clearPersistedSession();
   document.getElementById('gatePassword').value = '';
   document.getElementById('gateErr').textContent = '';
   document.getElementById('gateProgress').textContent = '';
@@ -4156,6 +4246,7 @@ function resetIdleTimer(){
   if(!sessionArmed) return;
   clearTimeout(idleTimer);
   idleTimer = setTimeout(lockSession, IDLE_LOCK_MS);
+  touchSessionActivity();
 }
 
 function armSession(){
@@ -4170,6 +4261,11 @@ function armSession(){
 // Note: previously also locked immediately on tab-hide/backgrounding (visibilitychange/pagehide).
 // Removed per user request - too aggressive in daily use. Session now locks ONLY after
 // IDLE_LOCK_MS (15 min) of no activity, regardless of tab switching.
+
+// On every page load (including a plain refresh), try to silently resume a still-valid session
+// before making the user re-enter their password. Falls through to the normal password gate
+// (already visible by default in the HTML) if there's nothing to resume or resume fails.
+tryResumeSession();
 </script>
 </body>
 </html>
