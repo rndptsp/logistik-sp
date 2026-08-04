@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.08.04.13';
+window.APP_VERSION = 'build.2026.08.04.14';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -1025,11 +1025,21 @@ function buildTargetSoGapRows(plantCode, incoterm, propinsi, includeSO){
   const {rows: targetRowsRaw} = targetSourceRowsForPropinsi(snapY, snapM, propinsi);
 
   // Target (SNOP/RKAP/CONTRACT per above, per vendor per district), already prorated to MTD.
+  // Prefers real daily source data (D1..Dsnapd summed) over the weekday-weight ratio when the row
+  // has it - same fix/reasoning as sumTargetStd() above (2026-08-04, Rendy: "snop target must
+  // follow detail daily volume at target-district & target-ekspeditur").
   const targetMap = {}; // 'district|vendor' -> target
   targetRowsRaw.forEach(r=>{
     const d = resolveDistrikForRealisasi(r.DISTRIK); const v = r.EXPEDITUR_KODE;
     const k = d+'|'+v;
-    targetMap[k] = (targetMap[k]||0) + (r.TARGET_TON_BULAN||0) * mtdRatio;
+    let rowStd;
+    if(r.D1!=null || r.D15!=null){
+      rowStd = 0;
+      for(let day=1; day<=Math.min(31,snapD); day++){ const dv = r['D'+day]; if(dv!=null) rowStd += (+dv||0); }
+    } else {
+      rowStd = (r.TARGET_TON_BULAN||0) * mtdRatio;
+    }
+    targetMap[k] = (targetMap[k]||0) + rowStd;
   });
 
   // SO for this propinsi, current snapshot month (order book can legitimately include days beyond
@@ -2244,6 +2254,33 @@ function expeditureKodesFromNames(names){
 // substituting a different source type's number.
 function sourceTypePriority(month){ return ['SNOP']; }
 function sumTarget(rows){ return rows.reduce((s,r)=>s+(+r.TARGET_TON_BULAN||0),0); }
+/* Target STD (day-range-prorated), preferring REAL daily source data over the weekday-weight
+   approximation - added 2026-08-04 per Rendy ("snop target must follow detail daily volume at
+   target-district & target-ekspeditur"). Rows rebuilt directly from the source workbook's "Target
+   Ekspeditur" sheet carry D1..D31 (that exact day's real target tonnage, straight from the sheet's
+   own "Sum of N" columns) - when present, sum those for the requested day range instead of
+   applying stdProrationRatio() to the monthly total. Rows without daily data (older months / any
+   target source not yet rebuilt this way) fall back to the old weekday-weight ratio unchanged, so
+   nothing regresses for periods this fix doesn't cover yet. Confirmed 2026-08-04: old model gave
+   Sumatera Barat's Aug 3 Target STD as 694t vs the real source total of 714t - an ~3% error from
+   the generic model not matching August's actual daily shape. */
+function sumTargetStd(rows, year, month, fromDay, toDay){
+  const ratio = stdProrationRatio(year, month, fromDay, toDay); // fallback for rows w/o daily data
+  let sum = 0;
+  rows.forEach(r=>{
+    if(r.D1!=null || r.D15!=null){ // has real daily columns (checking 2 spots guards against a
+      // single stray null on day 1 itself hiding real data on other days)
+      let clampedFrom = Math.max(1, fromDay), clampedTo = Math.min(31, toDay);
+      for(let d=clampedFrom; d<=clampedTo; d++){
+        const v = r['D'+d];
+        if(v!=null) sum += (+v||0);
+      }
+    } else {
+      sum += (+r.TARGET_TON_BULAN||0) * ratio;
+    }
+  });
+  return sum;
+}
 
 /** Target for one specific (year, month), scoped by active filters and/or an explicit `scope`
     object of {NAMA_PROPINSI, NAMA_AREA_DISTRIK, EXPEDITUR_NAMA} values (only keys that matter for
@@ -2301,7 +2338,10 @@ function targetForScope(year, month, f, scope, sourceTypeOverride){
   // for every month (flat annual/12), so `foundAny` alone can't distinguish "RKAP has no data past
   // June" from "RKAP has data" — it was always true either way, which silently plotted a false
   // flat 0 for RKAP's out-of-coverage months instead of leaving a gap in the chart line.
-  return {full: sumTarget(fullRows), kontrak: sumTarget(kontrakRows), foundAny: fullRows.length>0 || kontrakRows.length>0, fullFound: fullRows.length>0};
+  const {fromDay, toDay} = stdDayRangeForMonth(year, month, f);
+  return {full: sumTarget(fullRows), kontrak: sumTarget(kontrakRows), foundAny: fullRows.length>0 || kontrakRows.length>0, fullFound: fullRows.length>0,
+    fullStd: sumTargetStd(fullRows, year, month, fromDay, toDay), kontrakStd: sumTargetStd(kontrakRows, year, month, fromDay, toDay),
+    fullRows}; // exposed so targetForBucket() can slice by exact dates using real daily data when available
 }
 
 /** Target summed over every (year,month[,provinsi]) actually present in rowsInGroup — used for
@@ -2343,10 +2383,10 @@ function targetForGroup(rowsInGroup, f, scope, sourceTypeOverride){
     const t = targetForScope(+y, +m, f, scopedQuery, sourceTypeOverride);
     if(t.full!=null){
       full += t.full; kontrak += t.kontrak;
-      const {fromDay, toDay} = stdDayRangeForMonth(+y, +m, f);
-      const ratio = stdProrationRatio(+y, +m, fromDay, toDay);
-      mtd += t.full * ratio; // `mtd` field name kept internally (many call sites), now represents Target STD
-      kontrakMtd += t.kontrak * ratio;
+      // `mtd` field name kept internally (many call sites), now represents Target STD - uses real
+      // daily source data when the underlying rows have it (see sumTargetStd), weekday-weight
+      // approximation otherwise. See targetForScope's fullStd/kontrakStd for the actual proration.
+      mtd += t.fullStd; kontrakMtd += t.kontrakStd;
       if(t.foundAny) foundAny=true;
       if(t.fullFound) fullFoundAny=true; // 2026-08-02: true only when a SNOP row (or the requested
         // sourceTypeOverride) actually existed this month - see targetForScope's own comment.
@@ -2425,9 +2465,7 @@ function targetForDistrictAcrossMonths(province, district, months, f){
     const t = targetForScope(year, month, f, {NAMA_PROPINSI:province, NAMA_AREA_DISTRIK:district});
     if(t.full!=null){
       full += t.full; kontrak += t.kontrak;
-      const {fromDay, toDay} = stdDayRangeForMonth(year, month, f);
-      const ratio = stdProrationRatio(year, month, fromDay, toDay);
-      mtd += t.full * ratio; kontrakMtd += t.kontrak * ratio;
+      mtd += t.fullStd; kontrakMtd += t.kontrakStd; // real-daily-data-preferring STD, see sumTargetStd()
       if(t.foundAny) foundAny = true;
       if(t.fullFound) fullFound = true; // 2026-08-02: SNOP-only basis - see targetForGroup's own comment
     }
@@ -2549,11 +2587,23 @@ function targetForBucket(bk, gran, f, scope, sourceTypeOverride){
     // false flat 0 plateau.
     if(!t.fullFound) return;
     any = true;
-    const dim = daysInMonth(y,m);
-    const weightSum = weekdayWeightSum(y, m, dim);
-    if(weightSum<=0) return;
-    const sliceWeight = dlist.reduce((s,d)=> s+WEEKDAY_WEIGHT[d.getDay()], 0);
-    total += t.full * (sliceWeight/weightSum);
+    // Prefer real daily source data (2026-08-04, Rendy: "snop target must follow detail daily
+    // volume") - sum each row's exact D{day} for the dates actually in this bucket, instead of
+    // approximating with the weekday-weight model. Only rows THIS month's slice touches matter;
+    // falls back to the weekday-weight slice for any row without daily data (older months).
+    const hasDaily = t.fullRows && t.fullRows.length && t.fullRows.every(r=> r.D1!=null || r.D15!=null);
+    if(hasDaily){
+      dlist.forEach(d=>{
+        const day = d.getDate();
+        t.fullRows.forEach(r=>{ const v = r['D'+day]; if(v!=null) total += (+v||0); });
+      });
+    } else {
+      const dim = daysInMonth(y,m);
+      const weightSum = weekdayWeightSum(y, m, dim);
+      if(weightSum<=0) return;
+      const sliceWeight = dlist.reduce((s,d)=> s+WEEKDAY_WEIGHT[d.getDay()], 0);
+      total += t.full * (sliceWeight/weightSum);
+    }
   });
   return any ? round2(total) : null;
 }
