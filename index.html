@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.08.04.17';
+window.APP_VERSION = 'build.2026.08.04.18';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -1713,7 +1713,13 @@ function rebuildLastDataDayCache(){
   });
 }
 function reindexDates(){
-  RE.forEach(r=>{ r._d = parseDateFlexible(r.TGL_SPJ); r._hour = parseHour(r.JAM_ANTRI); });
+  // _hour drives the "Per Jam" (hourly) chart bucketing - CHANGED 2026-08-04 per Rendy from
+  // JAM_ANTRI (queue arrival time) to JAM_KELUAR (departure/exit time), so each hour's bar
+  // reflects trucks that actually LEFT the plant that hour, not ones that merely queued up then.
+  // Rows with a blank JAM_KELUAR (still in queue/being loaded, not yet exited) fall out of the
+  // hourly chart entirely until they get a real exit time - same null-handling as before, just a
+  // different source field.
+  RE.forEach(r=>{ r._d = parseDateFlexible(r.TGL_SPJ); r._hour = parseHour(r.JAM_KELUAR); });
   SO.forEach(r=> r._d = parseDateFlexible(r.TGL_KIRIM || r.SO_CREATE || r.TGL_SO));
   rebuildLastDataDayCache();
 }
@@ -2913,6 +2919,26 @@ function chartLabel(bk, gran){
   if(gran==='monthly'){ const [y,m] = bk.split('-'); return `${MONTH_NAMES_ID[+m]} ${y}`; }
   return bk;
 }
+/* Full date range for a weekly bucket key ("2026-W01" -> "1-7 Jan 2026"), shown in the chart
+   tooltip title on hover/click - added 2026-08-04 per Rendy so a week bucket reads as an actual
+   date range instead of just an ISO week number. Handles month/year boundaries by naming both
+   ends explicitly (e.g. "29 Jun - 5 Jul 2026", "29 Des 2025 - 4 Jan 2026") rather than assuming
+   same month. */
+function weekRangeLabel(bk){
+  const wm = bk.match(/^(\d{4})-W(\d{2})$/);
+  if(!wm) return bk;
+  const jan4 = new Date(+wm[1],0,4);
+  const monday = new Date(jan4); monday.setDate(jan4.getDate()-((jan4.getDay()+6)%7)+(+wm[2]-1)*7);
+  const sunday = new Date(monday); sunday.setDate(monday.getDate()+6);
+  const sameMonth = monday.getMonth()===sunday.getMonth() && monday.getFullYear()===sunday.getFullYear();
+  if(sameMonth){
+    return `${monday.getDate()}-${sunday.getDate()} ${MONTH_NAMES_ID[monday.getMonth()+1]} ${monday.getFullYear()}`;
+  }
+  const sameYear = monday.getFullYear()===sunday.getFullYear();
+  const startPart = `${monday.getDate()} ${MONTH_NAMES_ID[monday.getMonth()+1]}${sameYear ? '' : ' '+monday.getFullYear()}`;
+  const endPart = `${sunday.getDate()} ${MONTH_NAMES_ID[sunday.getMonth()+1]} ${sunday.getFullYear()}`;
+  return `${startPart} - ${endPart}`;
+}
 const VALUE_LABELS = {TONASE:'Tonase (ton)',TRIP:'Jumlah Trip',TRUCK:'Jumlah Truk Unik',WAITING:'Waiting Time avg (jam)',DWELL:'Dwell Time avg (jam)',SO:'SO Tonase (ton)',SOLATE:'SO Late',RITASE:'Ritase (trip/truk)',ACHIEV:'% Achievement',OF:'% OF'};
 
 function renderTargetToggles(){
@@ -2981,7 +3007,13 @@ function renderChart(){
         layout:{padding:{top:20, right:12, bottom:8, left:8}},
         plugins:{
           legend:{labels:{color:'#1A1A1A', boxWidth:12, font:{size:10}, padding:16}},
-          tooltip:{mode:'index', intersect:false, callbacks:{label:(c)=> c.dataset.label==='% Achievement' ? `${c.formattedValue}%` : `${c.dataset.label}: ${Number(c.raw).toLocaleString('id-ID')} ton`}},
+          tooltip:{mode:'index', intersect:false, callbacks:{
+            // 2026-08-04 per Rendy: a Weekly bucket's tooltip should show the actual date range
+            // ("1-7 Jul 2026") instead of just the ISO week label ("2026-W01") - x-axis ticks stay
+            // short (chartLabel) to avoid clutter, this only affects the on-hover/click tooltip.
+            title:(items)=> f.gran==='weekly' && items.length ? weekRangeLabel(bucketKeys[items[0].dataIndex]) : (items.length ? items[0].label : ''),
+            label:(c)=> c.dataset.label==='% Achievement' ? `${c.formattedValue}%` : `${c.dataset.label}: ${Number(c.raw).toLocaleString('id-ID')} ton`,
+          }},
           achievBarLabels:{enabled:true},
           valueLabels:{enabled: !!state.showValueLabels},
         },
