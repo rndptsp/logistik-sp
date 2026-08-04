@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.08.04.18';
+window.APP_VERSION = 'build.2026.08.05.01';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -2924,6 +2924,16 @@ function chartLabel(bk, gran){
    date range instead of just an ISO week number. Handles month/year boundaries by naming both
    ends explicitly (e.g. "29 Jun - 5 Jul 2026", "29 Des 2025 - 4 Jan 2026") rather than assuming
    same month. */
+/* Day name + full date for a daily bucket key ("2026-08-01" -> "Sabtu, 1 Agustus 2026"), shown in
+   the chart tooltip title on hover/click for Daily granularity - added 2026-08-04 per Rendy.
+   MONTH_NAMES_ID is abbreviated (3-letter, e.g. "Agu") for compact axis labels elsewhere, so this
+   spells the month out in full to match how HARI_ID (day names) are already unabbreviated. */
+const MONTH_NAMES_ID_FULL = ['','Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
+function dayRangeLabel(bk){
+  const d = parseLocalDateInput(bk);
+  if(!d) return bk;
+  return `${HARI_ID[d.getDay()]}, ${d.getDate()} ${MONTH_NAMES_ID_FULL[d.getMonth()+1]} ${d.getFullYear()}`;
+}
 function weekRangeLabel(bk){
   const wm = bk.match(/^(\d{4})-W(\d{2})$/);
   if(!wm) return bk;
@@ -3009,9 +3019,17 @@ function renderChart(){
           legend:{labels:{color:'#1A1A1A', boxWidth:12, font:{size:10}, padding:16}},
           tooltip:{mode:'index', intersect:false, callbacks:{
             // 2026-08-04 per Rendy: a Weekly bucket's tooltip should show the actual date range
-            // ("1-7 Jul 2026") instead of just the ISO week label ("2026-W01") - x-axis ticks stay
-            // short (chartLabel) to avoid clutter, this only affects the on-hover/click tooltip.
-            title:(items)=> f.gran==='weekly' && items.length ? weekRangeLabel(bucketKeys[items[0].dataIndex]) : (items.length ? items[0].label : ''),
+            // ("1-7 Jul 2026") instead of just the ISO week label ("2026-W01"), and a Daily
+            // bucket's tooltip should show the day name ("Sabtu, 1 Agustus 2026") instead of the
+            // bare "2026-08-01" - x-axis ticks stay short (chartLabel) to avoid clutter, this only
+            // affects the on-hover/click tooltip.
+            title:(items)=>{
+              if(!items.length) return '';
+              const bk = bucketKeys[items[0].dataIndex];
+              if(f.gran==='weekly') return weekRangeLabel(bk);
+              if(f.gran==='daily') return dayRangeLabel(bk);
+              return items[0].label;
+            },
             label:(c)=> c.dataset.label==='% Achievement' ? `${c.formattedValue}%` : `${c.dataset.label}: ${Number(c.raw).toLocaleString('id-ID')} ton`,
           }},
           achievBarLabels:{enabled:true},
