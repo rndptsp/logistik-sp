@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.08.05.06';
+window.APP_VERSION = 'build.2026.08.05.07';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -758,6 +758,19 @@ function openBucketModal(key){
   const rec = bucketList.find(r=>r.propinsi===propinsi);
   const bucketLabel = {rilis:'Sudah Rilis', potensi:'Potensi', prognose:'Prognose'}[bucket];
   const cellValue = {rilis:rec.sudahRilis, potensi:rec.potensi, prognose:rec.prognose}[bucket];
+  // Level-2 detail table's time column header, per Rendy 2026-08-05: label the "waktu" value by
+  // what it actually represents for that bucket's dominant trip type, instead of a generic "Waktu"
+  // header for all three. The underlying value passed into addTrip() already differed per bucket
+  // (see collectAllComponents/addTrip calls below) - this just names it accurately:
+  //   Rilis    -> Jam Keluar (RE.JAM_KELUAR, truck exit time - already what was being passed)
+  //   Potensi  -> Jam Masuk (Antri/Timbang "TGL DAFTAR" registration timestamp - closest available
+  //               field to a masuk-pabrik time in the Matching/Timbang Masuk sheets; there is no
+  //               separate JAM MASUK column in those two sheets, unlike the Realisasi sheet)
+  //   Prognose -> Window Time (Booking rows carry "Tanggal Prematch (10-40)", the prematch/window
+  //               scheduling timestamp - the one bucket-specific time concept that's unique to
+  //               Booking; Prognose's Antri/Timbang rows still show their TGL DAFTAR value, same
+  //               caveat as Potensi, since Prognose = Potensi + Booking)
+  const waktuLabel = {rilis:'Jam Keluar', potensi:'Jam Masuk', prognose:'Window Time'}[bucket];
 
   document.getElementById('prognModalTitle').textContent = plant.plantName+' \u2014 '+incoterm+' \u2014 '+propinsi+' \u2014 '+bucketLabel;
   prognModalSort = [{key:'tonase', dir:'desc'}];
@@ -892,7 +905,7 @@ function openBucketModal(key){
   }
 
   prognModalGroups = Object.values(groups);
-  renderBucketModalBody(bucketLabel, cellValue, reconciliationNote);
+  renderBucketModalBody(bucketLabel, cellValue, reconciliationNote, waktuLabel);
   document.getElementById('prognModalOverlay').style.display = '';
 }
 
@@ -931,15 +944,15 @@ function sortArrow(col){
   return ' '+arrow+(prognModalSort.length>1 ? '<sup>'+(idx+1)+'</sup>' : '');
 }
 
-let prognModalHeaderCache = {bucketLabel:'', cellValue:0, reconciliationNote:''};
+let prognModalHeaderCache = {bucketLabel:'', cellValue:0, reconciliationNote:'', waktuLabel:'Waktu'};
 
-function renderBucketModalBody(bucketLabel, cellValue, reconciliationNote){
-  prognModalHeaderCache = {bucketLabel, cellValue, reconciliationNote};
+function renderBucketModalBody(bucketLabel, cellValue, reconciliationNote, waktuLabel){
+  prognModalHeaderCache = {bucketLabel, cellValue, reconciliationNote, waktuLabel: waktuLabel || 'Waktu'};
   rerenderBucketModalTable();
 }
 
 function rerenderBucketModalTable(){
-  const {reconciliationNote} = prognModalHeaderCache;
+  const {reconciliationNote, waktuLabel} = prognModalHeaderCache;
   const sorted = prognModalGroups.slice().sort(prognModalSortCompare);
   let h = '<div style="font-size:12.5px;margin-bottom:10px;">'+reconciliationNote+'</div>';
   h += '<div style="font-size:11px;color:var(--sub);margin-bottom:6px;">Klik header kolom untuk urutkan &middot; Shift+klik untuk tambah level urutan &middot; Klik baris untuk lihat detail per truk (Level 2)</div>';
@@ -961,7 +974,7 @@ function rerenderBucketModalTable(){
     '</tr>';
     if(prognModalExpanded[idx]){
       h += '<tr><td colspan="5" style="background:var(--panel2);padding:8px;">';
-      h += '<table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr style="text-align:left;border-bottom:1px solid var(--border);"><th>Plat Nomor</th><th>Alamat</th><th>Waktu</th><th style="text-align:right;">Tonase</th></tr></thead><tbody>';
+      h += '<table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr style="text-align:left;border-bottom:1px solid var(--border);"><th>Plat Nomor</th><th>Alamat</th><th>'+waktuLabel+'</th><th style="text-align:right;">Tonase</th></tr></thead><tbody>';
       g.level2.forEach(l2=>{
         h += '<tr><td>'+l2.plat+'</td><td>'+l2.alamat+'</td><td>'+l2.waktu+'</td><td style="text-align:right;">'+pnf(l2.tonase)+'</td></tr>';
       });
