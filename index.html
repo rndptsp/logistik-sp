@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.08.05.11';
+window.APP_VERSION = 'build.2026.08.05.12';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -646,11 +646,6 @@ function prognTotalRowHtml(rec, label, levelClass){
     '<td style="text-align:right;">'+pnf(rec.potensi)+'</td>' +
     '<td style="text-align:right;">'+pnf(rec.prognose)+'</td>' +
     '<td style="text-align:right;">'+pnf(sisa)+'</td>' +
-    // Internal-target % (pctXxxI) is null for company-wide roll-up records like pengirimanFRC -
-    // "Internal Target" is a per-plant-per-propinsi figure from the Prognosa sheet, so a single
-    // combined-across-everything internal target doesn't exist. Fall back to the SNOP-target %
-    // (pctRilis/pctPotensi/pctPrognose), which IS computed for these records, instead of showing
-    // "-" for every percentage on the row. Found + fixed 2026-08-02 per Rendy.
     // Always SNOP-target % here (pctRilis/pctPotensi/pctPrognose), matching prognDistrictRowHtml's
     // fix on 2026-08-05 above - this row used to prefer the Internal-target % (pctXxxI) when
     // available, which was the actual bug (diverged from the printed report by the Internal/SNOP
@@ -805,13 +800,18 @@ function openBucketModal(key){
     groups[gk].level2.push({plat: plat||'-', alamat: alamat||'-', waktu: waktu||'-', tonase: tonase||0});
   }
 
-  // includeBooking (2026-08-02 per Rendy: "potensi & prognose give same popup table, booking
-  // donot need to appear in potensi") - Booking trips are ALWAYS summed into bookingTon (needed
-  // for both buckets' reconciliation text), but only added as visible rows via addTrip() when
-  // includeBooking is true (Prognose). Potensi = Rilis+Antri+Timbang only, so its popup table
-  // should show just Antri/Timbang trips, not Booking ones - previously both buckets called this
-  // with no such gate, so Potensi and Prognose rendered the exact same trip list.
-  function collectAllComponents(includeBooking){
+  // Changed 2026-08-05 per Rendy ("potensi only show antri+timbang, prognose only show booking")
+  // - each bucket's popup table now shows only the trips INCREMENTAL to that funnel stage, instead
+  // of Prognose repeating Potensi's Antri/Timbang rows on top of its own Booking rows. Antri/Timbang
+  // /Booking tonnage is ALWAYS summed (needed for every bucket's reconciliation text regardless of
+  // which rows are visible), but addTrip() is only called - i.e. the row actually shows up in the
+  // table - when that type's own flag is true:
+  //   Potensi  -> collectAllComponents(true, false)  = Antri+Timbang rows visible, Booking hidden
+  //   Prognose -> collectAllComponents(false, true)   = Booking rows visible, Antri+Timbang hidden
+  //               (their tonnage is still folded into the reconciliation math + note text - see
+  //               the 'prognose' branch below - just not repeated as rows, since Potensi's own
+  //               popup already lists them)
+  function collectAllComponents(includeAntriTimbangRows, includeBookingRows){
     let antriTon = 0, timbangTon = 0, bookingTon = 0;
     if(incoterm === 'FRC'){
       (PROGN_DATA.antriFRC||[]).filter(r=>{
@@ -820,25 +820,29 @@ function openBucketModal(key){
         // Matching FRC has its own 'Sales Order' field (verified 2026-08-02: joins to SO chunk's
         // SALES_ORDER the same way Timbang Masuk FRC already does below) - was previously left as
         // '-' for every Antri row even though the join data was available all along.
-        const soRow = (typeof SO !== 'undefined' ? SO : []).find(s=> s.SALES_ORDER!=null && r['Sales Order']!=null && Math.round(s.SALES_ORDER)===Math.round(r['Sales Order']));
-        const distributor = soRow ? soRow.DISTRIBUTOR : '-';
-        const gk = 'A|'+(r['District']||'-')+'|'+(r['Kode Transportir']||'-')+'|'+distributor;
-        addTrip(gk, r['District']||'-', r['Kode Transportir']||'-', distributor, r['Tonase'], r['NO POLISI'], distributor!=='-' ? distributor : r['District'], r['TGL DAFTAR']);
+        if(includeAntriTimbangRows){
+          const soRow = (typeof SO !== 'undefined' ? SO : []).find(s=> s.SALES_ORDER!=null && r['Sales Order']!=null && Math.round(s.SALES_ORDER)===Math.round(r['Sales Order']));
+          const distributor = soRow ? soRow.DISTRIBUTOR : '-';
+          const gk = 'A|'+(r['District']||'-')+'|'+(r['Kode Transportir']||'-')+'|'+distributor;
+          addTrip(gk, r['District']||'-', r['Kode Transportir']||'-', distributor, r['Tonase'], r['NO POLISI'], distributor!=='-' ? distributor : r['District'], r['TGL DAFTAR']);
+        }
         antriTon += (r['Tonase']||0);
       });
       (PROGN_DATA.timbangFRC||[]).filter(r=>{
         return String(Math.round(r['Plant']))===plantCode && r['Incoterm']==='FRC' && r['Propinsi']===propinsi;
       }).forEach(r=>{
-        const soRow = (typeof SO !== 'undefined' ? SO : []).find(s=> s.SALES_ORDER!=null && Math.round(s.SALES_ORDER)===Math.round(r['Sales Order']));
-        const distributor = soRow ? soRow.DISTRIBUTOR : '-';
-        const gk = 'T|'+(r['District']||'-')+'|'+(r['Kode Transportir']||'-')+'|'+distributor;
-        addTrip(gk, r['District']||'-', r['Kode Transportir']||'-', distributor, r['Tonase'], r['NO POLISI'], distributor!=='-' ? distributor : r['District'], r['TGL DAFTAR']);
+        if(includeAntriTimbangRows){
+          const soRow = (typeof SO !== 'undefined' ? SO : []).find(s=> s.SALES_ORDER!=null && Math.round(s.SALES_ORDER)===Math.round(r['Sales Order']));
+          const distributor = soRow ? soRow.DISTRIBUTOR : '-';
+          const gk = 'T|'+(r['District']||'-')+'|'+(r['Kode Transportir']||'-')+'|'+distributor;
+          addTrip(gk, r['District']||'-', r['Kode Transportir']||'-', distributor, r['Tonase'], r['NO POLISI'], distributor!=='-' ? distributor : r['District'], r['TGL DAFTAR']);
+        }
         timbangTon += (r['Tonase']||0);
       });
       (PROGN_DATA.bookingFRC||[]).filter(r=>{
         return String(Math.round(r['Kode Plant']))===plantCode && r['Incoterm']==='FRC' && r['Propinsi']===propinsi;
       }).forEach(r=>{
-        if(includeBooking){
+        if(includeBookingRows){
           const gk = 'B|'+(r['District']||'-')+'|'+(r['Kode Transportir']||'-')+'|'+(r['Nama Distributor']||'-');
           addTrip(gk, r['District']||'-', r['Kode Transportir']||'-', r['Nama Distributor']||'-', r['Volume'], r['Truk'], r['Alamat']||r['Nama Distributor'], r['Tanggal Prematch (10-40)']);
         }
@@ -848,21 +852,25 @@ function openBucketModal(key){
       (PROGN_DATA.antriFOT||[]).filter(r=>{
         return String(Math.round(r['Cek Propinsi_2']))===plantCode && r['Incoterm']==='FOT' && r['Propinsi']===propinsi;
       }).forEach(r=>{
-        const gk = 'A|-|-|-';
-        addTrip(gk, '- (Matching FOT: tidak ada kolom district/SO)', '-', '-', r['Tonase'], r['NO POLISI'], '-', r['TGL DAFTAR']);
+        if(includeAntriTimbangRows){
+          const gk = 'A|-|-|-';
+          addTrip(gk, '- (Matching FOT: tidak ada kolom district/SO)', '-', '-', r['Tonase'], r['NO POLISI'], '-', r['TGL DAFTAR']);
+        }
         antriTon += (r['Tonase']||0);
       });
       (PROGN_DATA.timbangFOT||[]).filter(r=>{
         return String(Math.round(r['Source']))===plantCode && r['Incoterm']==='FOT' && r['Propinsi']===propinsi;
       }).forEach(r=>{
-        const gk = 'T|-|-|-';
-        addTrip(gk, '- (Timbang FOT: tidak ada kolom district/SO)', '-', '-', r['Tonase'], r['NO POLISI'], '-', r['TGL DAFTAR']);
+        if(includeAntriTimbangRows){
+          const gk = 'T|-|-|-';
+          addTrip(gk, '- (Timbang FOT: tidak ada kolom district/SO)', '-', '-', r['Tonase'], r['NO POLISI'], '-', r['TGL DAFTAR']);
+        }
         timbangTon += (r['Tonase']||0);
       });
       (PROGN_DATA.bookingFOT||[]).filter(r=>{
         return String(Math.round(r['Kode Plant']))===plantCode && r['Incoterm']==='FOT' && r['Provinsi']===propinsi;
       }).forEach(r=>{
-        if(includeBooking){
+        if(includeBookingRows){
           const gk = 'B|'+(r['Kota']||'-')+'|'+(r['Kode Ekspeditur']||'-')+'|'+(r['Nama Distributor']||'-');
           addTrip(gk, r['Kota']||'-', r['Kode Ekspeditur']||'-', r['Nama Distributor']||'-', r['Qty'], r['Truk'], r['Alamat']||r['Nama Distributor'], r['Tanggal Prematch (10-40)']);
         }
@@ -888,10 +896,11 @@ function openBucketModal(key){
       ? '<span style="color:#2E9E4B;">Total data ('+pnf(usedRowsTon)+' ton) = angka tabel utama ('+pnf(cellValue)+' ton). Cocok.</span>'
       : '<span style="color:var(--accent-dark);">Total data ('+pnf(usedRowsTon)+' ton) vs angka tabel utama ('+pnf(cellValue)+' ton) \u2014 selisih '+pnf(diff)+' ton, perlu ditelusuri.</span>';
   } else if(bucket === 'potensi'){
-    // includeBooking=false (2026-08-02 per Rendy) - Potensi's popup table now shows only
-    // Antri/Timbang trips, matching what Potensi actually is (Rilis+Antri+Timbang). Booking's ton
-    // total is still computed and mentioned in the text below, just not listed as rows anymore.
-    const {antriTon, timbangTon, bookingTon} = collectAllComponents(false);
+    // Antri+Timbang rows visible, Booking hidden (2026-08-02 per Rendy) - Potensi's popup table
+    // shows only Antri/Timbang trips, matching what Potensi actually is (Rilis+Antri+Timbang).
+    // Booking's ton total is still computed and mentioned in the text below, just not listed as
+    // rows anymore.
+    const {antriTon, timbangTon, bookingTon} = collectAllComponents(true, false);
     const rilisTon = rec.sudahRilis || 0;
     usedRowsTon = antriTon + timbangTon;
     // Confirmed against real chunk data 2026-08-02 (CP Indarung FOT/Bengkulu book=108, FOT/Sumatera
@@ -906,17 +915,21 @@ function openBucketModal(key){
         ? '<span style="color:#2E9E4B;">Cocok.</span>'
         : '<span style="color:var(--accent-dark);">Selisih '+pnf(diff)+' ton, perlu ditelusuri (kemungkinan snapshot Matching/Timbang tidak persis sinkron dengan waktu Prognosa dihitung).</span>');
   } else if(bucket === 'prognose'){
-    const {antriTon, timbangTon, bookingTon} = collectAllComponents(true);
+    // Changed 2026-08-05 per Rendy ("prognose only show booking") - Booking rows visible,
+    // Antri+Timbang hidden. Their tonnage (antriTon/timbangTon) is still pulled in for the
+    // reconciliation math/text below (Prognose = Rilis+Antri+Timbang+Booking) - they're just not
+    // repeated as rows here since Potensi's own popup already lists them.
+    const {antriTon, timbangTon, bookingTon} = collectAllComponents(false, true);
     const rilisTon = rec.sudahRilis || 0;
     const potensiVal = rec.potensi || 0;
-    usedRowsTon = antriTon + timbangTon + bookingTon; // unique trip data, not double-counted
+    usedRowsTon = bookingTon; // only Booking rows are actually shown in the table below now
     // Confirmed against real chunk data 2026-08-02: Prognose = Potensi + Booking (Booking counted
     // ONCE, not twice - the old "2x Booking" comment/formula here did not match the actual built
     // chunk data and was overstating Prognose by one full Booking amount whenever Booking > 0).
     const officialFromKnownParts = rilisTon + antriTon + timbangTon + bookingTon;
     const diff = Math.round((cellValue||0) - officialFromKnownParts);
-    reconciliationNote = 'Rilis = '+pnf(rilisTon)+' ton. Potensi (tabel utama) = '+pnf(potensiVal)+' ton (Rilis + Antri + Timbang, tidak termasuk Booking). ' +
-      'Data trip unik yang ditampilkan di tabel bawah (Antri+Timbang+Booking, tidak dobel-hitung): '+pnf(usedRowsTon)+' ton. ' +
+    reconciliationNote = 'Rilis = '+pnf(rilisTon)+' ton. Potensi (tabel utama) = '+pnf(potensiVal)+' ton (Rilis + Antri + Timbang, tidak termasuk Booking — rincian trip Antri/Timbang ada di popup Potensi, tidak diulang di sini). ' +
+      'Booking (ditampilkan di tabel bawah) = '+pnf(bookingTon)+' ton. ' +
       'Formula Prognose = Rilis + Antri + Timbang + Booking (Potensi + Booking, Booking dihitung sekali) = '+pnf(officialFromKnownParts)+' ton, ' +
       'vs angka Prognose tabel utama = '+pnf(cellValue)+' ton' +
       (Math.abs(diff) < 1 ? ' <span style="color:#2E9E4B;">(cocok).</span>' : ' <span style="color:var(--accent-dark);">(selisih '+pnf(diff)+' ton, perlu ditelusuri).</span>');
