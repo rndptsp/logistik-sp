@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.08.05.10';
+window.APP_VERSION = 'build.2026.08.05.11';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -612,7 +612,19 @@ function prognDistrictRowHtml(rec, plantCode, incoterm){
     '<td '+prognCellClickAttr(plantCode,incoterm,rec.propinsi,'potensi')+'>'+pnf(rec.potensi)+'</td>' +
     '<td '+prognCellClickAttr(plantCode,incoterm,rec.propinsi,'prognose')+'>'+pnf(rec.prognose)+'</td>' +
     '<td '+sisaClickAttr(plantCode,incoterm,rec.propinsi)+'>'+pnf(sisa)+'</td>' +
-    pctCellHtml(rec.pctRilisI) + pctCellHtml(rec.pctPotensiI) + pctCellHtml(rec.pctPrognoseI) +
+    // Fixed 2026-08-05 per Rendy (caught by cross-checking dashboard vs the printed Excel report,
+    // "TARGET paling kanan, saya cek beda" / screenshot showing e.g. Bengkulu %Rilis 85% in the
+    // source vs 74.1% on the dashboard - same underlying Rilis=420/Target=493 in both, but this
+    // column was reading pctRilisI/pctPotensiI/pctPrognoseI ("Internal Target" %, a stretch target
+    // ~1.15x the SNOP target, straight from the Prognosa sheet's own separate Internal Target
+    // columns) instead of pctRilis/pctPotensi/pctPrognose (SNOP-target %, matching the printed
+    // report's own k=g/j Target(t) formula). Every mismatched pair checked (Bengkulu/Jambi/Riau
+    // Daratan/Sumbar/Sumut x 3 percentages = 15 points) divides out to exactly the same ~1.15
+    // ratio, confirming this was reading the wrong basis - the header here says plain "% Rilis"
+    // directly under "Target SNOP", not "% Rilis (Internal)", and there is no other place in this
+    // table where Internal Target is surfaced, so SNOP-based is the correct (and only intended)
+    // basis for this column.
+    pctCellHtml(rec.pctRilis) + pctCellHtml(rec.pctPotensi) + pctCellHtml(rec.pctPrognose) +
     prognOrderHCellsHtml(rec, plantCode, incoterm) +
   '</tr>';
 }
@@ -639,9 +651,15 @@ function prognTotalRowHtml(rec, label, levelClass){
     // combined-across-everything internal target doesn't exist. Fall back to the SNOP-target %
     // (pctRilis/pctPotensi/pctPrognose), which IS computed for these records, instead of showing
     // "-" for every percentage on the row. Found + fixed 2026-08-02 per Rendy.
-    '<td style="text-align:right;">'+pct(rec.pctRilisI!=null ? rec.pctRilisI : rec.pctRilis)+'</td>' +
-    '<td style="text-align:right;">'+pct(rec.pctPotensiI!=null ? rec.pctPotensiI : rec.pctPotensi)+'</td>' +
-    '<td style="text-align:right;">'+pct(rec.pctPrognoseI!=null ? rec.pctPrognoseI : rec.pctPrognose)+'</td>' +
+    // Always SNOP-target % here (pctRilis/pctPotensi/pctPrognose), matching prognDistrictRowHtml's
+    // fix on 2026-08-05 above - this row used to prefer the Internal-target % (pctXxxI) when
+    // available, which was the actual bug (diverged from the printed report by the Internal/SNOP
+    // ratio, ~1.15x). It fell back to SNOP-target % only for roll-up records like pengirimanFRC
+    // where Internal-target has no single combined figure - but SNOP-target is the correct basis
+    // for every row here, not just the ones where Internal happened to be unavailable.
+    '<td style="text-align:right;">'+pct(rec.pctRilis)+'</td>' +
+    '<td style="text-align:right;">'+pct(rec.pctPotensi)+'</td>' +
+    '<td style="text-align:right;">'+pct(rec.pctPrognose)+'</td>' +
     prognOrderHCellsHtml(rec) +
   '</tr>';
 }
