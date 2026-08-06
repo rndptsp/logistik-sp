@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.08.06.10';
+window.APP_VERSION = 'build.2026.08.05.13';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -1073,17 +1073,28 @@ function buildTargetSoGapRows(plantCode, incoterm, propinsi, includeSO){
   // has it - same fix/reasoning as sumTargetStd() above (2026-08-04, Rendy: "snop target must
   // follow detail daily volume at target-district & target-ekspeditur").
   const targetMap = {}; // 'district|vendor' -> target
+  // Added 2026-08-05 per Rendy ("popup sisa, add column for sisa from today target") - same D-day
+  // source as the MTD sum above, just isolated to the single snapshot day instead of summed 1..
+  // snapD. Rows without real daily data (D1..D31 all null) fall back to a single-day slice of the
+  // weekday-weight ratio (dayRatio = mtdRatio for a 1-day window ending/starting at snapD), same
+  // approximation the MTD figure itself falls back to for those rows.
+  const dayRatio = stdProrationRatio(snapY, snapM, snapD, snapD);
+  const todayTargetMap = {}; // 'district|vendor' -> today's target only (not cumulative)
   targetRowsRaw.forEach(r=>{
     const d = resolveDistrikForRealisasi(r.DISTRIK); const v = r.EXPEDITUR_KODE;
     const k = d+'|'+v;
     let rowStd;
+    let rowToday;
     if(r.D1!=null || r.D15!=null){
       rowStd = 0;
       for(let day=1; day<=Math.min(31,snapD); day++){ const dv = r['D'+day]; if(dv!=null) rowStd += (+dv||0); }
+      rowToday = (+r['D'+snapD] || 0);
     } else {
       rowStd = (r.TARGET_TON_BULAN||0) * mtdRatio;
+      rowToday = (r.TARGET_TON_BULAN||0) * dayRatio;
     }
     targetMap[k] = (targetMap[k]||0) + rowStd;
+    todayTargetMap[k] = (todayTargetMap[k]||0) + rowToday;
   });
 
   // SO for this propinsi, current snapshot month (order book can legitimately include days beyond
@@ -1107,6 +1118,15 @@ function buildTargetSoGapRows(plantCode, incoterm, propinsi, includeSO){
     realMap[k] = (realMap[k]||0) + (r.TONASE||0);
   });
 
+  // Realized on the snapshot day ONLY (===snapD, not <=snapD like realMap above) - the actual side
+  // of "sisa dari target hari ini".
+  const todayRealMap = {};
+  reArr.filter(r=> r.NAMA_PROPINSI===propinsi && r._d && r._d.getFullYear()===snapY && (r._d.getMonth()+1)===snapM && r._d.getDate()===snapD).forEach(r=>{
+    const d = normDistrict(r.NAMA_AREA_DISTRIK); const v = r.EXPEDITUR_KODE;
+    const k = d+'|'+v;
+    todayRealMap[k] = (todayRealMap[k]||0) + (r.TONASE||0);
+  });
+
   const allKeys = new Set([...Object.keys(targetMap), ...(includeSO ? Object.keys(soMap) : [])]);
   const rows = [];
   allKeys.forEach(k=>{
@@ -1114,13 +1134,17 @@ function buildTargetSoGapRows(plantCode, incoterm, propinsi, includeSO){
     const target = targetMap[k] || 0;
     const so = soMap[k] || 0;
     const real = realMap[k] || 0;
+    const todayTarget = todayTargetMap[k] || 0;
+    const todayReal = todayRealMap[k] || 0;
     if(target === 0 && (!includeSO || so === 0)) return; // nothing to show for this key
     rows.push({
       district, vendor,
       sisaTarget: target - real,
       sisaSo: includeSO ? (so - real) : null,
+      sisaToday: todayTarget - todayReal,
       hasTarget: target > 0,
-      hasSo: so > 0
+      hasSo: so > 0,
+      hasTodayTarget: todayTarget > 0
     });
   });
   rows.sort((a,b)=> a.district===b.district ? a.vendor.localeCompare(b.vendor) : a.district.localeCompare(b.district));
@@ -1135,17 +1159,19 @@ function openSisaModal(key){
   // is SNOP only (no RKAP/CONTRACT fallback, per Rendy 2026-08-02) prorated to MTD, not the old
   // flat CONTRACT full-month figure - see buildTargetSoGapRows for proration logic.
   const rows = buildTargetSoGapRows(plantCode, incoterm, propinsi, true).filter(r=> r.hasTarget && r.sisaTarget > 0);
-  let h = '<div style="font-size:11.5px;color:var(--sub);margin-bottom:10px;">Target = SNOP saja (tidak ada fallback ke RKAP/Kontrak) per ekspeditur per distrik, diprorasi Month-to-Date sampai tanggal snapshot &middot; distrik/ekspeditur tanpa Target SNOP bulan ini tidak muncul di sini &middot; Sisa Tonase Target = tonase yang BELUM tercapai terhadap target MTD (ditampilkan negatif, merah) &middot; Sisa Tonase SO = tonase SO yang belum direalisasi (kolom terpisah, informasional &mdash; tidak memengaruhi Sisa Tonase Target) &middot; Distrik/ekspeditur yang sudah mencapai atau melebihi target MTD TIDAK ditampilkan.</div>';
+  let h = '<div style="font-size:11.5px;color:var(--sub);margin-bottom:10px;">Target = SNOP saja (tidak ada fallback ke RKAP/Kontrak) per ekspeditur per distrik, diprorasi Month-to-Date sampai tanggal snapshot &middot; distrik/ekspeditur tanpa Target SNOP bulan ini tidak muncul di sini &middot; Sisa Tonase Target = tonase yang BELUM tercapai terhadap target MTD (ditampilkan negatif, merah) &middot; Sisa dari Target Hari Ini = tonase yang BELUM tercapai terhadap target HARI SNAPSHOT SAJA (bukan kumulatif MTD) dibanding realisasi hari itu saja &middot; Sisa Tonase SO = tonase SO yang belum direalisasi (kolom terpisah, informasional &mdash; tidak memengaruhi Sisa Tonase Target) &middot; Distrik/ekspeditur yang sudah mencapai atau melebihi target MTD TIDAK ditampilkan.</div>';
   h += '<table style="width:100%;border-collapse:collapse;font-size:12px;"><thead><tr style="text-align:left;border-bottom:1px solid var(--border);color:var(--sub);">' +
-    '<th>District</th><th>Ekspeditur</th><th style="text-align:right;">Sisa Tonase Target</th><th style="text-align:right;">Sisa Tonase SO</th></tr></thead><tbody>';
+    '<th>District</th><th>Ekspeditur</th><th style="text-align:right;">Sisa Tonase Target</th><th style="text-align:right;">Sisa dari Target Hari Ini</th><th style="text-align:right;">Sisa Tonase SO</th></tr></thead><tbody>';
   if(rows.length===0){
-    h += '<tr><td colspan="4" style="color:#2E9E4B;padding:14px 0;">Semua distrik/ekspeditur di propinsi ini sudah mencapai target MTD.</td></tr>';
+    h += '<tr><td colspan="5" style="color:#2E9E4B;padding:14px 0;">Semua distrik/ekspeditur di propinsi ini sudah mencapai target MTD.</td></tr>';
   }
   rows.forEach(r=>{
     const soCell = !r.hasSo ? '-' : (r.sisaSo>0 ? '<span style="color:var(--accent-dark);font-weight:600;">('+pnf(r.sisaSo)+')</span>' : '<span style="color:#2E9E4B;">tercapai</span>');
+    const todayCell = !r.hasTodayTarget ? '-' : (r.sisaToday>0 ? '<span style="color:var(--accent-dark);font-weight:600;">('+pnf(r.sisaToday)+')</span>' : '<span style="color:#2E9E4B;">tercapai</span>');
     h += '<tr style="border-bottom:1px solid var(--border);">' +
       '<td>'+r.district+'</td><td>'+r.vendor+'</td>' +
       '<td style="text-align:right;font-weight:600;color:var(--accent-dark);">('+pnf(r.sisaTarget)+')</td>' +
+      '<td style="text-align:right;">'+todayCell+'</td>' +
       '<td style="text-align:right;">'+soCell+'</td></tr>';
   });
   h += '</tbody></table>';
