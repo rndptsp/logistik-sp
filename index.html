@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.08.08.16';
+window.APP_VERSION = 'build.2026.08.08.17';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -3173,21 +3173,88 @@ function renderHourlyControls(f){
     b.addEventListener('click', ()=>{ state.chartAggType = k; renderChart(); renderHourlyControls(getFilterState()); });
     aggEl.appendChild(b);
   });
-  dowEl.innerHTML = '<span style="font-size:11px;color:var(--sub);align-self:center;margin-right:2px;">Hari:</span>';
-  // HARI_ID index = Date.getDay() (0=Minggu..6=Sabtu); displayed Senin-first for readability.
-  const order = [1,2,3,4,5,6,0];
-  order.forEach(dow=>{
-    const b = document.createElement('button'); b.type='button';
-    b.className = 'pill' + (state.hourlyDow.has(dow) ? ' active' : '');
-    b.textContent = HARI_ID[dow];
-    b.addEventListener('click', ()=>{
-      if(state.hourlyDow.has(dow)){
-        if(state.hourlyDow.size>1) state.hourlyDow.delete(dow); // never allow zero days selected
-      } else state.hourlyDow.add(dow);
-      renderChart(); renderHourlyControls(getFilterState());
+  // Built ONCE and cached (see dowDropdown below), not rebuilt every render - renderHourlyControls()
+  // runs on every renderChart() call (including from the checkbox's own onChange handler), and a
+  // dropdown popover rebuilt from scratch on every render would slam its own open panel shut after
+  // each single checkbox click, forcing the user to reopen it per day. Only the button LABEL (the
+  // "(N/7)" restricted-count text) needs refreshing on every render; the panel/checkbox DOM is left
+  // alone unless the user explicitly opens it (buildPanel() is only called from togglePanel()).
+  if(!dowDropdown){
+    dowDropdown = buildDayOfWeekDropdown();
+    dowEl.appendChild(dowDropdown.wrap);
+  }
+  dowDropdown.refreshBtn();
+}
+
+// CHANGED 2026-08-08 per Rendy: day-of-week filter switched from on/off pill buttons to a dropdown
+// checklist, matching the Excel-pivot style popover already used for Provinsi/Distrik/Expeditur/etc
+// (see createPivotFilter above) instead of introducing a different interaction pattern just for
+// this one filter. Reuses the same pvwrap/pvbtn/pvpanel/pvlist/pvitem CSS classes for visual
+// consistency - no new CSS needed. HARI_ID index = Date.getDay() (0=Minggu..6=Sabtu); listed
+// Senin-first in the dropdown for readability, same order the old pill row used.
+const DOW_ORDER = [1,2,3,4,5,6,0];
+let dowDropdown = null; // cached widget, see the "Built ONCE" note in renderHourlyControls above
+function buildDayOfWeekDropdown(){
+  const wrap = document.createElement('div'); wrap.className = 'pvwrap';
+  const btn = document.createElement('div'); btn.className = 'pvbtn';
+  const labelBtn = document.createElement('button'); labelBtn.type='button'; labelBtn.className='pvlabel';
+  const arrowBtn = document.createElement('button'); arrowBtn.type='button'; arrowBtn.className='arrow'; arrowBtn.textContent='▾';
+  btn.appendChild(labelBtn); btn.appendChild(arrowBtn);
+  const panel = document.createElement('div'); panel.className = 'pvpanel';
+  panel._btn = btn;
+
+  function refreshBtn(){
+    const restricted = state.hourlyDow.size < 7;
+    labelBtn.textContent = `Hari${restricted ? ' ('+state.hourlyDow.size+'/7)' : ''}`;
+    btn.classList.toggle('filtered', restricted);
+  }
+  // Label itself just opens/closes the panel (no separate "select all" quick-toggle like the
+  // Tahun/Bulan filters have) - the panel's own Pilih Semua/Kosongkan buttons cover that.
+  labelBtn.addEventListener('click', (e)=>{ e.stopPropagation(); togglePanel(); });
+
+  function buildPanel(){
+    panel.innerHTML = '';
+    const actions = document.createElement('div'); actions.className='pvactions';
+    const selAll = document.createElement('button'); selAll.type='button'; selAll.textContent='Pilih Semua';
+    selAll.addEventListener('click', (e)=>{
+      e.stopPropagation(); // see createPivotFilter's note above on why this is required
+      state.hourlyDow = new Set([0,1,2,3,4,5,6]);
+      refreshBtn(); buildPanel(); renderChart();
     });
-    dowEl.appendChild(b);
-  });
+    const selNone = document.createElement('button'); selNone.type='button'; selNone.textContent='Kosongkan';
+    selNone.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      // never allow zero days selected (same guardrail the old pill row had) - collapses to Senin only
+      state.hourlyDow = new Set([1]);
+      refreshBtn(); buildPanel(); renderChart();
+    });
+    actions.appendChild(selAll); actions.appendChild(selNone);
+    const list = document.createElement('div'); list.className='pvlist';
+    DOW_ORDER.forEach(dow=>{
+      const row = document.createElement('label'); row.className='pvitem';
+      const cb = document.createElement('input'); cb.type='checkbox'; cb.checked = state.hourlyDow.has(dow);
+      cb.addEventListener('change', ()=>{
+        if(cb.checked) state.hourlyDow.add(dow);
+        else if(state.hourlyDow.size>1) state.hourlyDow.delete(dow); // never allow zero days selected
+        else cb.checked = true; // last remaining day - refuse to uncheck
+        refreshBtn(); renderChart();
+      });
+      row.appendChild(cb); row.appendChild(document.createTextNode(' '+HARI_ID[dow]));
+      list.appendChild(row);
+    });
+    panel.appendChild(actions); panel.appendChild(list);
+  }
+  function togglePanel(){
+    if(openPanel===panel){ panel.classList.remove('open'); openPanel=null; return; }
+    if(openPanel) openPanel.classList.remove('open');
+    buildPanel();
+    panel.classList.add('open'); openPanel = panel;
+  }
+  arrowBtn.addEventListener('click', (e)=>{ e.stopPropagation(); togglePanel(); });
+
+  refreshBtn();
+  wrap.appendChild(btn); wrap.appendChild(panel);
+  return {wrap, refreshBtn};
 }
 
 function renderChart(){
