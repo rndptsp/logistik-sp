@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.08.08.18';
+window.APP_VERSION = 'build.2026.08.08.19';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -2152,7 +2152,9 @@ function populateFilters(){
 
 const VALUE_ITEMS = [
   // TRUCK split into Masuk/Keluar 2026-08-08 per Rendy - see reindexDates/bucketKey/aggMetric notes.
-  {value:'TONASE',label:'Tonase'},{value:'TRUCK_MASUK',label:'Juml. Truk (Masuk)'},{value:'TRUCK_KELUAR',label:'Juml. Truk (Keluar)'},{value:'TRIP',label:'Juml. Trip'},
+  // TRUCK_COMPARE added same day per Rendy ("i want to be able to compare truk masuk vs truk keluar
+  // perjam") - plots both as side-by-side bars, see renderTruckCompareChart().
+  {value:'TONASE',label:'Tonase'},{value:'TRUCK_MASUK',label:'Juml. Truk (Masuk)'},{value:'TRUCK_KELUAR',label:'Juml. Truk (Keluar)'},{value:'TRUCK_COMPARE',label:'Juml. Truk (Masuk vs Keluar)'},{value:'TRIP',label:'Juml. Trip'},
   {value:'SO',label:'SO'},{value:'SOLATE',label:'SO Late'},{value:'RITASE',label:'Ritase'},
   {value:'WAITING',label:'Waiting Time'},{value:'DWELL',label:'Dwell Time'},
   {value:'ACHIEV',label:'% Achiev.'},{value:'OF',label:'%OF'},
@@ -3084,7 +3086,7 @@ function weekRangeLabel(bk){
   const endPart = `${sunday.getDate()} ${MONTH_NAMES_ID[sunday.getMonth()+1]} ${sunday.getFullYear()}`;
   return `${startPart} - ${endPart}`;
 }
-const VALUE_LABELS = {TONASE:'Tonase (ton)',TRIP:'Jumlah Trip',TRUCK:'Jumlah Truk Unik',TRUCK_MASUK:'Jumlah Truk Unik (Masuk)',TRUCK_KELUAR:'Jumlah Truk Unik (Keluar)',WAITING:'Waiting Time avg (jam)',DWELL:'Dwell Time avg (jam)',SO:'SO Tonase (ton)',SOLATE:'SO Late',RITASE:'Ritase (trip/truk)',ACHIEV:'% Achievement',OF:'% OF'};
+const VALUE_LABELS = {TONASE:'Tonase (ton)',TRIP:'Jumlah Trip',TRUCK:'Jumlah Truk Unik',TRUCK_MASUK:'Jumlah Truk Unik (Masuk)',TRUCK_KELUAR:'Jumlah Truk Unik (Keluar)',TRUCK_COMPARE:'Jumlah Truk Unik (Masuk vs Keluar)',WAITING:'Waiting Time avg (jam)',DWELL:'Dwell Time avg (jam)',SO:'SO Tonase (ton)',SOLATE:'SO Late',RITASE:'Ritase (trip/truk)',ACHIEV:'% Achievement',OF:'% OF'};
 
 function renderTargetToggles(){
   const el = document.getElementById('targetToggleRow');
@@ -3326,6 +3328,18 @@ function renderChart(){
     return;
   }
 
+  // ADDED 2026-08-08 per Rendy ("i want to be able to compare truk masuk vs truk keluar perjam") -
+  // a dedicated comparison view, separate from the normal single-value chart path below, since
+  // Masuk and Keluar can land in DIFFERENT hour buckets for the same physical row (bucketKey() picks
+  // _hourMasuk vs _hour depending on which value is active - see that function's comment) and so
+  // need two independently-bucketed series, not one dataset split two ways. Ignores drill-down
+  // levels (always Total-only) same as achievbars above, for the same reason - a 2-series-per-group
+  // grouped bar for N groups would be unreadable clutter.
+  if(f.value==='TRUCK_COMPARE'){
+    renderTruckCompareChart(f);
+    return;
+  }
+
   const {bucketKeys, datasets, targetDatasets} = computeSeries(f);
   const labels = bucketKeys.map(bk=>chartLabel(bk, f.gran));
   const chartGroupField = state.levels.length ? state.levels[0] : null;
@@ -3411,7 +3425,21 @@ function renderChart(){
         // redundant clutter in the built-in legend, so filter them out here.
         legend: {labels:{color:'#1A1A1A', boxWidth:12, font:{size:10}, padding:16,
           filter: (item, data)=> !(data.datasets[item.datasetIndex] || {}).isTarget && !(data.datasets[item.datasetIndex] || {}).isAvgLine}},
-        tooltip: {mode:'index', intersect:false},
+        // FIXED 2026-08-08 per Rendy ("name of the day not showing in most of the tooltip popup"):
+        // the Weekly-range / Daily-day-name tooltip title (added 2026-08-04) was only ever wired
+        // into the achievbars chart's own Chart.js instance - this SEPARATE instance (used by every
+        // other chart type: Bar/Line/Area/Stacked Bar) had no tooltip callbacks at all and fell back
+        // to Chart.js's bare default title (just the short axis label, e.g. "2026-08-01" with no day
+        // name). Same logic as achievbars' tooltip, copied here so every chart type behaves the same.
+        tooltip: {mode:'index', intersect:false, callbacks:{
+          title:(items)=>{
+            if(!items.length) return '';
+            const bk = bucketKeys[items[0].dataIndex];
+            if(f.gran==='weekly') return weekRangeLabel(bk);
+            if(f.gran==='daily') return dayRangeLabel(bk);
+            return items[0].label;
+          },
+        }},
         valueLabels: {enabled: !!state.showValueLabels},
       },
       scales: {
@@ -3421,6 +3449,92 @@ function renderChart(){
         x: {stacked, offset:true, ticks:{color:'#6B6B6B', font:{size:10}, autoSkip:true, maxRotation:60, minRotation:0}, grid:{display:false}},
         xEdge: {type:'category', labels, offset:false, display:false, position:'bottom'},
         y: {stacked, ticks:{color:'#6B6B6B', font:{size:10}}, grid:{color:'#F0F0F0'}},
+      }
+    }
+  });
+}
+
+/* ================= TRUCK MASUK vs KELUAR COMPARISON CHART =================
+   ADDED 2026-08-08 per Rendy ("i want to be able to compare truk masuk vs truk keluar perjam").
+   Independent from computeSeries()/renderChart()'s normal single-value path - see the call site's
+   comment for why Masuk and Keluar need two separately-bucketed row sets, not one dataset read two
+   ways. Works at every granularity (bucketKey's masuk/keluar distinction only actually changes
+   anything for gran==='hourly' - see bucketKey's own comment - so at Daily/Weekly/Monthly/Quarterly
+   this just shows two identical bars per bucket, which is at least not WRONG, just uninteresting
+   outside the hourly view this was actually built for). Day-of-week filter + Total/Rata-rata/
+   Minimum/Maksimum stat selector apply here too when hourly, using each series' own day field. */
+function computeTruckCompareSeries(f){
+  const perMetric = {};
+  ['TRUCK_MASUK','TRUCK_KELUAR'].forEach(metric=>{
+    let rows = applyRowFocus(filteredRE(f));
+    if(f.gran==='hourly' && state.hourlyDow.size < 7){
+      const dowField = hourlyDayFieldFor(metric);
+      rows = rows.filter(r=>{ const d = r[dowField]; return d ? state.hourlyDow.has(d.getDay()) : false; });
+    }
+    const buckets = new Map();
+    rows.forEach(r=>{
+      const bk = bucketKey(r, f.gran, metric);
+      if(bk==null) return;
+      if(!buckets.has(bk)) buckets.set(bk, []);
+      buckets.get(bk).push(r);
+    });
+    perMetric[metric] = buckets;
+  });
+  const bucketKeys = [...new Set([...perMetric.TRUCK_MASUK.keys(), ...perMetric.TRUCK_KELUAR.keys()])].sort();
+  const masukData = bucketKeys.map(bk=>{
+    const rows = perMetric.TRUCK_MASUK.get(bk) || [];
+    return f.gran==='hourly' ? hourlyStatValue(rows, 'TRUCK_MASUK', state.chartAggType) : aggMetric(rows, 'TRUCK');
+  });
+  const keluarData = bucketKeys.map(bk=>{
+    const rows = perMetric.TRUCK_KELUAR.get(bk) || [];
+    return f.gran==='hourly' ? hourlyStatValue(rows, 'TRUCK_KELUAR', state.chartAggType) : aggMetric(rows, 'TRUCK');
+  });
+  return {bucketKeys, masukData, keluarData};
+}
+function renderTruckCompareChart(f){
+  const {bucketKeys, masukData, keluarData} = computeTruckCompareSeries(f);
+  const labels = bucketKeys.map(bk=>chartLabel(bk, f.gran));
+  document.getElementById('chartTitle').textContent =
+    `${VALUE_LABELS.TRUCK_COMPARE} — ${({hourly:'Per Jam',daily:'Harian',weekly:'Mingguan (mulai Senin)',monthly:'Bulanan',quarterly:'Kuartalan'})[f.gran]}${f.gran==='hourly' ? ' ('+CHART_AGG_LABELS[state.chartAggType]+')' : ''}`;
+  const avgMasuk = avgOf(masukData);
+  const avgKeluar = avgOf(keluarData);
+  if(chartInstance) chartInstance.destroy();
+  const ctx = document.getElementById('mainChart').getContext('2d');
+  chartInstance = new Chart(ctx, {
+    // Always grouped bars regardless of the chart-type selector (Bar/Line/Area/Stacked Bar) - a
+    // side-by-side comparison is the whole point of this view, so it doesn't follow the normal
+    // chartType switch the single-value chart does.
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {label:'Masuk', data:masukData, backgroundColor:'#1F5FA8', borderColor:'#1F5FA8', borderRadius:3, order:2},
+        {label:'Keluar', data:keluarData, backgroundColor:'#E2211D', borderColor:'#E2211D', borderRadius:3, order:2},
+        ...(avgMasuk!=null ? [{type:'line', label:'Rata-rata Masuk', data:labels.map(()=>avgMasuk), borderColor:'#1F5FA8', backgroundColor:'transparent', borderWidth:1.75, borderDash:[6,4], pointRadius:0, pointHoverRadius:0, tension:0, fill:false, order:1, isAvgLine:true}] : []),
+        ...(avgKeluar!=null ? [{type:'line', label:'Rata-rata Keluar', data:labels.map(()=>avgKeluar), borderColor:'#E2211D', backgroundColor:'transparent', borderWidth:1.75, borderDash:[6,4], pointRadius:0, pointHoverRadius:0, tension:0, fill:false, order:1, isAvgLine:true}] : []),
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      interaction:{mode:'index', intersect:false},
+      layout:{padding:{top:8, right:12, bottom:8, left:8}},
+      plugins:{
+        legend:{labels:{color:'#1A1A1A', boxWidth:12, font:{size:10}, padding:16,
+          filter:(item,data)=> !(data.datasets[item.datasetIndex]||{}).isAvgLine}},
+        tooltip:{mode:'index', intersect:false, callbacks:{
+          title:(items)=>{
+            if(!items.length) return '';
+            const bk = bucketKeys[items[0].dataIndex];
+            if(f.gran==='weekly') return weekRangeLabel(bk);
+            if(f.gran==='daily') return dayRangeLabel(bk);
+            return items[0].label;
+          },
+        }},
+        valueLabels:{enabled: !!state.showValueLabels},
+      },
+      scales:{
+        x:{ticks:{color:'#6B6B6B', font:{size:10}, autoSkip:true, maxRotation:60, minRotation:0}, grid:{display:false}},
+        y:{ticks:{color:'#6B6B6B', font:{size:10}}, grid:{color:'#F0F0F0'}},
       }
     }
   });
