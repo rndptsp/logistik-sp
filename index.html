@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.08.08.15';
+window.APP_VERSION = 'build.2026.08.08.16';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -2890,7 +2890,20 @@ function computeSeries(f){
    below already gives full per-group numbers. Uses the same default target-priority fallback
    (SNOP -> RKAP -> CONTRACT) as the %Achievement KPI card / table column, not a specific toggle. */
 function computeAchievBarsSeries(f){
-  const rows = applyRowFocus(filteredRE(f));
+  let rows = applyRowFocus(filteredRE(f));
+  // ADDED 2026-08-08 per Rendy: this chart type (the app's DEFAULT view) was missed the first time
+  // the hourly day-of-week filter + Total/Rata-rata/Minimum/Maksimum stat selector were built -
+  // both were gated to hide whenever chartType==='achievbars', so anyone who left the default chart
+  // type active and just switched granularity to Per Jam never saw the new controls at all. Fixed by
+  // wiring the same day-of-week filter + hourlyStatValue reduction into this chart's Tonase bars too
+  // (uses TONASE, which hourlyStatValue's 'total' reduces identically to the old whole-range sum -
+  // see hourlyStatValue's own comment for why only dedup-type metrics like Truck actually differ).
+  // The Target line stays whole-range for hourly as already documented in bucketDateRange() - not
+  // touched here, this only changes how the Realisasi/Tonase bars themselves are computed.
+  if(f.gran==='hourly' && state.hourlyDow.size < 7){
+    const dowField = hourlyDayFieldFor(f.value);
+    rows = rows.filter(r=>{ const d = r[dowField]; return d ? state.hourlyDow.has(d.getDay()) : false; });
+  }
   const buckets = new Map();
   rows.forEach(r=>{
     const bk = bucketKey(r, f.gran);
@@ -2907,7 +2920,7 @@ function computeAchievBarsSeries(f){
   if(state.rowFocus && state.rowFocus.length){
     state.rowFocus.forEach(rf=>{ if(TARGET_CAPABLE_FIELDS.has(rf.field)) rowFocusScope[rf.field] = rf.value; });
   }
-  const tonase = bucketKeys.map(bk => aggMetric(buckets.get(bk), 'TONASE'));
+  const tonase = bucketKeys.map(bk => f.gran==='hourly' ? hourlyStatValue(buckets.get(bk), 'TONASE', state.chartAggType) : aggMetric(buckets.get(bk), 'TONASE'));
   const target = bucketKeys.map(bk => targetCapable ? targetForBucket(bk, f.gran, f, rowFocusScope, undefined) : null);
   const achievPct = bucketKeys.map((bk,i)=> (target[i]!=null && target[i]>0) ? round2(tonase[i]/target[i]*100) : null);
   return {bucketKeys, tonase, target, achievPct};
@@ -3141,11 +3154,13 @@ function renderHourlyControls(f){
   const aggEl = document.getElementById('hourlyAggRow');
   const dowEl = document.getElementById('hourlyDowRow');
   if(!aggEl || !dowEl) return;
-  // Gated off achievbars 2026-08-08: that chart type always computes Tonase directly via its own
-  // computeAchievBarsSeries() (never routes through hourlyStatValue), so showing these controls
-  // there would imply a control that silently does nothing - kept OFF rather than fixed to avoid
-  // scope creep beyond what Rendy actually asked for (the plain hourly truck/value chart).
-  const show = f.gran==='hourly' && f.chartType!=='achievbars';
+  // FIXED 2026-08-08 per Rendy: originally gated OFF for achievbars (the app's DEFAULT chart type),
+  // which meant anyone who just switched granularity to Per Jam without also changing chart type
+  // never saw these controls at all - reported as "tidak ada pilihan total average min max, tidak
+  // ada pilihan filter day of the week". computeAchievBarsSeries() now also routes its Tonase bars
+  // through the day-of-week filter + hourlyStatValue, so the controls are meaningful there too -
+  // shown for every chart type whenever gran==='hourly'.
+  const show = f.gran==='hourly';
   aggEl.style.display = show ? 'flex' : 'none';
   dowEl.style.display = show ? 'flex' : 'none';
   if(!show) return;
@@ -3190,7 +3205,7 @@ function renderChart(){
 
   if(f.chartType==='achievbars'){
     document.getElementById('chartTitle').textContent =
-      `% Achievement + Tren Realisasi vs Target — ${({hourly:'Per Jam',daily:'Harian',weekly:'Mingguan (mulai Senin)',monthly:'Bulanan',quarterly:'Kuartalan'})[f.gran]} (Total)`;
+      `% Achievement + Tren Realisasi vs Target — ${({hourly:'Per Jam',daily:'Harian',weekly:'Mingguan (mulai Senin)',monthly:'Bulanan',quarterly:'Kuartalan'})[f.gran]} (${f.gran==='hourly' ? CHART_AGG_LABELS[state.chartAggType] : 'Total'})`;
     const {bucketKeys, tonase, target, achievPct} = computeAchievBarsSeries(f);
     const labels = bucketKeys.map(bk=>chartLabel(bk, f.gran));
     // Average reference lines: flat dashed line at the mean of each line series, same color as
