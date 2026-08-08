@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.08.07.17';
+window.APP_VERSION = 'build.2026.08.08.01';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -454,6 +454,9 @@ window.addEventListener('error', function(e){
       <div class="pillrow">
         <button type="button" id="valueLabelsToggleBtn" class="pill active" onclick="event.stopPropagation();toggleValueLabels()" title="Tampilkan angka nilai di atas setiap bar/titik garis pada grafik">🏷️ Tampilkan Nilai di Grafik</button>
       </div>
+      <!-- ADDED 2026-08-08 per Rendy: hidden unless gran==='hourly' (see renderHourlyControls) -->
+      <div class="pillrow" id="hourlyAggRow" style="display:none;"></div>
+      <div class="pillrow" id="hourlyDowRow" style="display:none;"></div>
       <div id="rowFocusBanner" class="rowfocus-banner" style="display:none;"></div>
       <div class="chart-body">
         <div class="value-list" id="valueList"></div>
@@ -1732,8 +1735,14 @@ function fmtDate(d){
 }
 function monthKey(d){ return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; }
 function quarterKey(d){ return `${d.getFullYear()}-Q${Math.floor(d.getMonth()/3)+1}`; }
-function bucketKey(r, gran){
-  if(gran==='hourly') return r._hour==null ? null : String(r._hour).padStart(2,'0')+':00';
+function bucketKey(r, gran, value){
+  // ADDED 2026-08-08 per Rendy: "Juml. Truk" split into Masuk/Keluar variants - each needs its own
+  // hour-of-day source (_hourMasuk from JAM_MASUK vs _hour from JAM_KELUAR, see reindexDates below).
+  // Every other value type keeps using the keluar-based _hour, unchanged.
+  if(gran==='hourly'){
+    const hr = (value==='TRUCK_MASUK') ? r._hourMasuk : r._hour;
+    return hr==null ? null : String(hr).padStart(2,'0')+':00';
+  }
   if(!r._d) return null;
   if(gran==='daily') return fmtDate(r._d);
   if(gran==='weekly') return isoWeekMonday(r._d);
@@ -1789,7 +1798,22 @@ function reindexDates(){
   // Rows with a blank JAM_KELUAR (still in queue/being loaded, not yet exited) fall out of the
   // hourly chart entirely until they get a real exit time - same null-handling as before, just a
   // different source field.
-  RE.forEach(r=>{ r._d = parseDateFlexible(r.TGL_SPJ); r._hour = parseHour(r.JAM_KELUAR); });
+  // ADDED 2026-08-08 per Rendy: _hourMasuk/_dKeluar/_dMasuk support two new features on the hourly
+  // ("Per Jam") chart: (1) "Juml. Truk (Masuk)" needs its own hour-of-day source distinct from the
+  // existing keluar-based _hour; (2) the new Total/Rata-rata/Minimum/Maksimum stat selector and the
+  // day-of-week filter both need to know which REAL calendar day each row belongs to for its
+  // relevant timestamp. Confirmed via real data 2026-08-08: TGL_MASUK != TGL_KELUAR on 337/1374
+  // rows this month (24.5%, trucks that queue overnight and exit past midnight) - so the day used
+  // for grouping MUST be paired with whichever timestamp (masuk vs keluar) is driving the hour
+  // bucket, never TGL_SPJ (a third, separately-assigned date), or ~1/4 of rows would land on the
+  // wrong day.
+  RE.forEach(r=>{
+    r._d = parseDateFlexible(r.TGL_SPJ);
+    r._hour = parseHour(r.JAM_KELUAR);
+    r._hourMasuk = parseHour(r.JAM_MASUK);
+    r._dKeluar = parseDateFlexible(r.TGL_KELUAR);
+    r._dMasuk = parseDateFlexible(r.TGL_MASUK);
+  });
   SO.forEach(r=> r._d = parseDateFlexible(r.TGL_KIRIM || r.SO_CREATE || r.TGL_SO));
   rebuildLastDataDayCache();
 }
@@ -1899,6 +1923,14 @@ const state = {
                 // that row's exact drill-down scope. Array of {field, value} pairs, ANDed together.
                 // Distinct from the ▾ checklist filters (state.provinsi etc.) and from state.levels
                 // (which controls the table's grouping, not a value filter). Set via toggleRowFocus().
+  // ADDED 2026-08-08 per Rendy, both scoped to the hourly ("Per Jam") chart only:
+  // chartAggType: how each hour-of-day bucket reduces its per-day values across the days in range -
+  // 'total' (sum of per-day values, the default - see hourlyStatValue() for why this differs from
+  // the old dedup-across-range Truck number) / 'avg' / 'min' / 'max'.
+  // hourlyDow: which days-of-week feed the hourly chart at all, keyed 0=Minggu..6=Sabtu (matches
+  // Date.getDay()/HARI_ID indexing) - all 7 selected by default (no filtering).
+  chartAggType: 'total',
+  hourlyDow: new Set([0,1,2,3,4,5,6]),
 };
 DIMENSIONS.forEach(d=> state[d.key] = new Set());
 
@@ -2119,7 +2151,8 @@ function populateFilters(){
 }
 
 const VALUE_ITEMS = [
-  {value:'TONASE',label:'Tonase'},{value:'TRUCK',label:'Juml. Truk'},{value:'TRIP',label:'Juml. Trip'},
+  // TRUCK split into Masuk/Keluar 2026-08-08 per Rendy - see reindexDates/bucketKey/aggMetric notes.
+  {value:'TONASE',label:'Tonase'},{value:'TRUCK_MASUK',label:'Juml. Truk (Masuk)'},{value:'TRUCK_KELUAR',label:'Juml. Truk (Keluar)'},{value:'TRIP',label:'Juml. Trip'},
   {value:'SO',label:'SO'},{value:'SOLATE',label:'SO Late'},{value:'RITASE',label:'Ritase'},
   {value:'WAITING',label:'Waiting Time'},{value:'DWELL',label:'Dwell Time'},
   {value:'ACHIEV',label:'% Achiev.'},{value:'OF',label:'%OF'},
@@ -2250,7 +2283,11 @@ function rowFocusLabel(){
 function aggMetric(rows, metric){
   if(metric==='TONASE') return rows.reduce((s,r)=>s+(+r.TONASE||0),0);
   if(metric==='TRIP') return rows.length;
-  if(metric==='TRUCK') return new Set(rows.map(r=>r.NOPOL)).size;
+  // TRUCK kept as-is on purpose (used by the KPI card / summary table "Truk Unik" column, which
+  // Rendy confirmed 2026-08-08 should stay a plain unique-NOPOL count, unrelated to the chart's new
+  // Masuk/Keluar split). TRUCK_MASUK/TRUCK_KELUAR are the chart-only variants - same dedup formula,
+  // the masuk/keluar distinction is already baked into which ROWS made it in via bucketKey().
+  if(metric==='TRUCK' || metric==='TRUCK_MASUK' || metric==='TRUCK_KELUAR') return new Set(rows.map(r=>r.NOPOL)).size;
   if(metric==='RITASE'){
     const truck = new Set(rows.map(r=>r.NOPOL)).size;
     return truck>0 ? round2(rows.length/truck) : null;
@@ -2710,13 +2747,22 @@ const TARGET_TYPE_LABELS = {SNOP:'Target SNOP', CONTRACT:'Vol. Kontrak', RKAP:'T
 const TARGET_COLORS = {SNOP:'#1A1A1A', CONTRACT:'#2E9E4B', RKAP:'#1F5FA8'};
 
 function computeSeries(f){
-  const rows = applyRowFocus(filteredRE(f));
+  let rows = applyRowFocus(filteredRE(f));
+  // ADDED 2026-08-08 per Rendy: day-of-week filter, scoped to the hourly ("Per Jam") chart only
+  // (other granularities already have an explicit date-range filter; a day-of-week filter on top of
+  // an hour-of-day chart is what actually lets you isolate e.g. "only Senin-Jumat" behavior).
+  // Uses the same masuk/keluar-aware day field as the hour bucket itself (see hourlyDayFieldFor) so
+  // a row's day-of-week always matches the exact timestamp its hour came from.
+  if(f.gran==='hourly' && state.hourlyDow.size < 7){
+    const dowField = hourlyDayFieldFor(f.value);
+    rows = rows.filter(r=>{ const d = r[dowField]; return d ? state.hourlyDow.has(d.getDay()) : false; });
+  }
   // Chart series-split uses only the FIRST (top) active drill-down level, to keep the number of
   // chart lines sane — the full multi-level breakdown is what the summary table below is for.
   const chartGroupField = state.levels.length ? state.levels[0] : 'NONE';
   const buckets = new Map();
   rows.forEach(r=>{
-    const bk = bucketKey(r, f.gran);
+    const bk = bucketKey(r, f.gran, f.value);
     if(bk==null) return;
     const grp = chartGroupField==='NONE' ? 'Total' : normVal(r[chartGroupField]);
     if(!buckets.has(bk)) buckets.set(bk, new Map());
@@ -2733,6 +2779,12 @@ function computeSeries(f){
       const gm = buckets.get(bk);
       const grows = (gm && gm.get(g)) || [];
       if(f.value==='SO' || f.value==='ACHIEV' || f.value==='OF') return null;
+      // ADDED 2026-08-08 per Rendy: hourly chart re-buckets by (day,hour) then reduces across days
+      // via the chosen stat (Total/Rata-rata/Minimum/Maksimum) instead of dedup-across-the-whole-
+      // range - see hourlyStatValue() for the full rationale and worked example. Every other
+      // granularity keeps the original single-pass aggMetric (a bucket there is already one
+      // specific period, not several days merged together).
+      if(f.gran==='hourly') return hourlyStatValue(grows, f.value, state.chartAggType);
       return aggMetric(grows, f.value);
     })
   }));
@@ -3019,7 +3071,7 @@ function weekRangeLabel(bk){
   const endPart = `${sunday.getDate()} ${MONTH_NAMES_ID[sunday.getMonth()+1]} ${sunday.getFullYear()}`;
   return `${startPart} - ${endPart}`;
 }
-const VALUE_LABELS = {TONASE:'Tonase (ton)',TRIP:'Jumlah Trip',TRUCK:'Jumlah Truk Unik',WAITING:'Waiting Time avg (jam)',DWELL:'Dwell Time avg (jam)',SO:'SO Tonase (ton)',SOLATE:'SO Late',RITASE:'Ritase (trip/truk)',ACHIEV:'% Achievement',OF:'% OF'};
+const VALUE_LABELS = {TONASE:'Tonase (ton)',TRIP:'Jumlah Trip',TRUCK:'Jumlah Truk Unik',TRUCK_MASUK:'Jumlah Truk Unik (Masuk)',TRUCK_KELUAR:'Jumlah Truk Unik (Keluar)',WAITING:'Waiting Time avg (jam)',DWELL:'Dwell Time avg (jam)',SO:'SO Tonase (ton)',SOLATE:'SO Late',RITASE:'Ritase (trip/truk)',ACHIEV:'% Achievement',OF:'% OF'};
 
 function renderTargetToggles(){
   const el = document.getElementById('targetToggleRow');
@@ -3047,8 +3099,85 @@ function avgOf(arr){
   return vals.reduce((a,b)=>a+b,0)/vals.length;
 }
 
+/* ================= HOURLY CHART: Masuk/Keluar day pairing + Total/Avg/Min/Max stat =================
+   ADDED 2026-08-08 per Rendy. hourlyDayFieldFor() picks the calendar-day field that's actually
+   PAIRED with whichever hour-of-day is driving the bucket (_hourMasuk needs _dMasuk, _hour/keluar
+   needs _dKeluar) - confirmed via real data these disagree on 24.5% of rows this month (trucks that
+   queue overnight and exit past midnight), so mixing them would misfile almost 1 in 4 rows onto the
+   wrong day.
+   hourlyStatValue() re-buckets an hour's rows by that day field, computes the SAME aggMetric per
+   individual day, then reduces those per-day numbers into one of:
+     total = SUM of the per-day values (the new default "Total")
+     avg/min/max = mean/min/max of the per-day values
+   This is a deliberate redefinition of "Total" for the hourly chart, confirmed with Rendy 2026-08-08:
+   the OLD hourly "Total" deduped unique trucks across the ENTIRE date range at that hour-of-day (so
+   a truck showing up at the same hour on 2 different days only counted once); the NEW "Total" sums
+   each day's own count (that truck counts twice). For additive metrics (Tonase, Trip) the two are
+   mathematically identical - only dedup-based metrics (Truck Masuk/Keluar, and Ritase which derives
+   from a truck dedup) can actually differ. Verified example: hour 11:00, 1-8 Agustus 2026, keluar-
+   basis - old dedup Total=65, new sum Total=70 (truck BA-8804-QBU appeared at 11:00 on both 01-08
+   and 04-08, counted once vs twice). This does NOT touch the KPI card / summary table "Truk Unik"
+   column - that stays the plain whole-range dedup count Rendy confirmed should be left alone. */
+function hourlyDayFieldFor(value){ return value==='TRUCK_MASUK' ? '_dMasuk' : '_dKeluar'; }
+function hourlyStatValue(rows, metric, statType){
+  if(!rows || !rows.length) return null;
+  const dayField = hourlyDayFieldFor(metric);
+  const byDay = new Map();
+  rows.forEach(r=>{
+    const d = r[dayField];
+    const dk = d ? fmtDate(d) : 'unknown';
+    if(!byDay.has(dk)) byDay.set(dk, []);
+    byDay.get(dk).push(r);
+  });
+  const perDayVals = [...byDay.values()].map(drows=>aggMetric(drows, metric)).filter(v=>v!=null && !isNaN(v));
+  if(!perDayVals.length) return null;
+  if(statType==='avg') return round2(perDayVals.reduce((a,b)=>a+b,0)/perDayVals.length);
+  if(statType==='min') return Math.min(...perDayVals);
+  if(statType==='max') return Math.max(...perDayVals);
+  return round2(perDayVals.reduce((a,b)=>a+b,0)); // total
+}
+const CHART_AGG_LABELS = {total:'Total', avg:'Rata-rata', min:'Minimum', max:'Maksimum'};
+function renderHourlyControls(f){
+  const aggEl = document.getElementById('hourlyAggRow');
+  const dowEl = document.getElementById('hourlyDowRow');
+  if(!aggEl || !dowEl) return;
+  // Gated off achievbars 2026-08-08: that chart type always computes Tonase directly via its own
+  // computeAchievBarsSeries() (never routes through hourlyStatValue), so showing these controls
+  // there would imply a control that silently does nothing - kept OFF rather than fixed to avoid
+  // scope creep beyond what Rendy actually asked for (the plain hourly truck/value chart).
+  const show = f.gran==='hourly' && f.chartType!=='achievbars';
+  aggEl.style.display = show ? 'flex' : 'none';
+  dowEl.style.display = show ? 'flex' : 'none';
+  if(!show) return;
+  aggEl.innerHTML = '<span style="font-size:11px;color:var(--sub);align-self:center;margin-right:2px;">Statistik per jam:</span>';
+  Object.keys(CHART_AGG_LABELS).forEach(k=>{
+    const b = document.createElement('button'); b.type='button';
+    b.className = 'pill' + (state.chartAggType===k ? ' active' : '');
+    b.textContent = CHART_AGG_LABELS[k];
+    b.title = 'Nilai tiap jam dihitung dari nilai per-hari (lihat catatan hourlyStatValue) lalu direduksi dengan statistik ini';
+    b.addEventListener('click', ()=>{ state.chartAggType = k; renderChart(); renderHourlyControls(getFilterState()); });
+    aggEl.appendChild(b);
+  });
+  dowEl.innerHTML = '<span style="font-size:11px;color:var(--sub);align-self:center;margin-right:2px;">Hari:</span>';
+  // HARI_ID index = Date.getDay() (0=Minggu..6=Sabtu); displayed Senin-first for readability.
+  const order = [1,2,3,4,5,6,0];
+  order.forEach(dow=>{
+    const b = document.createElement('button'); b.type='button';
+    b.className = 'pill' + (state.hourlyDow.has(dow) ? ' active' : '');
+    b.textContent = HARI_ID[dow];
+    b.addEventListener('click', ()=>{
+      if(state.hourlyDow.has(dow)){
+        if(state.hourlyDow.size>1) state.hourlyDow.delete(dow); // never allow zero days selected
+      } else state.hourlyDow.add(dow);
+      renderChart(); renderHourlyControls(getFilterState());
+    });
+    dowEl.appendChild(b);
+  });
+}
+
 function renderChart(){
   const f = getFilterState();
+  renderHourlyControls(f);
   const focusBanner = document.getElementById('rowFocusBanner');
   if(state.rowFocus.length){
     focusBanner.style.display = 'flex';
@@ -3119,7 +3248,7 @@ function renderChart(){
   const labels = bucketKeys.map(bk=>chartLabel(bk, f.gran));
   const chartGroupField = state.levels.length ? state.levels[0] : null;
   document.getElementById('chartTitle').textContent =
-    `${VALUE_LABELS[f.value]} — ${({hourly:'Per Jam',daily:'Harian',weekly:'Mingguan (mulai Senin)',monthly:'Bulanan',quarterly:'Kuartalan'})[f.gran]}${chartGroupField ? ' per '+levelLabelForField(chartGroupField) : ''}`;
+    `${VALUE_LABELS[f.value]} — ${({hourly:'Per Jam',daily:'Harian',weekly:'Mingguan (mulai Senin)',monthly:'Bulanan',quarterly:'Kuartalan'})[f.gran]}${chartGroupField ? ' per '+levelLabelForField(chartGroupField) : ''}${f.gran==='hourly' ? ' ('+CHART_AGG_LABELS[state.chartAggType]+')' : ''}`;
 
   const stacked = f.chartType==='stackedbar';
   const type = (f.chartType==='area') ? 'line' : (f.chartType==='stackedbar' ? 'bar' : f.chartType);
