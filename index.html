@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.08.08.19';
+window.APP_VERSION = 'build.2026.08.08.20';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -1743,11 +1743,23 @@ function bucketKey(r, gran, value){
     const hr = (value==='TRUCK_MASUK') ? r._hourMasuk : r._hour;
     return hr==null ? null : String(hr).padStart(2,'0')+':00';
   }
-  if(!r._d) return null;
-  if(gran==='daily') return fmtDate(r._d);
-  if(gran==='weekly') return isoWeekMonday(r._d);
-  if(gran==='quarterly') return quarterKey(r._d);
-  return monthKey(r._d);
+  // EXTENDED 2026-08-08 per Rendy (reported "Juml. Truk (Masuk vs Keluar)" showing IDENTICAL bars
+  // at Daily granularity, "kenapa sama?"): originally only the hourly branch above was masuk/keluar-
+  // aware - Daily/Weekly/Monthly/Quarterly all fell back to r._d (TGL_SPJ), so BOTH series bucketed
+  // into the same day regardless of which timestamp was selected, making the comparison chart show
+  // two identical bars per day outside the hourly view. Fixed properly instead of just documenting
+  // it as a limitation: every granularity now uses the date field actually PAIRED with the selected
+  // timestamp (_dMasuk for TRUCK_MASUK, _dKeluar for TRUCK_KELUAR) - same reasoning as the hourly
+  // case, since TGL_MASUK != TGL_KELUAR on ~24.5% of rows (trucks queuing past midnight), a truck
+  // can genuinely land on a DIFFERENT calendar day depending on which timestamp you're bucketing by,
+  // not just a different hour-of-day. Every other value type (Tonase, Trip, etc.) keeps using r._d
+  // (TGL_SPJ), unchanged.
+  const d = (value==='TRUCK_MASUK') ? r._dMasuk : (value==='TRUCK_KELUAR') ? r._dKeluar : r._d;
+  if(!d) return null;
+  if(gran==='daily') return fmtDate(d);
+  if(gran==='weekly') return isoWeekMonday(d);
+  if(gran==='quarterly') return quarterKey(d);
+  return monthKey(d);
 }
 /* Real [from,to] date range covered by a single chart bucket, used to scope SO/%OF lookups to
    THAT bucket instead of the whole filter window. BUG FIXED 2026-07-26: computeSeries() used to
@@ -3458,11 +3470,14 @@ function renderChart(){
    ADDED 2026-08-08 per Rendy ("i want to be able to compare truk masuk vs truk keluar perjam").
    Independent from computeSeries()/renderChart()'s normal single-value path - see the call site's
    comment for why Masuk and Keluar need two separately-bucketed row sets, not one dataset read two
-   ways. Works at every granularity (bucketKey's masuk/keluar distinction only actually changes
-   anything for gran==='hourly' - see bucketKey's own comment - so at Daily/Weekly/Monthly/Quarterly
-   this just shows two identical bars per bucket, which is at least not WRONG, just uninteresting
-   outside the hourly view this was actually built for). Day-of-week filter + Total/Rata-rata/
-   Minimum/Maksimum stat selector apply here too when hourly, using each series' own day field. */
+   ways. Works at every granularity - bucketKey() picks each series' own paired date field
+   (_dMasuk/_dKeluar) at Daily/Weekly/Monthly/Quarterly too (fixed 2026-08-08 after Rendy reported
+   the two bars showing identical at Daily - "kenapa sama?" - originally only the hourly branch was
+   masuk/keluar-aware), so the comparison is genuinely meaningful everywhere, not just hourly. The
+   day-of-week filter and Total/Rata-rata/Minimum/Maksimum stat selector remain hourly-only controls
+   (hidden at other granularities) - those specifically exist to reduce MULTIPLE days sharing one
+   hour-of-day bucket into a single number, which has no equivalent question to answer once each
+   bucket is already one specific day/week/month. */
 function computeTruckCompareSeries(f){
   const perMetric = {};
   ['TRUCK_MASUK','TRUCK_KELUAR'].forEach(metric=>{
