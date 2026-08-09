@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.08.10.03';
+window.APP_VERSION = 'build.2026.08.10.04';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -2257,9 +2257,12 @@ function pctOfLM(cur, prev){ if(prev==null || prev===0 || cur==null) return null
    one "MTD" label. Rendy's call: these cards should follow the SELECTED DATE FILTER, same as the
    table, not override it - "harusnya ikut selected date juga". currentMTDFilterState() removed;
    all MTD-labeled figures now read from the same filteredRE(f) as everything else. */
-function matchRow(r, f){
-  if(f.from && r._d && r._d < f.from) return false;
-  if(f.to && r._d && r._d > new Date(f.to.getFullYear(),f.to.getMonth(),f.to.getDate(),23,59,59)) return false;
+// dateField lets callers pick WHICH date the from/to bounds apply to. Default '_d' (TGL_SPJ) is
+// correct for every value type except the Masuk/Keluar-specific truck metrics — see filteredRE().
+function matchRow(r, f, dateField){
+  const d = r[dateField || '_d'];
+  if(f.from && d && d < f.from) return false;
+  if(f.to && d && d > new Date(f.to.getFullYear(),f.to.getMonth(),f.to.getDate(),23,59,59)) return false;
   if(!f.provinsi.has(normVal(r.NAMA_PROPINSI))) return false;
   if(!f.distrik.has(normVal(r.NAMA_AREA_DISTRIK))) return false;
   if(!f.distributor.has(normVal(r.DISTRIBUTOR))) return false;
@@ -2268,7 +2271,28 @@ function matchRow(r, f){
   if(!f.incoterm.has(normVal(r.INCOTERM))) return false;
   return true;
 }
-function filteredRE(f){ return RE.filter(r=>matchRow(r,f)); }
+// BUG FIXED 2026-08-10 per Rendy: "when i filter date, the date is filter based on rilis date (jam
+// keluar)... in case the truk coming yesterday but rilis today, it will appear as jam masuk yesterday
+// but filter base on jam keluar today so h-1 will always appear" - filteredRE() always bounded the
+// from/to range using r._d (TGL_SPJ, effectively the rilis/keluar-side date) no matter which value
+// was selected. A truck that came IN (TGL_MASUK) the day before the filter's "from" cutoff, but whose
+// SPJ/rilis (TGL_SPJ) landed inside the range, passed the date filter and then got bucketed (via
+// bucketKey's _dMasuk) into a day OUTSIDE the selected range - producing exactly the phantom H-1 bar
+// Rendy reported (masuk count with zero keluar, since no keluar rows share that spillover day). Fix:
+// the Masuk/Keluar-aware chart values now bound the date filter by their OWN date field too (_dMasuk
+// for TRUCK_MASUK, _dKeluar for TRUCK_KELUAR), matching whichever timestamp is actually being charted
+// - same alignment already applied to bucketKey() on 2026-08-08. Every other value type (Tonase,
+// Trip, SO, etc.) is unaffected - still bounded by _d (TGL_SPJ), unchanged.
+function dateFieldForValue(value){
+  return value==='TRUCK_MASUK' ? '_dMasuk' : value==='TRUCK_KELUAR' ? '_dKeluar' : '_d';
+}
+// Default stays '_d' (TGL_SPJ) for every caller that doesn't explicitly ask for a different field -
+// KPI cards, the summary table, LM comparisons, and every non-truck chart value all keep filtering
+// by _d regardless of what's currently selected in the chart's Value pill (f.value), so switching the
+// chart to "Juml. Truk (Masuk)" doesn't silently change the date basis of unrelated numbers elsewhere
+// on the page. Only computeSeries() (for the single-value Masuk/Keluar chart) and
+// computeTruckCompareSeries() (for the comparison chart) explicitly pass a metric-specific dateField.
+function filteredRE(f, dateField){ return RE.filter(r=>matchRow(r,f,dateField || '_d')); }
 
 /* ================= ROW FOCUS (table row click -> narrows chart + Armada only) ================= */
 function applyRowFocus(rows){
@@ -2761,7 +2785,9 @@ const TARGET_TYPE_LABELS = {SNOP:'Target SNOP', CONTRACT:'Vol. Kontrak', RKAP:'T
 const TARGET_COLORS = {SNOP:'#1A1A1A', CONTRACT:'#2E9E4B', RKAP:'#1F5FA8'};
 
 function computeSeries(f){
-  let rows = applyRowFocus(filteredRE(f));
+  // dateFieldForValue: TRUCK_MASUK/TRUCK_KELUAR bound the from/to range by TGL_MASUK/TGL_KELUAR
+  // instead of TGL_SPJ - see the 2026-08-10 comment on filteredRE()/matchRow() above.
+  let rows = applyRowFocus(filteredRE(f, dateFieldForValue(f.value)));
   // ADDED 2026-08-08 per Rendy: day-of-week filter, scoped to the hourly ("Per Jam") chart only
   // (other granularities already have an explicit date-range filter; a day-of-week filter on top of
   // an hour-of-day chart is what actually lets you isolate e.g. "only Senin-Jumat" behavior).
@@ -3481,7 +3507,9 @@ function renderChart(){
 function computeTruckCompareSeries(f){
   const perMetric = {};
   ['TRUCK_MASUK','TRUCK_KELUAR'].forEach(metric=>{
-    let rows = applyRowFocus(filteredRE(f));
+    // Each side of the comparison bounds the date filter by ITS OWN timestamp (TGL_MASUK for the
+    // Masuk series, TGL_KELUAR for the Keluar series) - see the 2026-08-10 filteredRE() comment.
+    let rows = applyRowFocus(filteredRE(f, dateFieldForValue(metric)));
     if(f.gran==='hourly' && state.hourlyDow.size < 7){
       const dowField = hourlyDayFieldFor(metric);
       rows = rows.filter(r=>{ const d = r[dowField]; return d ? state.hourlyDow.has(d.getDay()) : false; });
