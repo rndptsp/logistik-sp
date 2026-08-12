@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.08.12.10';
+window.APP_VERSION = 'build.2026.08.12.11';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -2595,13 +2595,22 @@ function winningSourceTypeForProvince(year, month, province){
 }
 /** Every district with EITHER a CONTRACT target OR a target from the winning SNOP/RKAP/CONTRACT
     source (same priority chain as targetForScope), across all months touched by the filter range -
-    the union covers both the Vol Kontrak and Target FM columns' own source-type basis. */
-function distinctTargetDistrictsForProvinceAnyType(province, months){
+    the union covers both the Vol Kontrak and Target FM columns' own source-type basis.
+    BUG FIXED 2026-08-10 per Rendy ("why is there a district with target only" under a specific
+    vendor - KAB. KUANTAN SINGINGI/KAB. ROKAN HULU/KOTA DUMAI showing under WAJAHBARU PERMATASARI.PT
+    even though their real targets belong to vendors ASG/PN/MTD): this used to scope candidate
+    districts by PROVINCE ONLY, so every province-wide target district got attached as a phantom
+    "target only" child under EVERY vendor operating in that province, not just the vendor(s)
+    actually assigned that district. Added optional expKodeList - when the phantom search is scoped
+    under a specific Expeditur node (see zeroActivityDistrictNodes), only that vendor's own target
+    rows count as candidates. */
+function distinctTargetDistrictsForProvinceAnyType(province, months, expKodeList){
   const set = new Set();
   months.forEach(({year,month})=>{
     const winner = winningSourceTypeForProvince(year, month, province);
     TG.filter(t=> +t.TAHUN===year && +t.BULAN_NO===month && t.PROVINSI===province
-      && (t.SOURCE_TYPE==='CONTRACT' || (winner && t.SOURCE_TYPE===winner)))
+      && (t.SOURCE_TYPE==='CONTRACT' || (winner && t.SOURCE_TYPE===winner))
+      && (expKodeList ? expKodeList.includes(t.EXPEDITUR_KODE) : true))
       .forEach(t=> set.add(resolveDistrikForRealisasi(t.DISTRIK)));
   });
   return set;
@@ -2609,11 +2618,16 @@ function distinctTargetDistrictsForProvinceAnyType(province, months){
 /** Same per-district SNOP->RKAP->CONTRACT priority lookup real (non-phantom) rows already use via
     targetForGroup/targetForScope - kept consistent between real and phantom rows now that
     resolveDistrikForTarget() (fixed just above) correctly matches SNOP rows by their raw name
-    instead of silently falling through to CONTRACT for every aliased district. */
-function targetForDistrictAcrossMonths(province, district, months, f){
+    instead of silently falling through to CONTRACT for every aliased district.
+    `expeditur` (2026-08-10 fix, see distinctTargetDistrictsForProvinceAnyType comment above) - when
+    given, threads through to targetForScope's own scope.EXPEDITUR_NAMA so the target sum itself is
+    also vendor-scoped, not just the candidate district list. */
+function targetForDistrictAcrossMonths(province, district, months, f, expeditur){
   let full=0, kontrak=0, mtd=0, kontrakMtd=0, foundAny=false, fullFound=false;
+  const scope = {NAMA_PROPINSI:province, NAMA_AREA_DISTRIK:district};
+  if(expeditur!=null) scope.EXPEDITUR_NAMA = expeditur;
   months.forEach(({year,month})=>{
-    const t = targetForScope(year, month, f, {NAMA_PROPINSI:province, NAMA_AREA_DISTRIK:district});
+    const t = targetForScope(year, month, f, scope);
     if(t.full!=null){
       full += t.full; kontrak += t.kontrak;
       mtd += t.fullStd; kontrakMtd += t.kontrakStd; // real-daily-data-preferring STD, see sumTargetStd()
@@ -2627,17 +2641,28 @@ function targetForDistrictAcrossMonths(province, district, months, f){
     period - only fires at the NAMA_AREA_DISTRIK level, and only when NAMA_PROPINSI is an active
     level ABOVE it (need one pinned province to scope the query). `existingDistricts` = the set of
     district values that already got a real row from actual RE data at this depth - skipped so we
-    never duplicate a district that's already shown. */
+    never duplicate a district that's already shown.
+    BUG FIXED 2026-08-10 per Rendy - see distinctTargetDistrictsForProvinceAnyType's comment above.
+    When EXPEDITUR_NAMA is ALSO an active level above this depth (i.e. the phantom districts are
+    being generated under a specific vendor's node, not directly under a province), resolve that
+    vendor's own EXPEDITUR_KODE(s) and scope the whole phantom-district query to just that vendor -
+    same expeditureKodesFromNames() lookup targetForScope already uses for real rows. If Expeditur
+    is NOT an ancestor level (e.g. drilling Distrik before Expeditur, or Expeditur not in the
+    drill-down at all), expeditur stays null and the query intentionally stays province-wide, same
+    as before. */
 function zeroActivityDistrictNodes(levels, partsSoFar, depth, existingDistricts, f){
   const provIdx = levels.indexOf('NAMA_PROPINSI');
   if(provIdx<0 || provIdx>=depth) return [];
   const province = partsSoFar[provIdx];
+  const expIdx = levels.indexOf('EXPEDITUR_NAMA');
+  const expeditur = (expIdx>=0 && expIdx<depth) ? partsSoFar[expIdx] : null;
+  const expKodeList = expeditur!=null ? expeditureKodesFromNames([expeditur]) : null;
   const months = monthsInFilterRange(f);
   if(!months.length) return [];
-  const candidates = distinctTargetDistrictsForProvinceAnyType(province, months);
+  const candidates = distinctTargetDistrictsForProvinceAnyType(province, months, expKodeList);
   const missing = [...candidates].filter(d=> !existingDistricts.has(d));
   return missing.map(district=>{
-    const t = targetForDistrictAcrossMonths(province, district, months, f);
+    const t = targetForDistrictAcrossMonths(province, district, months, f, expeditur);
     if(!t.foundAny) return null;
     const parts = [...partsSoFar, district];
     return {
