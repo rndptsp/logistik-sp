@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.08.24.02';
+window.APP_VERSION = 'build.2026.08.24.03';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -1788,6 +1788,36 @@ function bucketDateRange(gran, bk, sampleDate){
   // monthly
   return {from: new Date(sampleDate.getFullYear(), sampleDate.getMonth(), 1), to: new Date(sampleDate.getFullYear(), sampleDate.getMonth()+1, 0)};
 }
+/* BUG FIXED 2026-08-24 per Rendy: daily-granularity charts (Tonase trend, Truk Masuk/Keluar,
+   etc.) only ever showed x-axis dates that had at least one realisasi row that day - any day with
+   zero trucks (holiday, no dispatch, etc.) silently vanished from the axis instead of showing as a
+   0/empty point, making the timeline look compressed/discontinuous (e.g. 2026-08-03/04/06/18/19/20/21
+   missing entirely from the screenshot Rendy reported). Root cause: bucketKeys in computeSeries(),
+   computeAchievBarsSeries() and computeTruckCompareSeries() was always `[...buckets.keys()].sort()`
+   - a Map only ever gets an entry for a bucket that had at least one row. Fixed by filling in every
+   calendar day between the range's first and last date (preferring the active f.from/f.to filter so
+   an explicit date-range selection is respected even if its very first/last day has no data; falling
+   back to the min/max of the days that DO have data when no filter is active) - downstream code
+   already handles a bucket with no rows correctly (aggMetric returns 0 for TONASE/TRIP/TRUCK, null
+   for WAITING/DWELL; targetForBucket() derives dates from the bucket key itself, not from rows), so
+   this only needed the bucket-key list itself to stop skipping empty days. Scoped to gran==='daily'
+   only - weekly/monthly/quarterly "gaps" are a much rarer, different question (a whole missing
+   week/month), and hourly buckets are time-of-day, not calendar dates, so neither needed this. */
+function fillDailyBucketKeys(bucketKeysPresent, f){
+  if(!bucketKeysPresent.length) return bucketKeysPresent;
+  const first = f && f.from ? new Date(f.from.getFullYear(), f.from.getMonth(), f.from.getDate())
+                             : parseLocalDateInput(bucketKeysPresent[0]);
+  const last = f && f.to ? new Date(f.to.getFullYear(), f.to.getMonth(), f.to.getDate())
+                          : parseLocalDateInput(bucketKeysPresent[bucketKeysPresent.length-1]);
+  if(!first || !last || first > last) return bucketKeysPresent;
+  const out = [];
+  let d = new Date(first);
+  while(d <= last){
+    out.push(fmtDate(d));
+    d = new Date(d.getFullYear(), d.getMonth(), d.getDate()+1);
+  }
+  return out;
+}
 function round2(x){ return Math.round(x*100)/100; }
 
 /* LAST_DATA_DAY_CACHE['YYYY-M'] = highest day-of-month with an actual realisasi row that month.
@@ -2835,7 +2865,8 @@ function computeSeries(f){
     if(!gm.has(grp)) gm.set(grp, []);
     gm.get(grp).push(r);
   });
-  const bucketKeys = [...buckets.keys()].sort();
+  let bucketKeys = [...buckets.keys()].sort();
+  if(f.gran==='daily') bucketKeys = fillDailyBucketKeys(bucketKeys, f);
   const allGroups = chartGroupField==='NONE' ? ['Total'] : [...new Set(rows.map(r=>normVal(r[chartGroupField])))].sort();
 
   const datasetsRaw = allGroups.map(g=>({
@@ -2976,7 +3007,8 @@ function computeAchievBarsSeries(f){
     if(!buckets.has(bk)) buckets.set(bk, []);
     buckets.get(bk).push(r);
   });
-  const bucketKeys = [...buckets.keys()].sort();
+  let bucketKeys = [...buckets.keys()].sort();
+  if(f.gran==='daily') bucketKeys = fillDailyBucketKeys(bucketKeys, f);
   const targetCapable = levelsAreTargetCapable(state.levels);
   // BUG FIXED 2026-07-27 per Rendy (same root cause as the Tonase+Target chart fix above): scope
   // was always {} here regardless of an active row-focus, so clicking a table row narrowed the
@@ -3548,7 +3580,8 @@ function computeTruckCompareSeries(f){
     });
     perMetric[metric] = buckets;
   });
-  const bucketKeys = [...new Set([...perMetric.TRUCK_MASUK.keys(), ...perMetric.TRUCK_KELUAR.keys()])].sort();
+  let bucketKeys = [...new Set([...perMetric.TRUCK_MASUK.keys(), ...perMetric.TRUCK_KELUAR.keys()])].sort();
+  if(f.gran==='daily') bucketKeys = fillDailyBucketKeys(bucketKeys, f);
   const masukData = bucketKeys.map(bk=>{
     const rows = perMetric.TRUCK_MASUK.get(bk) || [];
     return f.gran==='hourly' ? hourlyStatValue(rows, 'TRUCK_MASUK', state.chartAggType) : aggMetric(rows, 'TRUCK');
