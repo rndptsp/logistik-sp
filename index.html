@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.08.27.05';
+window.APP_VERSION = 'build.2026.08.27.06';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -483,6 +483,18 @@ window.addEventListener('error', function(e){
         <button type="button" id="fleetViewBtn-review2" class="fleet-view-btn" onclick="event.stopPropagation();setFleetViewMode('review2')">REVIEW 2 — Status Aktivitas</button>
       </div>
       <div class="tablewrap"><table id="fleetTable"></table></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head" onclick="toggleSection('scorecardBody')">
+      <h2><span class="panel-caret" id="scorecardBody-caret">▼</span> Scorecard Transportir</h2>
+      <span class="sub" style="font-size:10px;color:var(--sub);">Periode berjalan dibanding periode sebelumnya (mis. hari ini vs kemarin) — bukan rentang tanggal filter di atas. Diurutkan %Achievement terendah dulu. Warna sama seperti tabel Ringkasan.</span>
+    </div>
+    <div class="panel-body" id="scorecardBody">
+      <div class="pillrow" id="scorecardGranRow" style="margin-bottom:10px;"></div>
+      <div id="scorecardPeriodLabel" style="font-size:11px;color:var(--sub);margin-bottom:8px;"></div>
+      <div class="tablewrap"><table id="scorecardTable"></table></div>
     </div>
   </div>
 </main>
@@ -1973,6 +1985,11 @@ const state = {
   // Date.getDay()/HARI_ID indexing) - all 7 selected by default (no filtering).
   chartAggType: 'total',
   hourlyDow: new Set([0,1,2,3,4,5,6]),
+  // ADDED 2026-08-27 per Rendy ("i want the dashboard to help me analize rootcause of decline"):
+  // Scorecard Transportir panel's own granularity toggle - independent from the main chart's
+  // state.gran, since Rendy wants to flip between Harian/Mingguan/Bulanan comparisons here without
+  // disturbing whatever the Tren chart above is currently showing.
+  scorecardGran: 'daily',
 };
 DIMENSIONS.forEach(d=> state[d.key] = new Set());
 
@@ -4618,12 +4635,180 @@ function renderFleetTable(){
   table.appendChild(tbody);
 }
 
+/* ================= SCORECARD TRANSPORTIR (2026-08-27) =================
+   Added per Rendy ("i want the dashboard to be able to help me utilizing it upto detail per truck
+   level, kinerja per transportir, analize rootcause of decline") - phase 1 of that request: a
+   ranked per-Ekspeditur table (Tonase, Target, %Achievement, Δ vs periode sebelumnya, Truck Unik,
+   Ritase, Avg Waiting, Avg Dwell), sorted worst-%Achievement-first, at Harian/Mingguan/Bulanan
+   granularity - independent of the main chart's own granularity/date-range filter (see
+   state.scorecardGran). "Periode berjalan" always anchors on the latest actual data date in the
+   currently loaded database (same convention as Armada REVIEW 2's refMs), not the real calendar
+   date, so this keeps working sensibly if live data lags - and "periode sebelumnya" is the
+   immediately preceding day/ISO-week/month of the same length, not an arbitrary comparison window. */
+const SCORECARD_GRAN_OPTIONS = [
+  {key:'daily', label:'Harian'},
+  {key:'weekly', label:'Mingguan'},
+  {key:'monthly', label:'Bulanan'},
+];
+function setScorecardGran(g){ state.scorecardGran = g; renderScorecard(); }
+
+/* [from,to] (inclusive, local Date at midnight) for the current + immediately-previous period of
+   the given granularity, anchored on refDate. Weekly uses Monday-start (isoWeekMonday's convention
+   elsewhere in this file), matching the rest of the app. */
+function scorecardPeriodRange(gran, refDate){
+  if(gran==='weekly'){
+    const dayNum = (refDate.getDay()+6)%7; // 0=Mon..6=Sun, local
+    const mon = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate()-dayNum);
+    const sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate()+6);
+    const prevMon = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate()-7);
+    const prevSun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate()-1);
+    return {cur:{from:mon, to:sun}, prev:{from:prevMon, to:prevSun}};
+  }
+  if(gran==='monthly'){
+    const y = refDate.getFullYear(), m = refDate.getMonth();
+    const cur = {from:new Date(y,m,1), to:new Date(y,m+1,0)};
+    const py = m===0 ? y-1 : y, pm = m===0 ? 11 : m-1;
+    const prev = {from:new Date(py,pm,1), to:new Date(py,pm+1,0)};
+    return {cur, prev};
+  }
+  // daily (default)
+  const day = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate());
+  const prevDay = new Date(day.getFullYear(), day.getMonth(), day.getDate()-1);
+  return {cur:{from:day, to:day}, prev:{from:prevDay, to:prevDay}};
+}
+
+/* Same computation as targetForGroup() (see its comment above) but deliberately does NOT gate on
+   levelsAreTargetCapable(state.levels) - that gate exists to answer "is target legitimately
+   scopable for the Summary table's CURRENT drilldown", which has nothing to do with this panel: the
+   Scorecard always explicitly scopes by EXPEDITUR_NAMA regardless of whatever levels happen to be
+   selected elsewhere in the UI, so it would be wrong to let that unrelated global state (e.g.
+   Distributor active as a drilldown level in the Summary table) silently blank out every target
+   here too. Only isRestricted('distributor') still applies - target genuinely has no such dimension. */
+function targetForExpediturScorecard(rowsInGroup, periodF, expName){
+  if(isRestricted('distributor')) return {full:null, mtd:null, foundAny:false};
+  const monthsSeen = new Set();
+  rowsInGroup.forEach(r=>{ if(r._d) monthsSeen.add(`${r._d.getFullYear()}|${r._d.getMonth()+1}|${r.NAMA_PROPINSI}`); });
+  let full=0, mtd=0, foundAny=false;
+  monthsSeen.forEach(key=>{
+    const [y,m,prov] = key.split('|');
+    const t = targetForScope(+y, +m, periodF, {NAMA_PROPINSI:prov, EXPEDITUR_NAMA:expName}, undefined);
+    if(t.full!=null){ full += t.full; mtd += t.fullStd; if(t.foundAny) foundAny=true; }
+  });
+  return {full, mtd: round2(mtd), foundAny};
+}
+
+function scorecardRowsForPeriod(baseF, period){
+  const pf = Object.assign({}, baseF, {from:period.from, to:period.to});
+  return applyRowFocus(filteredRE(pf));
+}
+
+function computeScorecardMetrics(rows, periodF){
+  const byExp = new Map();
+  rows.forEach(r=>{
+    const k = normVal(r.EXPEDITUR_NAMA);
+    if(!byExp.has(k)) byExp.set(k, []);
+    byExp.get(k).push(r);
+  });
+  const out = [];
+  byExp.forEach((trs, exp)=>{
+    const tonase = aggMetric(trs, 'TONASE');
+    const truckUnik = new Set(trs.map(r=>r.NOPOL)).size;
+    const ritase = truckUnik>0 ? round2(trs.length/truckUnik) : 0;
+    const avgWaiting = aggMetric(trs, 'WAITING');
+    const avgDwell = aggMetric(trs, 'DWELL');
+    const t = targetForExpediturScorecard(trs, periodF, exp);
+    const achiev = (t.mtd!=null && t.foundAny && t.mtd>0) ? round2(tonase/t.mtd*100) : null;
+    out.push({exp, tonase, target: t.foundAny ? t.mtd : null, achiev, truckUnik, ritase, avgWaiting, avgDwell, trips: trs.length});
+  });
+  return out;
+}
+
+function renderScorecard(){
+  const granRow = document.getElementById('scorecardGranRow');
+  granRow.innerHTML = '';
+  SCORECARD_GRAN_OPTIONS.forEach(opt=>{
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'pill' + (state.scorecardGran===opt.key ? ' active' : '');
+    b.textContent = opt.label;
+    b.onclick = ()=> setScorecardGran(opt.key);
+    granRow.appendChild(b);
+  });
+
+  const f = getFilterState();
+  const refMs = RE.length ? Math.max(...RE.filter(r=>r._d).map(r=> r._d.getTime?r._d.getTime():r._d)) : null;
+  const table = document.getElementById('scorecardTable');
+  const periodLabel = document.getElementById('scorecardPeriodLabel');
+  if(refMs==null){
+    table.innerHTML = ''; periodLabel.textContent = 'Tidak ada data.';
+    return;
+  }
+  const refDate = new Date(refMs);
+  const {cur, prev} = scorecardPeriodRange(state.scorecardGran, refDate);
+  const curLabel = cur.from.getTime()===cur.to.getTime() ? fmtDate(cur.from) : `${fmtDate(cur.from)} s/d ${fmtDate(cur.to)}`;
+  const prevLabel = prev.from.getTime()===prev.to.getTime() ? fmtDate(prev.from) : `${fmtDate(prev.from)} s/d ${fmtDate(prev.to)}`;
+  periodLabel.textContent = `Periode berjalan: ${curLabel}  ·  Periode sebelumnya: ${prevLabel}  (anchor = tanggal data terakhir yang tersedia)`;
+
+  const curRows = scorecardRowsForPeriod(f, cur);
+  const prevRows = scorecardRowsForPeriod(f, prev);
+  const curMetrics = computeScorecardMetrics(curRows, Object.assign({}, f, cur));
+  const prevByExp = new Map(computeScorecardMetrics(prevRows, Object.assign({}, f, prev)).map(m=>[m.exp, m]));
+
+  curMetrics.forEach(m=>{
+    const p = prevByExp.get(m.exp);
+    m.prevTonase = p ? p.tonase : null;
+    m.deltaPct = (p && p.tonase>0) ? round2((m.tonase - p.tonase)/p.tonase*100) : null;
+  });
+  // sort: worst %Achievement first (nulls - no target data - sink to the bottom, not the top,
+  // so a transporter with no target coverage doesn't visually masquerade as "worst performer")
+  curMetrics.sort((a,b)=>{
+    if(a.achiev==null && b.achiev==null) return b.tonase - a.tonase;
+    if(a.achiev==null) return 1;
+    if(b.achiev==null) return -1;
+    return a.achiev - b.achiev;
+  });
+
+  const cols = ['Ekspeditur','Tonase (ton)','Target (ton)','%Achievement','Δ Tonase vs Periode Lalu','Truk Unik','Ritase','Avg Waiting (jam)','Avg Dwell (jam)'];
+  const thead = document.createElement('thead');
+  const trh = document.createElement('tr');
+  cols.forEach((c,i)=>{ const th=document.createElement('th'); th.textContent=c; if(i===0) th.style.textAlign='left'; trh.appendChild(th); });
+  thead.appendChild(trh);
+
+  const tbody = document.createElement('tbody');
+  if(!curMetrics.length){
+    const tr = document.createElement('tr');
+    tr.innerHTML = `<td colspan="${cols.length}" style="text-align:center;color:var(--sub);">Tidak ada data pada periode ini.</td>`;
+    tbody.appendChild(tr);
+  }
+  curMetrics.forEach(m=>{
+    const tr = document.createElement('tr');
+    const achievCell = m.achiev!=null ? `<span style="color:${pctColor(m.achiev)};font-weight:700;">${m.achiev.toFixed(1)}%</span>` : 'N/A';
+    const deltaCell = m.deltaPct!=null
+      ? `<span style="color:${m.deltaPct>=0 ? '#2E9E4B' : '#E2211D'};font-weight:600;">${m.deltaPct>=0?'▲':'▼'} ${Math.abs(m.deltaPct).toFixed(1)}%</span>`
+      : (m.prevTonase===0 ? '<span style="color:var(--sub);">baru</span>' : 'N/A');
+    tr.innerHTML = `<td style="text-align:left;">${m.exp}</td>`
+      + `<td>${fmtNum(m.tonase)}</td>`
+      + `<td>${m.target!=null?fmtNum(m.target):'N/A'}</td>`
+      + `<td>${achievCell}</td>`
+      + `<td>${deltaCell}</td>`
+      + `<td>${m.truckUnik.toLocaleString('id-ID')}</td>`
+      + `<td>${m.ritase.toFixed(2)}x</td>`
+      + `<td>${m.avgWaiting!=null?m.avgWaiting.toFixed(1):'-'}</td>`
+      + `<td>${m.avgDwell!=null?m.avgDwell.toFixed(1):'-'}</td>`;
+    tbody.appendChild(tr);
+  });
+
+  table.innerHTML = '';
+  table.appendChild(thead);
+  table.appendChild(tbody);
+}
+
 /* ================= RENDER ALL ================= */
 function renderAll(){
   renderKPIs();
   renderChart();
   renderSummaryTable();
   renderFleetTable();
+  renderScorecard();
 }
 
 /* ================= EVENTS ================= */
