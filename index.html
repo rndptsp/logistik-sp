@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.08.27.11';
+window.APP_VERSION = 'build.2026.08.27.12';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -2005,9 +2005,11 @@ const state = {
   // state.gran, since Rendy wants to flip between Harian/Mingguan/Bulanan comparisons here without
   // disturbing whatever the Tren chart above is currently showing.
   scorecardGran: 'daily',
-  // ADDED 2026-08-27: whether the Scorecard respects the main filter bar's active checklist
-  // restrictions or always shows company-wide data regardless - see scorecardActiveFilter().
-  scorecardApplyFilter: true,
+  // ADDED 2026-08-27, NARROWED same day per Rendy: whether the Scorecard's period anchor follows
+  // the main date-range filter (fDateFrom/fDateTo) when active, or always uses the latest actual
+  // data date - see scorecardRefDate(). Dimension filters (Provinsi/Distrik/dst.) are NOT gated by
+  // this - they always apply automatically now, same as every other panel.
+  scorecardFollowDateFilter: true,
 };
 DIMENSIONS.forEach(d=> state[d.key] = new Set());
 
@@ -4716,10 +4718,9 @@ function scorecardPeriodRange(gran, refDate){
    Distributor active as a drilldown level in the Summary table) silently blank out every target
    here too. Only isRestricted('distributor') still applies - target genuinely has no such dimension. */
 function targetForExpediturScorecard(rowsInGroup, periodF, expName){
-  // Checks periodF's OWN distributor set (not the global isRestricted('distributor')) so this
-  // correctly goes back to "not restricted" when the Scorecard's "Terapkan Filter Aktif" toggle is
-  // OFF and periodF.distributor has been rebuilt to the full ALLV.distributor set - see
-  // scorecardActiveFilter() below.
+  // Checks periodF's own distributor set directly (equivalent to the global isRestricted('distributor')
+  // now that the Scorecard's toggle no longer touches dimension filters - see scorecardActiveFilter()
+  // below - but kept as a periodF-based check rather than reading global state directly, for consistency).
   if(periodF.distributor && ALLV.distributor && periodF.distributor.size < ALLV.distributor.length) return {full:null, mtd:null, foundAny:false};
   const monthsSeen = new Set();
   rowsInGroup.forEach(r=>{ if(r._d) monthsSeen.add(`${r._d.getFullYear()}|${r._d.getMonth()+1}|${r.NAMA_PROPINSI}`); });
@@ -4732,26 +4733,34 @@ function targetForExpediturScorecard(rowsInGroup, periodF, expName){
   return {full, mtd: round2(mtd), foundAny};
 }
 
-/* ADDED 2026-08-27 per Rendy ("toggle to apply filter or not in the scorecard"): the Scorecard can
-   either respect the main filter bar's active checklist restrictions (Provinsi/Distrik/Distributor/
-   Expeditur/Source/Incoterm) like every other panel, or ignore them entirely and always show the
-   company-wide picture regardless of what's currently narrowed elsewhere on the page - useful since
-   Rendy may have a Provinsi/Source filter active for the main chart/table while still wanting the
-   Scorecard's decline diagnosis to cover everything. Rebuilds each DIMENSIONS[].key's Set to the full
-   ALLV[key] list when off; row-focus (state.rowFocus, from clicking a summary-table row) is treated
-   as part of "active filters" too and skipped the same way. Date bounds (period.from/to) are NOT
-   affected either way - the Scorecard always uses its own cur/prev period, never the main date filter. */
-function scorecardActiveFilter(baseF){
-  if(state.scorecardApplyFilter) return baseF;
-  const f = Object.assign({}, baseF);
-  DIMENSIONS.forEach(d=>{ f[d.key] = new Set(ALLV[d.key] || []); });
-  return f;
-}
+/* ADDED 2026-08-27, NARROWED same day per Rendy ("terapkan toggle filter hanya untuk tanggal/periode
+   saja, sementara yang lainnya otomatis aktif"): originally this toggle also neutralized the main
+   filter bar's checklist restrictions (Provinsi/Distrik/Distributor/Expeditur/Source/Incoterm) and
+   row-focus - Rendy corrected that: those 6 dimensions + row-focus should ALWAYS be respected
+   automatically, same as every other panel, never toggleable. scorecardActiveFilter() is now just an
+   identity pass-through (kept as a named function, not inlined, so the call sites stay self-
+   documenting and this narrowing is easy to find/revert if ever needed again).
+   The toggle's ACTUAL job now (state.scorecardFollowDateFilter): whether the Scorecard's "periode
+   berjalan" anchor follows the main date-range filter (fDateFrom/fDateTo) when one is active, or
+   always anchors on the latest actual data date regardless of that filter (the original default
+   behavior) - see scorecardRefDate() below, used by both renderScorecard() and the trend popup
+   (computeScorecardTrend()) so the two stay consistent with each other. */
+function scorecardActiveFilter(baseF){ return baseF; }
 function scorecardRowsForPeriod(baseF, period){
-  const f = scorecardActiveFilter(baseF);
-  const pf = Object.assign({}, f, {from:period.from, to:period.to});
-  const rows = filteredRE(pf);
-  return state.scorecardApplyFilter ? applyRowFocus(rows) : rows;
+  const pf = Object.assign({}, baseF, {from:period.from, to:period.to});
+  return applyRowFocus(filteredRE(pf));
+}
+/* Anchor date for the Scorecard's "periode berjalan" - either the main date-range filter's end (or
+   start, if only "from" is set) when state.scorecardFollowDateFilter is on and that filter is
+   active, or the latest actual data date in the currently loaded database otherwise (same anchor
+   convention as Armada REVIEW 2's refMs). Returns null only if there's truly no data loaded at all. */
+function scorecardRefDate(f){
+  if(state.scorecardFollowDateFilter && (f.from || f.to)){
+    const anchor = f.to || f.from;
+    return new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate());
+  }
+  const refMs = RE.length ? Math.max(...RE.filter(r=>r._d).map(r=> r._d.getTime?r._d.getTime():r._d)) : null;
+  return refMs!=null ? new Date(refMs) : null;
 }
 
 function computeScorecardMetrics(rows, periodF){
@@ -4876,16 +4885,14 @@ function scorecardPeriodLabel(gran, period){
 function computeScorecardTrend(exp, metricKey){
   const gran = state.scorecardGran;
   const n = SCORECARD_TREND_N[gran] || 10;
-  const refMs = RE.length ? Math.max(...RE.filter(r=>r._d).map(r=> r._d.getTime?r._d.getTime():r._d)) : null;
-  if(refMs==null) return [];
-  const refDate = new Date(refMs);
-  const activeF = scorecardActiveFilter(getFilterState());
+  const f = getFilterState();
+  const refDate = scorecardRefDate(f);
+  if(refDate==null) return [];
   const points = [];
   for(let offset=n-1; offset>=0; offset--){
     const period = scorecardPeriodAt(gran, refDate, offset);
-    const pf = Object.assign({}, activeF, {from:period.from, to:period.to});
-    let rows = filteredRE(pf);
-    if(state.scorecardApplyFilter) rows = applyRowFocus(rows);
+    const pf = Object.assign({}, f, {from:period.from, to:period.to});
+    let rows = applyRowFocus(filteredRE(pf));
     rows = rows.filter(r=> normVal(r.EXPEDITUR_NAMA)===exp);
     let value;
     if(metricKey==='achiev'){
@@ -4972,35 +4979,37 @@ function renderScorecard(){
     b.onclick = ()=> setScorecardGran(opt.key);
     granRow.appendChild(b);
   });
+  // NARROWED 2026-08-27 per Rendy: this toggle now only controls whether the Scorecard's period
+  // anchor follows the main date-range filter - dimension filters (Provinsi/Distrik/dst.) always
+  // apply automatically now, see scorecardActiveFilter()'s comment above.
   const filterToggleBtn = document.createElement('button');
   filterToggleBtn.type = 'button';
-  filterToggleBtn.className = 'pill' + (state.scorecardApplyFilter ? ' active' : '');
+  filterToggleBtn.className = 'pill' + (state.scorecardFollowDateFilter ? ' active' : '');
   filterToggleBtn.style.marginLeft = '10px';
-  filterToggleBtn.textContent = state.scorecardApplyFilter ? '🔒 Terapkan Filter Aktif' : '🌐 Semua Data (Filter Diabaikan)';
-  filterToggleBtn.title = 'Nyala: Scorecard ikut filter Provinsi/Distrik/Distributor/Expeditur/Source/Incoterm yang aktif di atas. Mati: Scorecard selalu tampilkan seluruh data, apa pun filter yang aktif.';
-  filterToggleBtn.onclick = ()=>{ state.scorecardApplyFilter = !state.scorecardApplyFilter; renderScorecard(); };
+  filterToggleBtn.textContent = state.scorecardFollowDateFilter ? '📅 Ikuti Filter Tanggal' : '📅 Anchor: Data Terakhir';
+  filterToggleBtn.title = 'Nyala: periode berjalan Scorecard mengikuti Rentang Tanggal yang aktif di filter atas (jika ada). Mati: selalu anchor ke tanggal data terakhir yang tersedia, apa pun Rentang Tanggal di atas. Provinsi/Distrik/Distributor/Expeditur/Source/Incoterm selalu otomatis mengikuti filter aktif, tidak terpengaruh toggle ini.';
+  filterToggleBtn.onclick = ()=>{ state.scorecardFollowDateFilter = !state.scorecardFollowDateFilter; renderScorecard(); };
   granRow.appendChild(filterToggleBtn);
 
   const f = getFilterState();
-  const refMs = RE.length ? Math.max(...RE.filter(r=>r._d).map(r=> r._d.getTime?r._d.getTime():r._d)) : null;
+  const refDate = scorecardRefDate(f);
   const table = document.getElementById('scorecardTable');
   const periodLabel = document.getElementById('scorecardPeriodLabel');
-  if(refMs==null){
+  if(refDate==null){
     table.innerHTML = ''; periodLabel.textContent = 'Tidak ada data.';
     return;
   }
-  const refDate = new Date(refMs);
   const {cur, prev} = scorecardPeriodRange(state.scorecardGran, refDate);
   const curLabel = cur.from.getTime()===cur.to.getTime() ? fmtDate(cur.from) : `${fmtDate(cur.from)} s/d ${fmtDate(cur.to)}`;
   const prevLabel = prev.from.getTime()===prev.to.getTime() ? fmtDate(prev.from) : `${fmtDate(prev.from)} s/d ${fmtDate(prev.to)}`;
-  periodLabel.textContent = `Periode berjalan: ${curLabel}  ·  Periode sebelumnya: ${prevLabel}  (anchor = tanggal data terakhir yang tersedia)`;
+  const anchorNote = state.scorecardFollowDateFilter && (f.from||f.to) ? 'mengikuti Rentang Tanggal aktif' : 'tanggal data terakhir yang tersedia';
+  periodLabel.textContent = `Periode berjalan: ${curLabel}  ·  Periode sebelumnya: ${prevLabel}  (anchor = ${anchorNote})`;
 
-  const activeF = scorecardActiveFilter(f);
   const curRows = scorecardRowsForPeriod(f, cur);
   const prevRows = scorecardRowsForPeriod(f, prev);
   renderDecompBanner(curRows, prevRows);
-  const curMetrics = computeScorecardMetrics(curRows, Object.assign({}, activeF, cur));
-  const prevByExp = new Map(computeScorecardMetrics(prevRows, Object.assign({}, activeF, prev)).map(m=>[m.exp, m]));
+  const curMetrics = computeScorecardMetrics(curRows, Object.assign({}, f, cur));
+  const prevByExp = new Map(computeScorecardMetrics(prevRows, Object.assign({}, f, prev)).map(m=>[m.exp, m]));
 
   // ADDED 2026-08-27 per Rendy: Trip and Truck Unik now get their own vs-periode-lalu delta too,
   // same pctChange() used by the decomposition banner above - not just Tonase.
