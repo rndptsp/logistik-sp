@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.08.27.07';
+window.APP_VERSION = 'build.2026.08.27.08';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -494,6 +494,7 @@ window.addEventListener('error', function(e){
     <div class="panel-body" id="scorecardBody">
       <div class="pillrow" id="scorecardGranRow" style="margin-bottom:10px;"></div>
       <div id="scorecardPeriodLabel" style="font-size:11px;color:var(--sub);margin-bottom:8px;"></div>
+      <div id="scorecardDecompBanner" style="margin-bottom:14px;"></div>
       <div class="tablewrap"><table id="scorecardTable"></table></div>
     </div>
   </div>
@@ -4725,9 +4726,67 @@ function computeScorecardMetrics(rows, periodF){
     const avgDwell = aggMetric(trs, 'DWELL');
     const t = targetForExpediturScorecard(trs, periodF, exp);
     const achiev = (t.mtd!=null && t.foundAny && t.mtd>0) ? round2(tonase/t.mtd*100) : null;
-    out.push({exp, tonase, target: t.foundAny ? t.mtd : null, achiev, truckUnik, ritase, avgWaiting, avgDwell, trips: trs.length});
+    const avgTonPerTrip = trs.length>0 ? round2(tonase/trs.length) : null;
+    out.push({exp, tonase, target: t.foundAny ? t.mtd : null, achiev, truckUnik, ritase, avgWaiting, avgDwell, trips: trs.length, avgTonPerTrip});
   });
   return out;
+}
+
+/* ================= DECLINE DECOMPOSITION (phase 2, 2026-08-27) =================
+   Per Rendy: "analize rootcause of decline" - Tonase is exactly TruckUnik x Ritase (trip/truck) x
+   AvgTonPerTrip (ton/trip) by construction (trips = TruckUnik x Ritase, Tonase = trips x AvgTonPerTrip),
+   so instead of an approximate additive attribution (which needs an index method like LMDI to avoid
+   rounding error), this shows each of the 3 factors' own period-over-period %change side by side -
+   exact, no approximation, and the reader can see at a glance which factor moved the most. "Faktor
+   utama" just flags whichever of the 3 has the largest absolute %change, as a quick pointer into the
+   per-Ekspeditur table below (which carries the same 3 numbers per transporter) for further drill-down. */
+function computeDecompTotals(rows){
+  const tonase = aggMetric(rows, 'TONASE');
+  const truckUnik = new Set(rows.map(r=>r.NOPOL)).size;
+  const trips = rows.length;
+  const ritase = truckUnik>0 ? trips/truckUnik : 0;
+  const avgTonPerTrip = trips>0 ? tonase/trips : 0;
+  return {tonase, truckUnik, trips, ritase, avgTonPerTrip};
+}
+function pctChange(cur, prev){ if(prev==null || prev===0) return null; return round2((cur-prev)/prev*100); }
+function renderDecompBanner(curRows, prevRows){
+  const banner = document.getElementById('scorecardDecompBanner');
+  const cur = computeDecompTotals(curRows);
+  const prev = computeDecompTotals(prevRows);
+  const dTonase = pctChange(cur.tonase, prev.tonase);
+  const dTruck = pctChange(cur.truckUnik, prev.truckUnik);
+  const dRitase = pctChange(cur.ritase, prev.ritase);
+  const dAvgTon = pctChange(cur.avgTonPerTrip, prev.avgTonPerTrip);
+
+  const factors = [
+    {label:'Truck Unik', d:dTruck, cur:cur.truckUnik.toLocaleString('id-ID'), prev:prev.truckUnik.toLocaleString('id-ID')},
+    {label:'Ritase (trip/truk)', d:dRitase, cur:cur.ritase.toFixed(2)+'x', prev:prev.ritase.toFixed(2)+'x'},
+    {label:'Ton/Trip', d:dAvgTon, cur:fmtNum(cur.avgTonPerTrip), prev:fmtNum(prev.avgTonPerTrip)},
+  ];
+  let mainFactor = null;
+  factors.forEach(fac=>{ if(fac.d!=null && (mainFactor==null || Math.abs(fac.d) > Math.abs(mainFactor.d))) mainFactor = fac; });
+
+  function deltaHtml(d){
+    if(d==null) return '<span style="color:var(--sub);">N/A</span>';
+    const color = d>=0 ? '#2E9E4B' : '#E2211D';
+    return `<span style="color:${color};font-weight:700;">${d>=0?'▲':'▼'} ${Math.abs(d).toFixed(1)}%</span>`;
+  }
+  const cardStyle = 'background:var(--panel2);border:1px solid var(--border);border-radius:8px;padding:10px 14px;min-width:150px;';
+  const cards = [
+    {label:'Tonase (ton)', cur:fmtNum(cur.tonase), prev:fmtNum(prev.tonase), d:dTonase, highlight:true},
+    ...factors,
+  ].map(c=>`<div style="${cardStyle}${c.highlight?'border-left:3px solid var(--accent);':''}">
+      <div style="font-size:10.5px;color:var(--sub);text-transform:uppercase;">${c.label}</div>
+      <div style="font-size:16px;font-weight:700;">${c.cur} <span style="font-size:11px;font-weight:400;color:var(--sub);">(vs ${c.prev})</span></div>
+      <div style="font-size:12px;">${deltaHtml(c.d)}</div>
+    </div>`).join('');
+
+  const mainFactorNote = mainFactor
+    ? `Faktor utama pergerakan Tonase: <strong>${mainFactor.label}</strong> (${mainFactor.d>=0?'naik':'turun'} ${Math.abs(mainFactor.d).toFixed(1)}%). Rincian per transportir di tabel bawah.`
+    : 'Tidak cukup data periode sebelumnya untuk menentukan faktor utama.';
+
+  banner.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:8px;">${cards}</div>
+    <div style="font-size:11.5px;color:var(--text);background:#FFF8E6;border:1px solid #F2D98A;border-radius:6px;padding:8px 12px;">💡 ${mainFactorNote}</div>`;
 }
 
 function renderScorecard(){
@@ -4757,6 +4816,7 @@ function renderScorecard(){
 
   const curRows = scorecardRowsForPeriod(f, cur);
   const prevRows = scorecardRowsForPeriod(f, prev);
+  renderDecompBanner(curRows, prevRows);
   const curMetrics = computeScorecardMetrics(curRows, Object.assign({}, f, cur));
   const prevByExp = new Map(computeScorecardMetrics(prevRows, Object.assign({}, f, prev)).map(m=>[m.exp, m]));
 
@@ -4774,7 +4834,7 @@ function renderScorecard(){
     return a.achiev - b.achiev;
   });
 
-  const cols = ['Ekspeditur','Tonase (ton)','Target (ton)','%Achievement','Δ Tonase vs Periode Lalu','Truk Unik','Ritase','Avg Waiting (jam)','Avg Dwell (jam)'];
+  const cols = ['Ekspeditur','Tonase (ton)','Target (ton)','%Achievement','Δ Tonase vs Periode Lalu','Truk Unik','Ritase','Ton/Trip','Avg Waiting (jam)','Avg Dwell (jam)'];
   const thead = document.createElement('thead');
   const trh = document.createElement('tr');
   cols.forEach((c,i)=>{ const th=document.createElement('th'); th.textContent=c; if(i===0) th.style.textAlign='left'; trh.appendChild(th); });
@@ -4799,6 +4859,7 @@ function renderScorecard(){
       + `<td>${deltaCell}</td>`
       + `<td>${m.truckUnik.toLocaleString('id-ID')}</td>`
       + `<td>${m.ritase.toFixed(2)}x</td>`
+      + `<td>${m.avgTonPerTrip!=null?fmtNum(m.avgTonPerTrip):'-'}</td>`
       + `<td>${m.avgWaiting!=null?m.avgWaiting.toFixed(1):'-'}</td>`
       + `<td>${m.avgDwell!=null?m.avgDwell.toFixed(1):'-'}</td>`;
     tbody.appendChild(tr);
