@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.08.27.06';
+window.APP_VERSION = 'build.2026.08.27.07';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -3034,7 +3034,14 @@ function computeAchievBarsSeries(f){
   if(state.rowFocus && state.rowFocus.length){
     state.rowFocus.forEach(rf=>{ if(TARGET_CAPABLE_FIELDS.has(rf.field)) rowFocusScope[rf.field] = rf.value; });
   }
-  const tonase = bucketKeys.map(bk => f.gran==='hourly' ? hourlyStatValue(buckets.get(bk), 'TONASE', state.chartAggType) : aggMetric(buckets.get(bk), 'TONASE'));
+  // BUG FIXED 2026-08-27 per Rendy ("Dashboard gagal dimuat: rows.reduce undefined"): fillDailyBucketKeys()
+  // (2026-08-24) synthesizes bucket keys for calendar days with zero realisasi so the x-axis stops
+  // skipping them, but those synthetic keys were never added to `buckets`, so buckets.get(bk) returned
+  // undefined for every empty day and crashed aggMetric()'s rows.reduce - the app's DEFAULT chart type
+  // (achievbars) + default Daily granularity meant this fired on ordinary page load the moment the
+  // active date range included even one zero-realisasi day. computeSeries() and computeTruckCompareSeries()
+  // already guarded this with `|| []` when the same fix was applied to them - this one call site was missed.
+  const tonase = bucketKeys.map(bk => f.gran==='hourly' ? hourlyStatValue(buckets.get(bk)||[], 'TONASE', state.chartAggType) : aggMetric(buckets.get(bk)||[], 'TONASE'));
   const target = bucketKeys.map(bk => targetCapable ? targetForBucket(bk, f.gran, f, rowFocusScope, undefined) : null);
   const achievPct = bucketKeys.map((bk,i)=> (target[i]!=null && target[i]>0) ? round2(tonase[i]/target[i]*100) : null);
   return {bucketKeys, tonase, target, achievPct};
