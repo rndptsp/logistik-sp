@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.08.27.10';
+window.APP_VERSION = 'build.2026.08.27.11';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -4900,25 +4900,62 @@ function computeScorecardTrend(exp, metricKey){
   return points;
 }
 let scorecardTrendChartInstance = null;
+/* ADDED 2026-08-27 per Rendy ("tampilkan angka pada grafik dan tambah trendline average"): value
+   labels + an average reference line on the trend popup chart. Deliberately its own small local
+   plugin (registered only on THIS chart instance via the `plugins:[...]` array, not globally via
+   Chart.register) rather than reusing the app's existing valueLabelsPlugin - that shared plugin
+   doesn't skip isAvgLine datasets (only isTarget/'% Achievement'), so reusing it here would print
+   the same flat average number at every single x-position along the dashed line, which is real
+   clutter for a chart that's mostly just one series + its average. This one only labels the actual
+   metric series (dataset index 0), never the average line. */
 function openScorecardTrend(exp, metricKey){
   const gran = state.scorecardGran;
   const n = SCORECARD_TREND_N[gran] || 10;
   const metricLabel = metricKey==='achiev' ? '%Achievement' : SCORECARD_METRIC_DEFS[metricKey].label;
   const granLabel = ({daily:'Harian - 10 hari terakhir', weekly:'Mingguan - 8 minggu terakhir', monthly:'Bulanan - 4 bulan terakhir'})[gran];
   const points = computeScorecardTrend(exp, metricKey);
+  const values = points.map(p=>p.value);
+  const avgVal = avgOf(values);
   document.getElementById('scorecardTrendTitle').textContent = `${metricLabel} — ${exp} (${granLabel})`;
   document.getElementById('scorecardTrendOverlay').style.display = '';
   const ctx = document.getElementById('scorecardTrendChart').getContext('2d');
   if(scorecardTrendChartInstance) scorecardTrendChartInstance.destroy();
+  const fmtVal = (v)=> v==null ? '' : (metricKey==='achiev' ? v.toFixed(1)+'%' : (metricKey==='ritase' ? v.toFixed(2)+'x' : Number(v).toLocaleString('id-ID')));
+  const trendValueLabelPlugin = {
+    id: 'scorecardTrendValueLabels',
+    afterDatasetsDraw(chart){
+      const {ctx} = chart;
+      const meta = chart.getDatasetMeta(0); // main metric series only - never the avg line (dataset 1)
+      if(!meta) return;
+      ctx.save();
+      ctx.font = '600 10px system-ui, sans-serif';
+      ctx.fillStyle = '#1F5FA8';
+      ctx.textAlign = 'center';
+      meta.data.forEach((el, i)=>{
+        const val = chart.data.datasets[0].data[i];
+        if(val==null || !el) return;
+        ctx.fillText(fmtVal(val), el.x, el.y-10);
+      });
+      ctx.restore();
+    }
+  };
   scorecardTrendChartInstance = new Chart(ctx, {
-    type: 'line',
-    data: { labels: points.map(p=>p.label), datasets: [{
-      label: metricLabel, data: points.map(p=>p.value),
-      borderColor:'#1F5FA8', backgroundColor:'#1F5FA8', borderWidth:2.5, pointRadius:3, tension:0.25, fill:false,
-    }]},
+    data: { labels: points.map(p=>p.label), datasets: [
+      {type:'line', label: metricLabel, data: values,
+        borderColor:'#1F5FA8', backgroundColor:'#1F5FA8', borderWidth:2.5, pointRadius:3, tension:0.25, fill:false, order:1},
+      // Same "Rata-rata" flat dashed reference-line pattern used by the main Tren chart
+      // (avgTonase/avgTarget in computeAchievBarsSeries's renderChart branch) - added per Rendy.
+      ...(avgVal!=null ? [{type:'line', label:'Rata-rata', data: values.map(()=>avgVal),
+        borderColor:'#E2211D', backgroundColor:'transparent', borderWidth:1.75, borderDash:[6,4],
+        pointRadius:0, pointHoverRadius:0, tension:0, fill:false, order:2, isAvgLine:true}] : []),
+    ]},
+    plugins: [trendValueLabelPlugin],
     options: {
       responsive:true, maintainAspectRatio:false,
-      plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:(c)=> metricKey==='achiev' ? `${c.formattedValue}%` : `${metricLabel}: ${Number(c.raw).toLocaleString('id-ID')}` } } },
+      plugins:{
+        legend:{display: avgVal!=null, labels:{font:{size:10}}},
+        tooltip:{ callbacks:{ label:(c)=> `${c.dataset.label}: ${fmtVal(c.raw)}` } },
+      },
       scales:{ x:{ticks:{color:'#6B6B6B', font:{size:10}}, grid:{display:false}}, y:{ticks:{color:'#6B6B6B'}, grid:{color:'#F0F0F0'}} },
     }
   });
