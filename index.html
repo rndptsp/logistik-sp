@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.08.27.09';
+window.APP_VERSION = 'build.2026.08.27.10';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -499,6 +499,20 @@ window.addEventListener('error', function(e){
     </div>
   </div>
 </main>
+
+<!-- ADDED 2026-08-27 per Rendy: click any metric cell in the Scorecard Transportir table to see
+     that metric's trailing trend for that specific transporter - see openScorecardTrend(). Separate
+     overlay/ids from #prognModalOverlay (that one belongs to the standalone Prognose tile view) to
+     avoid any z-index/state collision between the two. -->
+<div id="scorecardTrendOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;" onclick="if(event.target===this)closeScorecardTrend()">
+  <div style="background:var(--panel);max-width:820px;margin:60px auto;border-radius:10px;padding:18px;max-height:80vh;overflow:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <h3 id="scorecardTrendTitle" style="margin:0;color:var(--text);font-size:14px;"></h3>
+      <button onclick="closeScorecardTrend()" style="border:1px solid var(--border);background:var(--panel);border-radius:6px;padding:4px 10px;cursor:pointer;">Tutup</button>
+    </div>
+    <div style="height:320px;"><canvas id="scorecardTrendChart"></canvas></div>
+  </div>
+</div>
 
 <footer>COPYRIGHT UNIT OUTBOND LOGISTIC</footer>
 </div>
@@ -4819,6 +4833,98 @@ function renderDecompBanner(curRows, prevRows){
     <div style="font-size:11.5px;color:var(--text);background:#FFF8E6;border:1px solid #F2D98A;border-radius:6px;padding:8px 12px;">💡 ${mainFactorNote}</div>`;
 }
 
+/* ================= SCORECARD TREND POPUP (2026-08-27) =================
+   Per Rendy: clicking a specific metric cell for a specific transporter shows that metric's trailing
+   trend - 10 periods for Harian, 8 for Mingguan, 4 for Bulanan (his exact numbers). Consecutive
+   calendar periods (day-1, day-2, ... ), NOT the same-weekday jump scorecardPeriodRange() uses for
+   its single prev-period comparison - "last 10 days" means the 10 actual calendar days, not 10
+   same-weekday samples spread over 10 weeks. */
+const SCORECARD_TREND_N = {daily:10, weekly:8, monthly:4};
+const SCORECARD_METRIC_DEFS = {
+  tonase:        {label:'Tonase (ton)',         calc: rows=> aggMetric(rows,'TONASE')},
+  trips:         {label:'Jumlah Trip',           calc: rows=> rows.length},
+  truckUnik:     {label:'Truk Unik',             calc: rows=> new Set(rows.map(r=>r.NOPOL)).size},
+  ritase:        {label:'Ritase (trip/truk)',    calc: rows=>{ const t=new Set(rows.map(r=>r.NOPOL)).size; return t>0 ? round2(rows.length/t) : 0; }},
+  avgTonPerTrip: {label:'Ton/Trip',              calc: rows=> rows.length>0 ? round2(aggMetric(rows,'TONASE')/rows.length) : 0},
+  avgWaiting:    {label:'Avg Waiting (jam)',     calc: rows=> aggMetric(rows,'WAITING')},
+  avgDwell:      {label:'Avg Dwell (jam)',       calc: rows=> aggMetric(rows,'DWELL')},
+};
+/* [from,to] for the period `offset` steps back from the one containing refDate (offset=0 -> current
+   period, offset=1 -> one back, ...). Same boundary conventions as scorecardPeriodRange() (weekly =
+   Monday-start, monthly = calendar month) but steps consecutively rather than jumping to a matching
+   weekday - built specifically for this trailing-series use case. */
+function scorecardPeriodAt(gran, refDate, offset){
+  if(gran==='weekly'){
+    const dayNum = (refDate.getDay()+6)%7;
+    const curMon = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate()-dayNum);
+    const mon = new Date(curMon.getFullYear(), curMon.getMonth(), curMon.getDate()-7*offset);
+    const sun = new Date(mon.getFullYear(), mon.getMonth(), mon.getDate()+6);
+    return {from:mon, to:sun};
+  }
+  if(gran==='monthly'){
+    const d = new Date(refDate.getFullYear(), refDate.getMonth()-offset, 1);
+    return {from:new Date(d.getFullYear(), d.getMonth(), 1), to:new Date(d.getFullYear(), d.getMonth()+1, 0)};
+  }
+  const day = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate()-offset);
+  return {from:day, to:day};
+}
+function scorecardPeriodLabel(gran, period){
+  if(gran==='monthly') return monthKey(period.from);
+  if(gran==='weekly') return fmtDate(period.from).slice(5)+'–'+fmtDate(period.to).slice(5);
+  return fmtDate(period.from).slice(5);
+}
+function computeScorecardTrend(exp, metricKey){
+  const gran = state.scorecardGran;
+  const n = SCORECARD_TREND_N[gran] || 10;
+  const refMs = RE.length ? Math.max(...RE.filter(r=>r._d).map(r=> r._d.getTime?r._d.getTime():r._d)) : null;
+  if(refMs==null) return [];
+  const refDate = new Date(refMs);
+  const activeF = scorecardActiveFilter(getFilterState());
+  const points = [];
+  for(let offset=n-1; offset>=0; offset--){
+    const period = scorecardPeriodAt(gran, refDate, offset);
+    const pf = Object.assign({}, activeF, {from:period.from, to:period.to});
+    let rows = filteredRE(pf);
+    if(state.scorecardApplyFilter) rows = applyRowFocus(rows);
+    rows = rows.filter(r=> normVal(r.EXPEDITUR_NAMA)===exp);
+    let value;
+    if(metricKey==='achiev'){
+      const tonase = aggMetric(rows, 'TONASE');
+      const t = targetForExpediturScorecard(rows, pf, exp);
+      value = (t.mtd!=null && t.foundAny && t.mtd>0) ? round2(tonase/t.mtd*100) : null;
+    } else {
+      value = SCORECARD_METRIC_DEFS[metricKey].calc(rows);
+    }
+    points.push({label: scorecardPeriodLabel(gran, period), value});
+  }
+  return points;
+}
+let scorecardTrendChartInstance = null;
+function openScorecardTrend(exp, metricKey){
+  const gran = state.scorecardGran;
+  const n = SCORECARD_TREND_N[gran] || 10;
+  const metricLabel = metricKey==='achiev' ? '%Achievement' : SCORECARD_METRIC_DEFS[metricKey].label;
+  const granLabel = ({daily:'Harian - 10 hari terakhir', weekly:'Mingguan - 8 minggu terakhir', monthly:'Bulanan - 4 bulan terakhir'})[gran];
+  const points = computeScorecardTrend(exp, metricKey);
+  document.getElementById('scorecardTrendTitle').textContent = `${metricLabel} — ${exp} (${granLabel})`;
+  document.getElementById('scorecardTrendOverlay').style.display = '';
+  const ctx = document.getElementById('scorecardTrendChart').getContext('2d');
+  if(scorecardTrendChartInstance) scorecardTrendChartInstance.destroy();
+  scorecardTrendChartInstance = new Chart(ctx, {
+    type: 'line',
+    data: { labels: points.map(p=>p.label), datasets: [{
+      label: metricLabel, data: points.map(p=>p.value),
+      borderColor:'#1F5FA8', backgroundColor:'#1F5FA8', borderWidth:2.5, pointRadius:3, tension:0.25, fill:false,
+    }]},
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{ legend:{display:false}, tooltip:{ callbacks:{ label:(c)=> metricKey==='achiev' ? `${c.formattedValue}%` : `${metricLabel}: ${Number(c.raw).toLocaleString('id-ID')}` } } },
+      scales:{ x:{ticks:{color:'#6B6B6B', font:{size:10}}, grid:{display:false}}, y:{ticks:{color:'#6B6B6B'}, grid:{color:'#F0F0F0'}} },
+    }
+  });
+}
+function closeScorecardTrend(){ document.getElementById('scorecardTrendOverlay').style.display = 'none'; }
+
 function renderScorecard(){
   const granRow = document.getElementById('scorecardGranRow');
   granRow.innerHTML = '';
@@ -4895,28 +5001,42 @@ function renderScorecard(){
     if(deltaPct!=null) return `<span style="color:${deltaPct>=0 ? '#2E9E4B' : '#E2211D'};font-weight:600;">${deltaPct>=0?'▲':'▼'} ${Math.abs(deltaPct).toFixed(1)}%</span>`;
     return prevVal===0 ? '<span style="color:var(--sub);">baru</span>' : 'N/A';
   }
+  // ADDED 2026-08-27 per Rendy: any of these 8 "primary metric" cells (not the Target/Δ meta-columns
+  // derived from them) opens a trailing-trend popup for that exact metric + transporter - see
+  // openScorecardTrend(). data-metric/data-exp instead of inline onclick string interpolation so an
+  // Ekspeditur name containing a quote/apostrophe can never break the attribute.
+  function clickableTd(exp, metricKey, html){
+    return `<td class="lvl-leaf" style="cursor:pointer;" data-metric="${metricKey}" data-exp="${escapeAttr(exp)}" title="Klik untuk lihat tren">${html}</td>`;
+  }
   curMetrics.forEach(m=>{
     const tr = document.createElement('tr');
     const achievCell = m.achiev!=null ? `<span style="color:${pctColor(m.achiev)};font-weight:700;">${m.achiev.toFixed(1)}%</span>` : 'N/A';
     tr.innerHTML = `<td style="text-align:left;">${m.exp}</td>`
-      + `<td>${fmtNum(m.tonase)}</td>`
+      + clickableTd(m.exp, 'tonase', fmtNum(m.tonase))
       + `<td>${m.target!=null?fmtNum(m.target):'N/A'}</td>`
-      + `<td>${achievCell}</td>`
+      + clickableTd(m.exp, 'achiev', achievCell)
       + `<td>${deltaCellFor(m.deltaPct, m.prevTonase)}</td>`
-      + `<td>${m.trips.toLocaleString('id-ID')}</td>`
+      + clickableTd(m.exp, 'trips', m.trips.toLocaleString('id-ID'))
       + `<td>${deltaCellFor(m.deltaTripsPct, m.prevTrips)}</td>`
-      + `<td>${m.truckUnik.toLocaleString('id-ID')}</td>`
+      + clickableTd(m.exp, 'truckUnik', m.truckUnik.toLocaleString('id-ID'))
       + `<td>${deltaCellFor(m.deltaTruckUnikPct, m.prevTruckUnik)}</td>`
-      + `<td>${m.ritase.toFixed(2)}x</td>`
-      + `<td>${m.avgTonPerTrip!=null?fmtNum(m.avgTonPerTrip):'-'}</td>`
-      + `<td>${m.avgWaiting!=null?m.avgWaiting.toFixed(1):'-'}</td>`
-      + `<td>${m.avgDwell!=null?m.avgDwell.toFixed(1):'-'}</td>`;
+      + clickableTd(m.exp, 'ritase', m.ritase.toFixed(2)+'x')
+      + clickableTd(m.exp, 'avgTonPerTrip', m.avgTonPerTrip!=null?fmtNum(m.avgTonPerTrip):'-')
+      + clickableTd(m.exp, 'avgWaiting', m.avgWaiting!=null?m.avgWaiting.toFixed(1):'-')
+      + clickableTd(m.exp, 'avgDwell', m.avgDwell!=null?m.avgDwell.toFixed(1):'-');
     tbody.appendChild(tr);
   });
 
   table.innerHTML = '';
   table.appendChild(thead);
   table.appendChild(tbody);
+  // Delegated single listener (re-attached each render since tbody is replaced above) instead of
+  // per-cell onclick handlers.
+  tbody.addEventListener('click', (e)=>{
+    const td = e.target.closest('td[data-metric]');
+    if(!td) return;
+    openScorecardTrend(td.dataset.exp, td.dataset.metric);
+  });
 }
 
 /* ================= RENDER ALL ================= */
