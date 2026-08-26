@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.08.27.08';
+window.APP_VERSION = 'build.2026.08.27.09';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -1991,6 +1991,9 @@ const state = {
   // state.gran, since Rendy wants to flip between Harian/Mingguan/Bulanan comparisons here without
   // disturbing whatever the Tren chart above is currently showing.
   scorecardGran: 'daily',
+  // ADDED 2026-08-27: whether the Scorecard respects the main filter bar's active checklist
+  // restrictions or always shows company-wide data regardless - see scorecardActiveFilter().
+  scorecardApplyFilter: true,
 };
 DIMENSIONS.forEach(d=> state[d.key] = new Set());
 
@@ -4652,7 +4655,13 @@ function renderFleetTable(){
    state.scorecardGran). "Periode berjalan" always anchors on the latest actual data date in the
    currently loaded database (same convention as Armada REVIEW 2's refMs), not the real calendar
    date, so this keeps working sensibly if live data lags - and "periode sebelumnya" is the
-   immediately preceding day/ISO-week/month of the same length, not an arbitrary comparison window. */
+   immediately preceding day/ISO-week/month of the same length, not an arbitrary comparison window.
+   CHANGED 2026-08-27 per Rendy: Daily's "previous period" is the SAME weekday one week back (Senin
+   vs Senin, Minggu vs Minggu), not literally yesterday - logistics volume has a strong day-of-week
+   pattern (weekend/Sunday dispatch is genuinely different from a weekday), so comparing e.g. a
+   Monday against the Sunday right before it would misread a normal weekly rhythm as a decline.
+   Weekly/Monthly are unaffected - a week-over-week or month-over-month comparison already carries
+   the same day-of-week mix on both sides, so there's no equivalent distortion to correct there. */
 const SCORECARD_GRAN_OPTIONS = [
   {key:'daily', label:'Harian'},
   {key:'weekly', label:'Mingguan'},
@@ -4679,9 +4688,9 @@ function scorecardPeriodRange(gran, refDate){
     const prev = {from:new Date(py,pm,1), to:new Date(py,pm+1,0)};
     return {cur, prev};
   }
-  // daily (default)
+  // daily (default) - "previous" = same weekday, 7 days back (see comment above)
   const day = new Date(refDate.getFullYear(), refDate.getMonth(), refDate.getDate());
-  const prevDay = new Date(day.getFullYear(), day.getMonth(), day.getDate()-1);
+  const prevDay = new Date(day.getFullYear(), day.getMonth(), day.getDate()-7);
   return {cur:{from:day, to:day}, prev:{from:prevDay, to:prevDay}};
 }
 
@@ -4693,7 +4702,11 @@ function scorecardPeriodRange(gran, refDate){
    Distributor active as a drilldown level in the Summary table) silently blank out every target
    here too. Only isRestricted('distributor') still applies - target genuinely has no such dimension. */
 function targetForExpediturScorecard(rowsInGroup, periodF, expName){
-  if(isRestricted('distributor')) return {full:null, mtd:null, foundAny:false};
+  // Checks periodF's OWN distributor set (not the global isRestricted('distributor')) so this
+  // correctly goes back to "not restricted" when the Scorecard's "Terapkan Filter Aktif" toggle is
+  // OFF and periodF.distributor has been rebuilt to the full ALLV.distributor set - see
+  // scorecardActiveFilter() below.
+  if(periodF.distributor && ALLV.distributor && periodF.distributor.size < ALLV.distributor.length) return {full:null, mtd:null, foundAny:false};
   const monthsSeen = new Set();
   rowsInGroup.forEach(r=>{ if(r._d) monthsSeen.add(`${r._d.getFullYear()}|${r._d.getMonth()+1}|${r.NAMA_PROPINSI}`); });
   let full=0, mtd=0, foundAny=false;
@@ -4705,9 +4718,26 @@ function targetForExpediturScorecard(rowsInGroup, periodF, expName){
   return {full, mtd: round2(mtd), foundAny};
 }
 
+/* ADDED 2026-08-27 per Rendy ("toggle to apply filter or not in the scorecard"): the Scorecard can
+   either respect the main filter bar's active checklist restrictions (Provinsi/Distrik/Distributor/
+   Expeditur/Source/Incoterm) like every other panel, or ignore them entirely and always show the
+   company-wide picture regardless of what's currently narrowed elsewhere on the page - useful since
+   Rendy may have a Provinsi/Source filter active for the main chart/table while still wanting the
+   Scorecard's decline diagnosis to cover everything. Rebuilds each DIMENSIONS[].key's Set to the full
+   ALLV[key] list when off; row-focus (state.rowFocus, from clicking a summary-table row) is treated
+   as part of "active filters" too and skipped the same way. Date bounds (period.from/to) are NOT
+   affected either way - the Scorecard always uses its own cur/prev period, never the main date filter. */
+function scorecardActiveFilter(baseF){
+  if(state.scorecardApplyFilter) return baseF;
+  const f = Object.assign({}, baseF);
+  DIMENSIONS.forEach(d=>{ f[d.key] = new Set(ALLV[d.key] || []); });
+  return f;
+}
 function scorecardRowsForPeriod(baseF, period){
-  const pf = Object.assign({}, baseF, {from:period.from, to:period.to});
-  return applyRowFocus(filteredRE(pf));
+  const f = scorecardActiveFilter(baseF);
+  const pf = Object.assign({}, f, {from:period.from, to:period.to});
+  const rows = filteredRE(pf);
+  return state.scorecardApplyFilter ? applyRowFocus(rows) : rows;
 }
 
 function computeScorecardMetrics(rows, periodF){
@@ -4799,6 +4829,14 @@ function renderScorecard(){
     b.onclick = ()=> setScorecardGran(opt.key);
     granRow.appendChild(b);
   });
+  const filterToggleBtn = document.createElement('button');
+  filterToggleBtn.type = 'button';
+  filterToggleBtn.className = 'pill' + (state.scorecardApplyFilter ? ' active' : '');
+  filterToggleBtn.style.marginLeft = '10px';
+  filterToggleBtn.textContent = state.scorecardApplyFilter ? '🔒 Terapkan Filter Aktif' : '🌐 Semua Data (Filter Diabaikan)';
+  filterToggleBtn.title = 'Nyala: Scorecard ikut filter Provinsi/Distrik/Distributor/Expeditur/Source/Incoterm yang aktif di atas. Mati: Scorecard selalu tampilkan seluruh data, apa pun filter yang aktif.';
+  filterToggleBtn.onclick = ()=>{ state.scorecardApplyFilter = !state.scorecardApplyFilter; renderScorecard(); };
+  granRow.appendChild(filterToggleBtn);
 
   const f = getFilterState();
   const refMs = RE.length ? Math.max(...RE.filter(r=>r._d).map(r=> r._d.getTime?r._d.getTime():r._d)) : null;
@@ -4814,16 +4852,23 @@ function renderScorecard(){
   const prevLabel = prev.from.getTime()===prev.to.getTime() ? fmtDate(prev.from) : `${fmtDate(prev.from)} s/d ${fmtDate(prev.to)}`;
   periodLabel.textContent = `Periode berjalan: ${curLabel}  ·  Periode sebelumnya: ${prevLabel}  (anchor = tanggal data terakhir yang tersedia)`;
 
+  const activeF = scorecardActiveFilter(f);
   const curRows = scorecardRowsForPeriod(f, cur);
   const prevRows = scorecardRowsForPeriod(f, prev);
   renderDecompBanner(curRows, prevRows);
-  const curMetrics = computeScorecardMetrics(curRows, Object.assign({}, f, cur));
-  const prevByExp = new Map(computeScorecardMetrics(prevRows, Object.assign({}, f, prev)).map(m=>[m.exp, m]));
+  const curMetrics = computeScorecardMetrics(curRows, Object.assign({}, activeF, cur));
+  const prevByExp = new Map(computeScorecardMetrics(prevRows, Object.assign({}, activeF, prev)).map(m=>[m.exp, m]));
 
+  // ADDED 2026-08-27 per Rendy: Trip and Truck Unik now get their own vs-periode-lalu delta too,
+  // same pctChange() used by the decomposition banner above - not just Tonase.
   curMetrics.forEach(m=>{
     const p = prevByExp.get(m.exp);
     m.prevTonase = p ? p.tonase : null;
     m.deltaPct = (p && p.tonase>0) ? round2((m.tonase - p.tonase)/p.tonase*100) : null;
+    m.prevTrips = p ? p.trips : null;
+    m.deltaTripsPct = pctChange(m.trips, m.prevTrips);
+    m.prevTruckUnik = p ? p.truckUnik : null;
+    m.deltaTruckUnikPct = pctChange(m.truckUnik, m.prevTruckUnik);
   });
   // sort: worst %Achievement first (nulls - no target data - sink to the bottom, not the top,
   // so a transporter with no target coverage doesn't visually masquerade as "worst performer")
@@ -4834,7 +4879,7 @@ function renderScorecard(){
     return a.achiev - b.achiev;
   });
 
-  const cols = ['Ekspeditur','Tonase (ton)','Target (ton)','%Achievement','Δ Tonase vs Periode Lalu','Truk Unik','Ritase','Ton/Trip','Avg Waiting (jam)','Avg Dwell (jam)'];
+  const cols = ['Ekspeditur','Tonase (ton)','Target (ton)','%Achievement','Δ Tonase','Jml Trip','Δ Trip','Truk Unik','Δ Truk Unik','Ritase','Ton/Trip','Avg Waiting (jam)','Avg Dwell (jam)'];
   const thead = document.createElement('thead');
   const trh = document.createElement('tr');
   cols.forEach((c,i)=>{ const th=document.createElement('th'); th.textContent=c; if(i===0) th.style.textAlign='left'; trh.appendChild(th); });
@@ -4846,18 +4891,22 @@ function renderScorecard(){
     tr.innerHTML = `<td colspan="${cols.length}" style="text-align:center;color:var(--sub);">Tidak ada data pada periode ini.</td>`;
     tbody.appendChild(tr);
   }
+  function deltaCellFor(deltaPct, prevVal){
+    if(deltaPct!=null) return `<span style="color:${deltaPct>=0 ? '#2E9E4B' : '#E2211D'};font-weight:600;">${deltaPct>=0?'▲':'▼'} ${Math.abs(deltaPct).toFixed(1)}%</span>`;
+    return prevVal===0 ? '<span style="color:var(--sub);">baru</span>' : 'N/A';
+  }
   curMetrics.forEach(m=>{
     const tr = document.createElement('tr');
     const achievCell = m.achiev!=null ? `<span style="color:${pctColor(m.achiev)};font-weight:700;">${m.achiev.toFixed(1)}%</span>` : 'N/A';
-    const deltaCell = m.deltaPct!=null
-      ? `<span style="color:${m.deltaPct>=0 ? '#2E9E4B' : '#E2211D'};font-weight:600;">${m.deltaPct>=0?'▲':'▼'} ${Math.abs(m.deltaPct).toFixed(1)}%</span>`
-      : (m.prevTonase===0 ? '<span style="color:var(--sub);">baru</span>' : 'N/A');
     tr.innerHTML = `<td style="text-align:left;">${m.exp}</td>`
       + `<td>${fmtNum(m.tonase)}</td>`
       + `<td>${m.target!=null?fmtNum(m.target):'N/A'}</td>`
       + `<td>${achievCell}</td>`
-      + `<td>${deltaCell}</td>`
+      + `<td>${deltaCellFor(m.deltaPct, m.prevTonase)}</td>`
+      + `<td>${m.trips.toLocaleString('id-ID')}</td>`
+      + `<td>${deltaCellFor(m.deltaTripsPct, m.prevTrips)}</td>`
       + `<td>${m.truckUnik.toLocaleString('id-ID')}</td>`
+      + `<td>${deltaCellFor(m.deltaTruckUnikPct, m.prevTruckUnik)}</td>`
       + `<td>${m.ritase.toFixed(2)}x</td>`
       + `<td>${m.avgTonPerTrip!=null?fmtNum(m.avgTonPerTrip):'-'}</td>`
       + `<td>${m.avgWaiting!=null?m.avgWaiting.toFixed(1):'-'}</td>`
