@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.08.29.07';
+window.APP_VERSION = 'build.2026.08.29.08';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -457,6 +457,8 @@ window.addEventListener('error', function(e){
       <!-- ADDED 2026-08-08 per Rendy: hidden unless gran==='hourly' (see renderHourlyControls) -->
       <div class="pillrow" id="hourlyAggRow" style="display:none;"></div>
       <div class="pillrow" id="hourlyDowRow" style="display:none;"></div>
+      <!-- ADDED 2026-08-29 per Rendy: hidden unless value==='TRUCK_COMPARE' (see renderTruckCompareUnitToggle) -->
+      <div class="pillrow" id="truckCompareUnitRow" style="display:none;"></div>
       <div id="rowFocusBanner" class="rowfocus-banner" style="display:none;"></div>
       <div class="chart-body">
         <div class="value-list" id="valueList"></div>
@@ -2010,6 +2012,11 @@ const state = {
   // data date - see scorecardRefDate(). Dimension filters (Provinsi/Distrik/dst.) are NOT gated by
   // this - they always apply automatically now, same as every other panel.
   scorecardFollowDateFilter: true,
+  // ADDED 2026-08-29 per Rendy ("saya ingin truk masuk dan keluar bisa ditampilkan dalam jumlah
+  // truk dan jumlah tonase"): unit toggle for the "Juml. Truk (Masuk vs Keluar)" comparison chart
+  // only - lets the two bars show either unique-truck count (original behavior) or summed Tonase
+  // for the same masuk/keluar-scoped rows. See computeTruckCompareSeries()/renderTruckCompareChart().
+  truckCompareUnit: 'TRUCK',
 };
 DIMENSIONS.forEach(d=> state[d.key] = new Set());
 
@@ -3273,8 +3280,14 @@ function avgOf(arr){
    and 04-08, counted once vs twice). This does NOT touch the KPI card / summary table "Truk Unik"
    column - that stays the plain whole-range dedup count Rendy confirmed should be left alone. */
 function hourlyDayFieldFor(value){ return value==='TRUCK_MASUK' ? '_dMasuk' : '_dKeluar'; }
-function hourlyStatValue(rows, metric, statType){
+function hourlyStatValue(rows, metric, statType, aggMetricOverride){
   if(!rows || !rows.length) return null;
+  // aggMetricOverride (added 2026-08-29 for the Masuk/Keluar unit toggle): 'metric' still decides
+  // WHICH day-field (_dMasuk vs _dKeluar) buckets the rows by day - that's a masuk/keluar identity
+  // question, unrelated to which number gets summed per day. 'aggMetricOverride' decides the VALUE
+  // (e.g. 'TONASE' instead of the default 'TRUCK'/'TRUCK_MASUK'/'TRUCK_KELUAR' truck-count). Falls
+  // back to 'metric' itself so every pre-existing call site (which never passed a 4th arg) is
+  // unaffected.
   const dayField = hourlyDayFieldFor(metric);
   const byDay = new Map();
   rows.forEach(r=>{
@@ -3283,7 +3296,8 @@ function hourlyStatValue(rows, metric, statType){
     if(!byDay.has(dk)) byDay.set(dk, []);
     byDay.get(dk).push(r);
   });
-  const perDayVals = [...byDay.values()].map(drows=>aggMetric(drows, metric)).filter(v=>v!=null && !isNaN(v));
+  const valueMetric = aggMetricOverride || metric;
+  const perDayVals = [...byDay.values()].map(drows=>aggMetric(drows, valueMetric)).filter(v=>v!=null && !isNaN(v));
   if(!perDayVals.length) return null;
   if(statType==='avg') return round2(perDayVals.reduce((a,b)=>a+b,0)/perDayVals.length);
   if(statType==='min') return Math.min(...perDayVals);
@@ -3398,9 +3412,34 @@ function buildDayOfWeekDropdown(){
   return {wrap, refreshBtn};
 }
 
+/* ADDED 2026-08-29 per Rendy ("saya ingin truk masuk dan keluar bisa ditampilkan dalam jumlah
+   truk dan jumlah tonase") - unit toggle for the "Juml. Truk (Masuk vs Keluar)" comparison chart
+   only, shown/hidden the same way renderHourlyControls() shows/hides its own row: called
+   unconditionally at the top of every renderChart() pass, no-ops (hides) unless the active chart
+   value is TRUCK_COMPARE. See state.truckCompareUnit / computeTruckCompareSeries(). */
+function renderTruckCompareUnitToggle(f){
+  const el = document.getElementById('truckCompareUnitRow');
+  if(!el) return;
+  const show = f.value==='TRUCK_COMPARE';
+  el.style.display = show ? 'flex' : 'none';
+  if(!show) return;
+  el.innerHTML = '<span style="font-size:11px;color:var(--sub);align-self:center;margin-right:2px;">Tampilkan sebagai:</span>';
+  const UNIT_LABELS = {TRUCK:'🚚 Jumlah Truk', TONASE:'⚖️ Jumlah Tonase'};
+  Object.keys(UNIT_LABELS).forEach(k=>{
+    const b = document.createElement('button'); b.type='button';
+    b.className = 'pill' + (state.truckCompareUnit===k ? ' active' : '');
+    b.textContent = UNIT_LABELS[k];
+    b.title = k==='TRUCK'
+      ? 'Jumlah truk unik (NOPOL berbeda) pada rentang tanggal Masuk/Keluar masing-masing'
+      : 'Total Tonase pada baris-baris yang termasuk periode Masuk/Keluar masing-masing (bukan dedup per truk)';
+    b.addEventListener('click', ()=>{ state.truckCompareUnit = k; renderChart(); });
+    el.appendChild(b);
+  });
+}
 function renderChart(){
   const f = getFilterState();
   renderHourlyControls(f);
+  renderTruckCompareUnitToggle(f);
   const focusBanner = document.getElementById('rowFocusBanner');
   if(state.rowFocus.length){
     focusBanner.style.display = 'flex';
@@ -3626,21 +3665,35 @@ function computeTruckCompareSeries(f){
   });
   let bucketKeys = [...new Set([...perMetric.TRUCK_MASUK.keys(), ...perMetric.TRUCK_KELUAR.keys()])].sort();
   if(f.gran==='daily') bucketKeys = fillDailyBucketKeys(bucketKeys, f);
+  // ADDED 2026-08-29 per Rendy ("truk masuk dan keluar bisa ditampilkan dalam jumlah truk dan
+  // jumlah tonase") - unit toggle, state.truckCompareUnit. 'TRUCK' (default) keeps the original
+  // unique-NOPOL count; 'TONASE' sums TONASE across the SAME masuk/keluar-scoped rows (each side
+  // already bounded by its own TGL_MASUK/TGL_KELUAR date field via filteredRE() above, so the two
+  // bars stay independently meaningful, same as the truck-count version). Passed as the 4th
+  // (aggMetricOverride) arg to hourlyStatValue so day-of-week bucketing still keys off the correct
+  // _dMasuk/_dKeluar field via the unchanged 'TRUCK_MASUK'/'TRUCK_KELUAR' 2nd arg.
+  const valueMetric = state.truckCompareUnit==='TONASE' ? 'TONASE' : 'TRUCK';
   const masukData = bucketKeys.map(bk=>{
     const rows = perMetric.TRUCK_MASUK.get(bk) || [];
-    return f.gran==='hourly' ? hourlyStatValue(rows, 'TRUCK_MASUK', state.chartAggType) : aggMetric(rows, 'TRUCK');
+    return f.gran==='hourly' ? hourlyStatValue(rows, 'TRUCK_MASUK', state.chartAggType, valueMetric) : aggMetric(rows, valueMetric);
   });
   const keluarData = bucketKeys.map(bk=>{
     const rows = perMetric.TRUCK_KELUAR.get(bk) || [];
-    return f.gran==='hourly' ? hourlyStatValue(rows, 'TRUCK_KELUAR', state.chartAggType) : aggMetric(rows, 'TRUCK');
+    return f.gran==='hourly' ? hourlyStatValue(rows, 'TRUCK_KELUAR', state.chartAggType, valueMetric) : aggMetric(rows, valueMetric);
   });
   return {bucketKeys, masukData, keluarData};
 }
 function renderTruckCompareChart(f){
   const {bucketKeys, masukData, keluarData} = computeTruckCompareSeries(f);
   const labels = bucketKeys.map(bk=>chartLabel(bk, f.gran));
+  // ADDED 2026-08-29: title/tooltip unit label follows state.truckCompareUnit (see
+  // computeTruckCompareSeries()'s comment above) so "Jumlah Truk" mode still reads as truck counts
+  // and "Jumlah Tonase" mode reads as tons, without duplicating the chart function per unit.
+  const isTonaseUnit = state.truckCompareUnit==='TONASE';
+  const unitTitle = isTonaseUnit ? 'Jumlah Tonase (Masuk vs Keluar)' : VALUE_LABELS.TRUCK_COMPARE;
+  const unitSuffix = isTonaseUnit ? ' ton' : '';
   document.getElementById('chartTitle').textContent =
-    `${VALUE_LABELS.TRUCK_COMPARE} — ${({hourly:'Per Jam',daily:'Harian',weekly:'Mingguan (mulai Senin)',monthly:'Bulanan',quarterly:'Kuartalan'})[f.gran]}${f.gran==='hourly' ? ' ('+CHART_AGG_LABELS[state.chartAggType]+')' : ''}`;
+    `${unitTitle} — ${({hourly:'Per Jam',daily:'Harian',weekly:'Mingguan (mulai Senin)',monthly:'Bulanan',quarterly:'Kuartalan'})[f.gran]}${f.gran==='hourly' ? ' ('+CHART_AGG_LABELS[state.chartAggType]+')' : ''}`;
   const avgMasuk = avgOf(masukData);
   const avgKeluar = avgOf(keluarData);
   if(chartInstance) chartInstance.destroy();
@@ -3674,6 +3727,9 @@ function renderTruckCompareChart(f){
             if(f.gran==='daily') return dayRangeLabel(bk);
             return items[0].label;
           },
+          // ADDED 2026-08-29: value suffix follows the active unit ("ton" only in Tonase mode -
+          // truck-count mode stays a bare number, matching every other truck-count display in the app).
+          label:(c)=> `${c.dataset.label}: ${Number(c.raw).toLocaleString('id-ID')}${unitSuffix}`,
         }},
         valueLabels:{enabled: !!state.showValueLabels},
       },
