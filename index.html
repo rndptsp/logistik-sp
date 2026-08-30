@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.08.30.21';
+window.APP_VERSION = 'build.2026.08.31.22';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -413,6 +413,10 @@ window.addEventListener('error', function(e){
   <div class="fgroup" style="min-width:320px;">
     <label>Rentang Tanggal</label>
     <div class="pillrow" id="datePresets"></div>
+    <!-- ADDED 2026-08-31 per Rendy: quick-pick checklist dropdowns (Bulan/Minggu/Tahun set the
+         Rentang Tanggal above like a preset; Nama Hari is a real AND filter - see applyDateShortcut()
+         and createDayNameFilter() -->
+    <div class="pillrow" id="dateQuickFilters" style="margin-top:6px;"></div>
     <div style="display:flex;gap:6px;align-items:center;margin-top:4px;position:relative;">
       <input type="date" id="fDateFrom" style="flex:1;">
       <span style="color:var(--sub);">s/d</span>
@@ -1744,6 +1748,18 @@ function isoWeekMonday(d){
   const week = 1 + Math.round(((dt - firstThursday) / 86400000 - 3 + ((firstThursday.getUTCDay()+6)%7)) / 7);
   return `${dt.getUTCFullYear()}-W${String(week).padStart(2,'0')}`;
 }
+/* ADDED 2026-08-31 for the Week Number quick-pick filter - the inverse of isoWeekMonday() above:
+   given an ISO year + ISO week number, returns [monday, sunday] as LOCAL Date objects (standard
+   ISO 8601 rule: week 1 is the week containing that year's first Thursday). Local dates on purpose,
+   matching every other date built in this file (see the WIB/UTC-offset traps documented just below). */
+function isoWeekToDateRange(isoYear, isoWeek){
+  const jan4 = new Date(isoYear, 0, 4);
+  const jan4Dow = (jan4.getDay()+6)%7; // Monday=0..Sunday=6
+  const week1Monday = new Date(isoYear, 0, 4 - jan4Dow);
+  const monday = new Date(week1Monday.getFullYear(), week1Monday.getMonth(), week1Monday.getDate() + (isoWeek-1)*7);
+  const sunday = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate()+6);
+  return [monday, sunday];
+}
 /* NOTE: deliberately NOT using toISOString() here — that converts to UTC first, and in a
    UTC+7 (WIB) browser, local midnight becomes 17:00 the previous day in UTC, silently shifting
    every date-only comparison back by one day (confirmed: dropped the most recent day's rows
@@ -2017,6 +2033,27 @@ const state = {
   // only - lets the two bars show either unique-truck count (original behavior) or summed Tonase
   // for the same masuk/keluar-scoped rows. See computeTruckCompareSeries()/renderTruckCompareChart().
   truckCompareUnit: 'TRUCK',
+  // ADDED 2026-08-31 per Rendy ("quick pick lewat model dropdown checklist...untuk pilihan month,
+  // weeknum, year, and dayname"). Two different kinds of filter, confirmed with Rendy before
+  // building (this replaces the old Tahun/Bulan checklist model removed pre-2026-07-26, see
+  // createPivotFilter's stale comment about it):
+  //  - filterYear/filterMonth/filterWeek are SHORTCUTS, not persistent membership filters - ticking
+  //    boxes here recomputes and overwrites fDateFrom/fDateTo (see applyDateShortcut()), exactly
+  //    like clicking "This Month"/"Last 7 Days" already does. They do NOT feed matchRow() directly.
+  //    Empty Set = nothing picked yet (no-op). Combine via min(all starts)/max(all ends) across
+  //    every ticked combination, so e.g. Month={Juli,Agustus} spans 1 Jul - 31 Agu in one range.
+  //  - filterWeek deliberately does NOT require filterYear to be set first ("independen dari
+  //    tahun" per Rendy) - defaults to every year currently loaded in RE when filterYear is empty.
+  //    NOTE: with more than one year of data loaded this can span the full gap between the
+  //    earliest and latest matching week (a real limitation of the shortcut/single-range model
+  //    Rendy chose over a true cross-year membership filter) - fine today since RE is 2026-only.
+  //  - filterDayName is different in kind: a genuine AND/membership filter (like the existing
+  //    hourlyDow, but global instead of hourly-chart-only) - default all 7 days selected = no
+  //    restriction. Applied directly in matchRow()/matchRowLM(), same tier as provinsi/distrik/etc.
+  filterYear: new Set(),
+  filterMonth: new Set(),
+  filterWeek: new Set(),
+  filterDayName: new Set([0,1,2,3,4,5,6]),
 };
 DIMENSIONS.forEach(d=> state[d.key] = new Set());
 
@@ -2154,6 +2191,188 @@ function createPivotFilter(mount, key, label, values, levelField){
   mount.appendChild(wrap);
 }
 
+/* ================= DATE QUICK-PICK CHECKLISTS (Bulan/Minggu/Tahun/Nama Hari) =================
+   ADDED 2026-08-31 per Rendy. Reuses createPivotFilter()'s exact DOM structure/CSS classes
+   (.pvwrap/.pvbtn/.pvlabel/.arrow/.pvpanel/.pvsearch/.pvactions/.pvlist/.pvitem) for visual
+   consistency with the Provinsi/Distrik/etc. checklists, but NOT the function itself - the
+   semantics are different enough (shortcut-that-sets-a-range for 3 of the 4, not membership
+   filtering) that forcing them through createPivotFilter would need more special-casing than
+   just writing a dedicated builder. See the state.filterYear/filterMonth/filterWeek/filterDayName
+   comment block for the confirmed (asked directly, not guessed) semantics. */
+function uniqueYearsInRE(){
+  return [...new Set(RE.filter(r=>r._d).map(r=>r._d.getFullYear()))].sort((a,b)=>a-b);
+}
+function uniqueISOWeeksInRE(){
+  const weeks = new Set();
+  RE.forEach(r=>{ if(r._d) weeks.add(parseInt(isoWeekMonday(r._d).split('-W')[1],10)); });
+  return [...weeks].sort((a,b)=>a-b);
+}
+/* Recomputes fDateFrom/fDateTo from whatever's currently ticked across filterYear/filterMonth/
+   filterWeek and fires the normal date-change pipeline - exactly like clicking a preset pill
+   (renderDatePresets()), just built from checkboxes instead of a single fixed [from,to] fn().
+   Combines every ticked box via min(all starts)/max(all ends) so multiple selections still
+   collapse to one contiguous range (e.g. Month={Juli,Agustus} -> 1 Jul..31 Agu). No-ops (leaves
+   the current range untouched) if all three are empty - these are shortcuts, not filters that
+   need an "off" state of their own. */
+function applyDateShortcut(){
+  const years = state.filterYear.size ? [...state.filterYear] : uniqueYearsInRE();
+  if(!years.length) return;
+  let starts = [], ends = [];
+  if(state.filterMonth.size){
+    years.forEach(y=> state.filterMonth.forEach(m=>{
+      starts.push(new Date(y, m-1, 1));
+      ends.push(new Date(y, m, 0)); // day 0 of next month = last day of month m
+    }));
+  }
+  if(state.filterWeek.size){
+    years.forEach(y=> state.filterWeek.forEach(w=>{
+      const [mon, sun] = isoWeekToDateRange(y, w);
+      starts.push(mon); ends.push(sun);
+    }));
+  }
+  if(!state.filterMonth.size && !state.filterWeek.size && state.filterYear.size){
+    years.forEach(y=>{ starts.push(new Date(y,0,1)); ends.push(new Date(y,11,31)); });
+  }
+  if(!starts.length) return; // nothing ticked at all - leave the current range alone
+  const from = new Date(Math.min(...starts));
+  const to = new Date(Math.max(...ends));
+  document.getElementById('fDateFrom').value = fmtDate(from);
+  document.getElementById('fDateTo').value = fmtDate(to);
+  onDateFilterChange();
+}
+function createDateShortcutFilter(mount, key, label, values, formatFn){
+  const wrap = document.createElement('div'); wrap.className = 'pvwrap';
+  const btn = document.createElement('div'); btn.className='pvbtn';
+  const labelBtn = document.createElement('button'); labelBtn.type='button'; labelBtn.className='pvlabel';
+  const arrowBtn = document.createElement('button'); arrowBtn.type='button'; arrowBtn.className='arrow'; arrowBtn.textContent='▾';
+  btn.appendChild(labelBtn); btn.appendChild(arrowBtn);
+  const panel = document.createElement('div'); panel.className='pvpanel';
+  panel._btn = btn;
+  labelBtn.title = 'Centang untuk otomatis mengatur Rentang Tanggal di atas (bisa pilih lebih dari satu)';
+
+  function refreshBtn(){
+    const n = state[key].size;
+    labelBtn.textContent = `${label}${n ? ' ('+n+')' : ''}`;
+    btn.classList.toggle('filtered', n>0);
+  }
+  // Clicking the label itself (not the arrow) just opens/closes, same as the hourlyDow dropdown -
+  // there's no natural "select all" for a shortcut (ticking every month/week/year would just
+  // recreate All Time, which already has its own preset pill).
+  labelBtn.addEventListener('click', (e)=>{ e.stopPropagation(); togglePanel(); });
+
+  function buildPanel(filterText){
+    panel.innerHTML = '';
+    const search = document.createElement('input'); search.type='text'; search.className='pvsearch'; search.placeholder='Cari '+label+'...'; search.value = filterText||'';
+    search.addEventListener('input', ()=> buildPanel(search.value));
+    const actions = document.createElement('div'); actions.className='pvactions';
+    const clearBtn = document.createElement('button'); clearBtn.type='button'; clearBtn.textContent='Kosongkan';
+    clearBtn.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      state[key] = new Set(); refreshBtn(); buildPanel(search.value);
+      // Clearing doesn't itself change fDateFrom/fDateTo (see applyDateShortcut()'s no-op-when-
+      // empty guard) - it just stops THIS dimension from contributing next time something changes.
+    });
+    actions.appendChild(clearBtn);
+    const list = document.createElement('div'); list.className='pvlist';
+    values.filter(v=> String(formatFn?formatFn(v):v).toLowerCase().includes((filterText||'').toLowerCase())).forEach(v=>{
+      const row = document.createElement('label'); row.className='pvitem';
+      const cb = document.createElement('input'); cb.type='checkbox'; cb.checked = state[key].has(v);
+      cb.addEventListener('change', ()=>{
+        if(cb.checked) state[key].add(v); else state[key].delete(v);
+        refreshBtn();
+        applyDateShortcut();
+      });
+      row.appendChild(cb); row.appendChild(document.createTextNode(' '+(formatFn?formatFn(v):v)));
+      list.appendChild(row);
+    });
+    panel.appendChild(search); panel.appendChild(actions); panel.appendChild(list);
+  }
+  function togglePanel(){
+    if(openPanel===panel){ panel.classList.remove('open'); openPanel=null; return; }
+    if(openPanel) openPanel.classList.remove('open');
+    buildPanel('');
+    panel.classList.add('open'); openPanel = panel;
+  }
+  arrowBtn.addEventListener('click', (e)=>{ e.stopPropagation(); togglePanel(); });
+  refreshBtn();
+  wrap.appendChild(btn); wrap.appendChild(panel);
+  mount.appendChild(wrap);
+  return refreshBtn;
+}
+/* Nama Hari (DayName) is the odd one out - a genuine AND/membership filter (default: all 7 days
+   ticked = no restriction), same tier as provinsi/distrik/dst. in matchRow()/matchRowLM(), NOT a
+   date-range shortcut. Modeled on the existing hourlyDow dropdown (Pilih Semua/Kosongkan, never
+   allow zero days ticked) but global instead of hourly-chart-only, so it calls renderAll() (every
+   panel) instead of renderChart() (chart only). */
+function createDayNameFilter(mount){
+  const wrap = document.createElement('div'); wrap.className = 'pvwrap';
+  const btn = document.createElement('div'); btn.className='pvbtn';
+  const labelBtn = document.createElement('button'); labelBtn.type='button'; labelBtn.className='pvlabel';
+  const arrowBtn = document.createElement('button'); arrowBtn.type='button'; arrowBtn.className='arrow'; arrowBtn.textContent='▾';
+  btn.appendChild(labelBtn); btn.appendChild(arrowBtn);
+  const panel = document.createElement('div'); panel.className='pvpanel';
+  panel._btn = btn;
+  labelBtn.title = 'Filter baris berdasarkan nama hari (Senin/Selasa/dst.) - berlaku di seluruh dashboard, bukan cuma grafik Per Jam';
+
+  function refreshBtn(){
+    const restricted = state.filterDayName.size < 7;
+    labelBtn.textContent = `Nama Hari${restricted ? ' ('+state.filterDayName.size+'/7)' : ''}`;
+    btn.classList.toggle('filtered', restricted);
+  }
+  labelBtn.addEventListener('click', (e)=>{ e.stopPropagation(); togglePanel(); });
+
+  function buildPanel(){
+    panel.innerHTML = '';
+    const actions = document.createElement('div'); actions.className='pvactions';
+    const selAll = document.createElement('button'); selAll.type='button'; selAll.textContent='Pilih Semua';
+    selAll.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      state.filterDayName = new Set([0,1,2,3,4,5,6]);
+      refreshBtn(); buildPanel(); renderAll();
+    });
+    const selNone = document.createElement('button'); selNone.type='button'; selNone.textContent='Kosongkan';
+    selNone.addEventListener('click', (e)=>{
+      e.stopPropagation();
+      state.filterDayName = new Set([1]); // never allow zero days ticked, same guardrail as hourlyDow
+      refreshBtn(); buildPanel(); renderAll();
+    });
+    actions.appendChild(selAll); actions.appendChild(selNone);
+    const list = document.createElement('div'); list.className='pvlist';
+    DOW_ORDER.forEach(dow=>{
+      const row = document.createElement('label'); row.className='pvitem';
+      const cb = document.createElement('input'); cb.type='checkbox'; cb.checked = state.filterDayName.has(dow);
+      cb.addEventListener('change', ()=>{
+        if(cb.checked) state.filterDayName.add(dow);
+        else if(state.filterDayName.size>1) state.filterDayName.delete(dow);
+        else cb.checked = true; // never allow zero days ticked
+        refreshBtn(); renderAll();
+      });
+      row.appendChild(cb); row.appendChild(document.createTextNode(' '+HARI_ID[dow]));
+      list.appendChild(row);
+    });
+    panel.appendChild(actions); panel.appendChild(list);
+  }
+  function togglePanel(){
+    if(openPanel===panel){ panel.classList.remove('open'); openPanel=null; return; }
+    if(openPanel) openPanel.classList.remove('open');
+    buildPanel();
+    panel.classList.add('open'); openPanel = panel;
+  }
+  arrowBtn.addEventListener('click', (e)=>{ e.stopPropagation(); togglePanel(); });
+  refreshBtn();
+  wrap.appendChild(btn); wrap.appendChild(panel);
+  mount.appendChild(wrap);
+}
+function renderDateQuickFilters(){
+  const el = document.getElementById('dateQuickFilters');
+  if(!el) return;
+  el.innerHTML = '';
+  createDateShortcutFilter(el, 'filterMonth', 'Bulan', BULAN_ID.map((_,i)=>i+1), m=>BULAN_ID[m-1]);
+  createDateShortcutFilter(el, 'filterWeek', 'Minggu', uniqueISOWeeksInRE(), w=>'Minggu '+w);
+  createDateShortcutFilter(el, 'filterYear', 'Tahun', uniqueYearsInRE());
+  createDayNameFilter(el);
+}
+
 function renderSinglePills(containerId, items, currentVal, onChange){
   const el = document.getElementById(containerId);
   el.innerHTML = '';
@@ -2188,6 +2407,7 @@ function populateFilters(){
   });
 
   renderDatePresets();
+  renderDateQuickFilters();
 
   renderGranularityPills();
 
@@ -2291,6 +2511,11 @@ function getFilterState(){
     provinsi: state.provinsi, distrik: state.distrik,
     distributor: state.distributor, expeditur: state.expeditur, source: state.source, incoterm: state.incoterm,
     gran: state.gran, value: state.value, chartType: state.chartType,
+    // ADDED 2026-08-31: Nama Hari (day-of-week) AND filter - see the state.filterDayName comment
+    // block and createDayNameFilter(). filterYear/filterMonth/filterWeek deliberately NOT included
+    // here - those are one-shot Rentang Tanggal shortcuts (applyDateShortcut()), not something
+    // matchRow() itself needs to check.
+    filterDayName: state.filterDayName,
   };
 }
 function shiftMonthBack(d){ return d ? new Date(d.getFullYear(), d.getMonth()-1, d.getDate()) : null; }
@@ -2315,6 +2540,11 @@ function matchRowLM(r, lm){
   if(!lm.expeditur.has(normVal(r.EXPEDITUR_NAMA))) return false;
   if(!lm.source.has(normVal(r.SOURCE_PLANT))) return false;
   if(!lm.incoterm.has(normVal(r.INCOTERM))) return false;
+  // ADDED 2026-08-31: unlike the old (removed) Tahun/Bulan checklists this comment block used to
+  // warn about, Nama Hari IS applied to the LM side too - "Senin-only this period vs Senin-only
+  // last month" is still a coherent apples-to-apples comparison (day-of-week is orthogonal to
+  // which absolute month you're looking at, unlike a fixed Tahun/Bulan pin would have been).
+  if(lm.filterDayName && lm.filterDayName.size<7 && r._d && !lm.filterDayName.has(r._d.getDay())) return false;
   return true;
 }
 /* % vs LM is a RATIO (current ÷ LM × 100), not a delta — e.g. 109.608/93.752×100 = 116,9%, not
@@ -2343,6 +2573,11 @@ function matchRow(r, f, dateField){
   if(!f.expeditur.has(normVal(r.EXPEDITUR_NAMA))) return false;
   if(!f.source.has(normVal(r.SOURCE_PLANT))) return false;
   if(!f.incoterm.has(normVal(r.INCOTERM))) return false;
+  // ADDED 2026-08-31 per Rendy's Nama Hari quick-pick filter - uses the SAME `d` this function
+  // already resolved above (dateField-aware: _d/_dMasuk/_dKeluar depending on the caller), so
+  // day-name filtering always matches whichever date basis the rest of this row-match already
+  // used, instead of always re-reading TGL_SPJ regardless of context.
+  if(f.filterDayName && f.filterDayName.size<7 && d && !f.filterDayName.has(d.getDay())) return false;
   return true;
 }
 // BUG FIXED 2026-08-10 per Rendy: "when i filter date, the date is filter based on rilis date (jam
