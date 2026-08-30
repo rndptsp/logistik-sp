@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.08.31.22';
+window.APP_VERSION = 'build.2026.08.31.23';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -2005,7 +2005,10 @@ const state = {
               // table's drill-down (level 1 = first field clicked, level 2 = second, ...) and the
               // chart's series-split (uses levels[0] only, to keep the chart to a sane series count).
               // NOT a value filter — value filtering is the separate ▾ checklist popover below.
-  targetToggle: {SNOP:true, CONTRACT:false, RKAP:false}, // independent chart target-line toggles
+  // ADDED 2026-08-31: SO (Sales Order) joins as a 4th independently-toggleable overlay line, per
+  // Rendy - default off like CONTRACT/RKAP, so existing users' current view doesn't suddenly grow
+  // an extra line they didn't ask for.
+  targetToggle: {SNOP:true, CONTRACT:false, RKAP:false, SO:false}, // independent chart target-line toggles
   rowFocus: [], // clicking a summary-table row narrows the CHART + ARMADA (not the table itself) to
                 // that row's exact drill-down scope. Array of {field, value} pairs, ANDed together.
                 // Distinct from the ▾ checklist filters (state.provinsi etc.) and from state.levels
@@ -3040,6 +3043,28 @@ function datesInBucket(bk, gran){
   }
   return [];
 }
+/* ADDED 2026-08-31 per Rendy's SO overlay-line request - mirrors targetForBucket()'s signature
+   (bk, gran, f, scope) exactly so the shared overlay-line loop in computeSeries() can call either
+   one interchangeably by sourceType. Uses datesInBucket() (pure key-parsing, no dependency on
+   which rows happen to be in the bucket) to get the bucket's own [from,to] window, then reuses
+   soTonaseFor() with a scope-derived extraMatch - same matching approach the existing
+   f.value==='SO' chart branch already uses (see SO_FIELD_MAP), just generalized to take a scope
+   object (TARGET_CAPABLE_FIELDS-keyed, e.g. {NAMA_PROPINSI:'JAMBI'}) instead of being wired
+   directly to chartGroupField/rowFocus inline. */
+function soForBucket(bk, gran, f, scope){
+  const dates = datesInBucket(bk, gran);
+  if(!dates.length) return null;
+  const from = dates[0], to = dates[dates.length-1];
+  const subF = Object.assign({}, f, {from, to});
+  const matchers = Object.keys(scope||{}).map(field=>{
+    const soKey = SO_FIELD_MAP[field];
+    if(!soKey) return null;
+    const val = scope[field];
+    return (r)=> normVal(r[soKey])===val;
+  }).filter(Boolean);
+  const extraMatch = matchers.length ? (r)=> matchers.every(m=>m(r)) : null;
+  return soTonaseFor(subF, extraMatch);
+}
 /** Target value for one chart bucket, prorated to the SAME granularity as Realisasi's own
     per-bucket aggregation — a Daily bucket gets that single day's weekday-weighted slice of the
     month's target (small number, same order of magnitude as a daily tonase bar); a Weekly bucket
@@ -3113,10 +3138,16 @@ function targetForBucket(bk, gran, f, scope, sourceTypeOverride){
 // 2026-07-26, see populateFilters()). See fix_sba_pematangsiantar.py and attribute_so_vendor.py for
 // the full attribution methodology.
 const SO_FIELD_MAP = {NAMA_PROPINSI:'PROPINSI', NAMA_AREA_DISTRIK:'NAMA_DISTRIK', DISTRIBUTOR:'DISTRIBUTOR', SOURCE_PLANT:'SOURCE', INCOTERM:'INCOTERM', EXPEDITUR_NAMA:'EXPEDITUR_NAMA'};
-const TARGET_TYPE_LABELS = {SNOP:'Target SNOP', CONTRACT:'Vol. Kontrak', RKAP:'Target RKAP'};
+// ADDED 2026-08-31 per Rendy ("selain target snop, apakah bisa ditambahkan juga so pada periode
+// yang sama?") - SO joins SNOP/CONTRACT/RKAP as a 4th overlay-line option on the same toggle row.
+// Unlike the other 3 (which read targets.json via targetForBucket()), SO reads the SO dataset
+// itself via soForBucket() below - same per-bucket-window + scope-matching approach the existing
+// f.value==='SO' chart branch already uses, just factored out so the overlay-line loop in
+// computeSeries() can call it identically to targetForBucket().
+const TARGET_TYPE_LABELS = {SNOP:'Target SNOP', CONTRACT:'Vol. Kontrak', RKAP:'Target RKAP', SO:'SO (Sales Order)'};
 // Solid, clearly distinct per type (not the old dashed black/gray/blue, which read too similarly
 // against the red bars from a distance).
-const TARGET_COLORS = {SNOP:'#1A1A1A', CONTRACT:'#2E9E4B', RKAP:'#1F5FA8'};
+const TARGET_COLORS = {SNOP:'#1A1A1A', CONTRACT:'#2E9E4B', RKAP:'#1F5FA8', SO:'#9B59B6'};
 
 function computeSeries(f){
   // dateFieldForValue: TRUCK_MASUK/TRUCK_KELUAR bound the from/to range by TGL_MASUK/TGL_KELUAR
@@ -3148,6 +3179,15 @@ function computeSeries(f){
   if(f.gran==='daily') bucketKeys = fillDailyBucketKeys(bucketKeys, f);
   const allGroups = chartGroupField==='NONE' ? ['Total'] : [...new Set(rows.map(r=>normVal(r[chartGroupField])))].sort();
 
+  // ADDED 2026-08-31 per Rendy ("untuk grafik truk masuk dan truk keluar, samakan perlakuannya
+  // dengan truk masuk vs keluar, ada pilihan tonase") - the single-value Juml. Truk (Masuk)/(Keluar)
+  // charts (this general path, WITH drill-down/group support) now respect the SAME
+  // state.truckCompareUnit toggle the dedicated Masuk-vs-Keluar comparison chart got in build.08.
+  // Deliberately excludes plain 'TRUCK' (company-wide Truk Unik) - that one stays a fixed count
+  // per the 2026-08-08 note on aggMetric(), unrelated to this masuk/keluar-specific toggle.
+  const isMasukKeluarTruck = (f.value==='TRUCK_MASUK' || f.value==='TRUCK_KELUAR');
+  const truckUnitOverride = (isMasukKeluarTruck && state.truckCompareUnit==='TONASE') ? 'TONASE' : null;
+
   const datasetsRaw = allGroups.map(g=>({
     label: g,
     data: bucketKeys.map(bk=>{
@@ -3159,8 +3199,8 @@ function computeSeries(f){
       // range - see hourlyStatValue() for the full rationale and worked example. Every other
       // granularity keeps the original single-pass aggMetric (a bucket there is already one
       // specific period, not several days merged together).
-      if(f.gran==='hourly') return hourlyStatValue(grows, f.value, state.chartAggType);
-      return aggMetric(grows, f.value);
+      if(f.gran==='hourly') return hourlyStatValue(grows, f.value, state.chartAggType, truckUnitOverride || undefined);
+      return aggMetric(grows, truckUnitOverride || f.value);
     })
   }));
 
@@ -3222,7 +3262,12 @@ function computeSeries(f){
   let targetDatasets = [];
   const forceCumulativeTarget = (f.chartType === 'stackedbar');
   const chartTargetCapable = (forceCumulativeTarget || chartGroupField==='NONE' || TARGET_CAPABLE_FIELDS.has(chartGroupField)) && levelsAreTargetCapable(state.levels);
-  if(f.value==='TONASE' && chartTargetCapable && (f.gran==='daily'||f.gran==='weekly'||f.gran==='monthly'||f.gran==='quarterly')){
+  // BROADENED 2026-08-31 per Rendy - target/SO overlay lines used to be TONASE-view-only. Now also
+  // available on the Juml. Truk (Masuk)/(Keluar) charts when their own unit toggle (truckUnitOverride,
+  // just above) is set to Tonase - same "both sides in ton, genuinely comparable" reasoning already
+  // applied to the dedicated Masuk-vs-Keluar comparison chart in build.21.
+  const showTargetLines = (f.value==='TONASE' || truckUnitOverride==='TONASE');
+  if(showTargetLines && chartTargetCapable && (f.gran==='daily'||f.gran==='weekly'||f.gran==='monthly'||f.gran==='quarterly')){
     const targetGroups = forceCumulativeTarget ? ['Total'] : allGroups;
     Object.keys(state.targetToggle).forEach(srcType=>{
       if(!state.targetToggle[srcType]) return;
@@ -3243,8 +3288,11 @@ function computeSeries(f){
               state.rowFocus.forEach(rf=>{ if(TARGET_CAPABLE_FIELDS.has(rf.field)) scope[rf.field] = rf.value; });
             }
             if(!forceCumulativeTarget && chartGroupField!=='NONE' && scope[chartGroupField]==null) scope[chartGroupField] = g;
-            // Prorated per-bucket slice (matches Realisasi's own per-bucket basis), not the whole
-            // month's target repeated flat on every bucket — see targetForBucket() above.
+            // ADDED 2026-08-31: SO is not a targets.json source type - it reads the SO dataset
+            // itself via soForBucket() (same per-bucket-window + scope-matching approach the
+            // existing f.value==='SO' chart branch uses), everything else still goes through the
+            // usual prorated targetForBucket() slice.
+            if(srcType==='SO') return soForBucket(bk, f.gran, f, scope);
             return targetForBucket(bk, f.gran, f, scope, srcType);
           })
         });
@@ -3655,7 +3703,11 @@ function buildDayOfWeekDropdown(){
 function renderTruckCompareUnitToggle(f){
   const el = document.getElementById('truckCompareUnitRow');
   if(!el) return;
-  const show = f.value==='TRUCK_COMPARE';
+  // BROADENED 2026-08-31 per Rendy ("samakan perlakuannya dengan truk masuk vs keluar, ada
+  // pilihan tonase") - this toggle used to be TRUCK_COMPARE-only; now also drives the
+  // standalone Juml. Truk (Masuk)/(Keluar) charts via the same state.truckCompareUnit flag
+  // (see truckUnitOverride in computeSeries()).
+  const show = f.value==='TRUCK_COMPARE' || f.value==='TRUCK_MASUK' || f.value==='TRUCK_KELUAR';
   el.style.display = show ? 'flex' : 'none';
   if(!show) return;
   el.innerHTML = '<span style="font-size:11px;color:var(--sub);align-self:center;margin-right:2px;">Tampilkan sebagai:</span>';
@@ -3678,7 +3730,7 @@ function renderTruckCompareUnitToggle(f){
   if(state.truckCompareUnit==='TRUCK'){
     const hint = document.createElement('span');
     hint.style.cssText = 'font-size:11px;color:var(--sub);align-self:center;margin-left:8px;';
-    hint.textContent = 'ℹ️ Garis Target SNOP/Kontrak/RKAP hanya tersedia pada mode Jumlah Tonase (satuan ton, sebanding langsung)';
+    hint.textContent = 'ℹ️ Garis Target SNOP/Kontrak/RKAP/SO hanya tersedia pada mode Jumlah Tonase (satuan ton, sebanding langsung)';
     el.appendChild(hint);
   }
 }
@@ -3767,8 +3819,17 @@ function renderChart(){
   const {bucketKeys, datasets, targetDatasets} = computeSeries(f);
   const labels = bucketKeys.map(bk=>chartLabel(bk, f.gran));
   const chartGroupField = state.levels.length ? state.levels[0] : null;
+  // ADDED 2026-08-31 per Rendy: Juml. Truk (Masuk)/(Keluar) charts now support the same
+  // Jumlah Truk / Jumlah Tonase toggle as Truk Masuk vs Keluar (see truckUnitOverride in
+  // computeSeries()) - title must say "Jumlah Tonase (Masuk/Keluar)" instead of "Juml. Truk
+  // Unik (Masuk/Keluar)" when that toggle is set to Tonase, otherwise the chart would show
+  // tonase bars under a truck-count label.
+  const isTruckTonaseOverride = (f.value==='TRUCK_MASUK' || f.value==='TRUCK_KELUAR') && state.truckCompareUnit==='TONASE';
+  const chartValueLabel = isTruckTonaseOverride
+    ? (f.value==='TRUCK_MASUK' ? 'Jumlah Tonase (Masuk)' : 'Jumlah Tonase (Keluar)')
+    : VALUE_LABELS[f.value];
   document.getElementById('chartTitle').textContent =
-    `${VALUE_LABELS[f.value]} — ${({hourly:'Per Jam',daily:'Harian',weekly:'Mingguan (mulai Senin)',monthly:'Bulanan',quarterly:'Kuartalan'})[f.gran]}${chartGroupField ? ' per '+levelLabelForField(chartGroupField) : ''}${f.gran==='hourly' ? ' ('+CHART_AGG_LABELS[state.chartAggType]+')' : ''}`;
+    `${chartValueLabel} — ${({hourly:'Per Jam',daily:'Harian',weekly:'Mingguan (mulai Senin)',monthly:'Bulanan',quarterly:'Kuartalan'})[f.gran]}${chartGroupField ? ' per '+levelLabelForField(chartGroupField) : ''}${f.gran==='hourly' ? ' ('+CHART_AGG_LABELS[state.chartAggType]+')' : ''}`;
 
   const stacked = f.chartType==='stackedbar';
   const type = (f.chartType==='area') ? 'line' : (f.chartType==='stackedbar' ? 'bar' : f.chartType);
