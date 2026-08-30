@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.08.30.20';
+window.APP_VERSION = 'build.2026.08.30.21';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -3435,6 +3435,17 @@ function renderTruckCompareUnitToggle(f){
     b.addEventListener('click', ()=>{ state.truckCompareUnit = k; renderChart(); });
     el.appendChild(b);
   });
+  // ADDED 2026-08-30 per Rendy: garis Target SNOP/Kontrak/RKAP (tombol di atas chart) hanya
+  // ditampilkan pada mode Jumlah Tonase - keduanya sama-sama satuan ton, jadi bisa dibandingkan
+  // langsung. Mode Jumlah Truk sengaja TIDAK menampilkan garis target (tidak ada angka target
+  // resmi dalam satuan unit truk - lihat catatan computeTruckCompareSeries()), jadi hint ini
+  // menjelaskan kenapa tombol Target di atas tidak berefek saat mode ini aktif.
+  if(state.truckCompareUnit==='TRUCK'){
+    const hint = document.createElement('span');
+    hint.style.cssText = 'font-size:11px;color:var(--sub);align-self:center;margin-left:8px;';
+    hint.textContent = 'ℹ️ Garis Target SNOP/Kontrak/RKAP hanya tersedia pada mode Jumlah Tonase (satuan ton, sebanding langsung)';
+    el.appendChild(hint);
+  }
 }
 function renderChart(){
   const f = getFilterState();
@@ -3681,10 +3692,29 @@ function computeTruckCompareSeries(f){
     const rows = perMetric.TRUCK_KELUAR.get(bk) || [];
     return f.gran==='hourly' ? hourlyStatValue(rows, 'TRUCK_KELUAR', state.chartAggType, valueMetric) : aggMetric(rows, valueMetric);
   });
-  return {bucketKeys, masukData, keluarData};
+  // ADDED 2026-08-30 per Rendy ("bagaimana cara menampilkan jumlah truk masuk vs target snop dan
+  // jumlah truk keluar vs target snop") - Target SNOP/Vol. Kontrak/Target RKAP are all denominated
+  // in TON, so a same-unit target overlay only makes sense in Tonase mode (state.truckCompareUnit
+  // ==='TONASE') - confirmed with Rendy rather than inventing a ton-per-truck conversion for Truck
+  // mode. Reuses the exact same state.targetToggle / targetForBucket() machinery as the main
+  // Tonase chart's target lines (computeSeries()) - Total-only scope (no rowFocus/level split),
+  // matching how this whole chart is already Total-only. Hourly is excluded, same gate computeSeries
+  // itself uses (targetForBucket has no meaningful per-hour slice).
+  let targetDatasets = [];
+  if(state.truckCompareUnit==='TONASE' && (f.gran==='daily'||f.gran==='weekly'||f.gran==='monthly'||f.gran==='quarterly')){
+    Object.keys(state.targetToggle).forEach(srcType=>{
+      if(!state.targetToggle[srcType]) return;
+      targetDatasets.push({
+        label: TARGET_TYPE_LABELS[srcType],
+        sourceType: srcType,
+        data: bucketKeys.map(bk=> targetForBucket(bk, f.gran, f, {}, srcType)),
+      });
+    });
+  }
+  return {bucketKeys, masukData, keluarData, targetDatasets};
 }
 function renderTruckCompareChart(f){
-  const {bucketKeys, masukData, keluarData} = computeTruckCompareSeries(f);
+  const {bucketKeys, masukData, keluarData, targetDatasets} = computeTruckCompareSeries(f);
   const labels = bucketKeys.map(bk=>chartLabel(bk, f.gran));
   // ADDED 2026-08-29: title/tooltip unit label follows state.truckCompareUnit (see
   // computeTruckCompareSeries()'s comment above) so "Jumlah Truk" mode still reads as truck counts
@@ -3696,6 +3726,15 @@ function renderTruckCompareChart(f){
     `${unitTitle} — ${({hourly:'Per Jam',daily:'Harian',weekly:'Mingguan (mulai Senin)',monthly:'Bulanan',quarterly:'Kuartalan'})[f.gran]}${f.gran==='hourly' ? ' ('+CHART_AGG_LABELS[state.chartAggType]+')' : ''}`;
   const avgMasuk = avgOf(masukData);
   const avgKeluar = avgOf(keluarData);
+  // ADDED 2026-08-30: Target SNOP/Vol. Kontrak/Target RKAP overlay lines, Tonase-mode only (see
+  // computeTruckCompareSeries()'s comment) - same colors/labels as every other target line in the
+  // app (TARGET_COLORS/TARGET_TYPE_LABELS), toggled via the SAME pill buttons in #targetToggleRow
+  // that already exist above the chart (previously a no-op on this specific chart).
+  const targetChartDatasets = (targetDatasets||[]).map(ds=>({
+    label: ds.label, data: ds.data, type:'line', isTarget:true,
+    borderColor: TARGET_COLORS[ds.sourceType] || '#1A1A1A', backgroundColor:'transparent',
+    borderWidth:2.5, pointRadius:2, fill:false, tension:0, order:1,
+  }));
   if(chartInstance) chartInstance.destroy();
   const ctx = document.getElementById('mainChart').getContext('2d');
   chartInstance = new Chart(ctx, {
@@ -3708,6 +3747,7 @@ function renderTruckCompareChart(f){
       datasets: [
         {label:'Masuk', data:masukData, backgroundColor:'#1F5FA8', borderColor:'#1F5FA8', borderRadius:3, order:2},
         {label:'Keluar', data:keluarData, backgroundColor:'#E2211D', borderColor:'#E2211D', borderRadius:3, order:2},
+        ...targetChartDatasets,
         ...(avgMasuk!=null ? [{type:'line', label:'Rata-rata Masuk', data:labels.map(()=>avgMasuk), borderColor:'#1F5FA8', backgroundColor:'transparent', borderWidth:1.75, borderDash:[6,4], pointRadius:0, pointHoverRadius:0, tension:0, fill:false, order:1, isAvgLine:true}] : []),
         ...(avgKeluar!=null ? [{type:'line', label:'Rata-rata Keluar', data:labels.map(()=>avgKeluar), borderColor:'#E2211D', backgroundColor:'transparent', borderWidth:1.75, borderDash:[6,4], pointRadius:0, pointHoverRadius:0, tension:0, fill:false, order:1, isAvgLine:true}] : []),
       ]
