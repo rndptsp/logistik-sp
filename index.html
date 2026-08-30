@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.08.31.24';
+window.APP_VERSION = 'build.2026.08.31.25';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -304,6 +304,11 @@ footer{text-align:center;font-size:11px;color:var(--sub);padding:18px 20px 26px;
 .chart-hint{font-size:11px;color:var(--accent-dark,#B33A34);background:#FFF3F0;border:1px solid #F5CFC7;border-radius:12px;padding:3px 10px;font-weight:600;white-space:nowrap;}
 .panel-caret{display:inline-block;width:16px;color:var(--accent);}
 .panel-body.panel-collapsed{display:none;}
+/* ADDED 2026-08-31 per Rendy's menu-tidy request - groups the chart's own option rows (target
+   overlay toggle, value-labels toggle, hourly controls, truck-unit toggle) under one labeled
+   strip instead of a stack of unlabeled pillrows with no visual relationship to each other. */
+.chart-opts-group{border-top:1px dashed var(--border);margin-top:8px;padding-top:8px;display:flex;flex-direction:column;gap:8px;}
+.chart-opts-label{font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.03em;}
 #kpiPanelHead, #filterPanelHead{cursor:pointer;user-select:none;display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;padding:6px 2px;color:var(--accent-dark,#1A1A1A);}
 
 /* ===== Custom calendar popover (replaces Tahun/Bulan checklists) ===== */
@@ -433,9 +438,18 @@ window.addEventListener('error', function(e){
     <label>Tipe Grafik</label>
     <div class="pillrow" id="pChartType"></div>
   </div>
-  <div class="fgroup" style="min-width:340px;">
-    <label>Group — klik nama = tambah/hapus level drill-down tabel (①②③...); klik ▾ = filter nilai (checklist)</label>
-    <div class="pillrow" id="groupFilters" style="max-width:none;"></div>
+  <!-- SPLIT 2026-08-31 per Rendy ("rapikan lagi semua menu... terkelompok sesuai fungsi") - was
+       one flat "Group" row lumping all 6 dimension dropdowns together; now grouped by kind
+       (Lokasi vs Mitra & Sumber) so it's visually clear which dropdowns filter what. Pure layout
+       split - populateFilters() still creates the exact same 6 createPivotFilter() dropdowns with
+       the exact same drill-down/checklist behavior, just mounted into 2 containers instead of 1. -->
+  <div class="fgroup" style="min-width:170px;">
+    <label>📍 Lokasi — klik nama = tambah/hapus level drill-down; klik ▾ = filter nilai</label>
+    <div class="pillrow" id="groupFiltersLoc" style="max-width:none;"></div>
+  </div>
+  <div class="fgroup" style="min-width:280px;">
+    <label>🏢 Mitra &amp; Sumber — klik nama = tambah/hapus level drill-down; klik ▾ = filter nilai</label>
+    <div class="pillrow" id="groupFiltersEntity" style="max-width:none;"></div>
   </div>
   <div class="fgroup">
     <label>&nbsp;</label>
@@ -454,15 +468,24 @@ window.addEventListener('error', function(e){
       <span class="chart-hint" id="chartHint">📊 Klik untuk lihat tren &amp; grafik</span>
     </div>
     <div class="panel-body panel-collapsed" id="chartBody">
-      <div class="pillrow" id="targetToggleRow"></div>
-      <div class="pillrow">
-        <button type="button" id="valueLabelsToggleBtn" class="pill active" onclick="event.stopPropagation();toggleValueLabels()" title="Tampilkan angka nilai di atas setiap bar/titik garis pada grafik">🏷️ Tampilkan Nilai di Grafik</button>
+      <!-- GROUPED 2026-08-31 per Rendy ("rapikan lagi semua menu... terkelompok sesuai fungsi") -
+           these 5 rows used to sit as separate unlabeled pillrows with no visual relationship to
+           each other; now wrapped in one labeled "Opsi Chart" strip so they read as one coherent
+           settings group. Each row's own show/hide logic (renderTargetToggles/
+           renderHourlyControls/renderTruckCompareUnitToggle) is untouched - only the surrounding
+           HTML changed. -->
+      <div class="chart-opts-group">
+        <div class="chart-opts-label">⚙️ Opsi Chart</div>
+        <div class="pillrow" id="targetToggleRow"></div>
+        <div class="pillrow">
+          <button type="button" id="valueLabelsToggleBtn" class="pill active" onclick="event.stopPropagation();toggleValueLabels()" title="Tampilkan angka nilai di atas setiap bar/titik garis pada grafik">🏷️ Tampilkan Nilai di Grafik</button>
+        </div>
+        <!-- ADDED 2026-08-08 per Rendy: hidden unless gran==='hourly' (see renderHourlyControls) -->
+        <div class="pillrow" id="hourlyAggRow" style="display:none;"></div>
+        <div class="pillrow" id="hourlyDowRow" style="display:none;"></div>
+        <!-- ADDED 2026-08-29 per Rendy: hidden unless value is TRUCK_COMPARE/TRUCK_MASUK/TRUCK_KELUAR (see renderTruckCompareUnitToggle) -->
+        <div class="pillrow" id="truckCompareUnitRow" style="display:none;"></div>
       </div>
-      <!-- ADDED 2026-08-08 per Rendy: hidden unless gran==='hourly' (see renderHourlyControls) -->
-      <div class="pillrow" id="hourlyAggRow" style="display:none;"></div>
-      <div class="pillrow" id="hourlyDowRow" style="display:none;"></div>
-      <!-- ADDED 2026-08-29 per Rendy: hidden unless value==='TRUCK_COMPARE' (see renderTruckCompareUnitToggle) -->
-      <div class="pillrow" id="truckCompareUnitRow" style="display:none;"></div>
       <div id="rowFocusBanner" class="rowfocus-banner" style="display:none;"></div>
       <div class="chart-body">
         <div class="value-list" id="valueList"></div>
@@ -537,6 +560,30 @@ window.addEventListener('error', function(e){
       <button onclick="closePrognModal()" style="border:1px solid var(--border);background:var(--panel);border-radius:6px;padding:4px 10px;cursor:pointer;">Tutup</button>
     </div>
     <div id="prognModalBody"></div>
+  </div>
+</div>
+
+<!-- ADDED 2026-08-31 per Rendy ("fitur ekspor gambar tambahkan pilihan apa yang dieksport, chart,
+     table, kpi, bisa dipilih satu atau beberapa, tapi setiap pilihan harus ditampilkan full...
+     kemudian ada pilihan download atau copy") - replaces the old #btnExport behavior of blindly
+     screenshotting document.body (which would clip any scrolled table and skip collapsed panels
+     entirely) with a picker that lets the user choose which sections to include, forces each one
+     to render at full height first, then offers Download or Copy-to-clipboard on the combined
+     result. Reuses the same inline-overlay pattern as #prognModalOverlay/#scorecardTrendOverlay
+     (this codebase's actual live modal pattern - the .modal-bg CSS class exists but is unused). -->
+<div id="exportPickerOverlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:500;" onclick="if(event.target===this)closeExportPicker()">
+  <div style="background:var(--panel);max-width:420px;margin:60px auto;border-radius:10px;padding:18px;max-height:80vh;overflow:auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <h3 style="margin:0;color:var(--text);">Export Gambar</h3>
+      <button onclick="closeExportPicker()" style="border:1px solid var(--border);background:var(--panel);border-radius:6px;padding:4px 10px;cursor:pointer;">Tutup</button>
+    </div>
+    <div style="font-size:12px;color:var(--sub);margin-bottom:10px;">Pilih bagian yang mau diekspor (bisa lebih dari satu). Tabel yang biasanya perlu discroll akan ditampilkan penuh, panel yang sedang tertutup akan otomatis dibuka sementara untuk diambil gambarnya.</div>
+    <div id="exportPickerList" style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;"></div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn" id="btnExportDownload" onclick="runExportPicker('download')">⬇️ Download</button>
+      <button class="btn secondary" id="btnExportCopy" onclick="runExportPicker('copy')">📋 Copy</button>
+    </div>
+    <div id="exportPickerStatus" style="font-size:11px;color:var(--sub);margin-top:8px;"></div>
   </div>
 </div>
 
@@ -2080,6 +2127,27 @@ function isRestricted(key){ return ALLV[key] && state[key].size < ALLV[key].leng
 
 /* ================= PIVOT-STYLE DROPDOWN FILTER ================= */
 let openPanel = null;
+/* ADDED 2026-08-31 per Rendy ("pastikan clickable dan dropdown terkelompok sesuai fungsi dan
+   tidak tumpang tindih") - every .pvpanel dropdown is position:absolute anchored to its own
+   .pvwrap with a fixed left:0/top:calc(100% + 4px) origin that never checked whether it would
+   render partly off-screen near the right or bottom edge of the viewport - an off-screen panel is
+   effectively unclickable. Call this right after adding the 'open' class in EVERY dropdown
+   implementation (createPivotFilter, createDateShortcutFilter, createDayNameFilter,
+   buildDayOfWeekDropdown, the .colfheadinner column filter) - there are 5 separate copy-pasted
+   open/close implementations in this file, not one shared function, so this has to be wired into
+   each individually rather than fixed in one place. Resets any previous inline override first so
+   it re-measures fresh every time (works regardless of which edge a given .pvwrap is near, and
+   also fixes the column-filter variant, which used to hardcode right:0 always - now it only flips
+   right when it would actually overflow, so a filter icon near the LEFT edge of a wide scrolled
+   table no longer risks overflowing that side instead). */
+function positionPanelInViewport(panel){
+  if(!panel) return;
+  panel.style.left = ''; panel.style.right = '';
+  panel.style.top = ''; panel.style.bottom = '';
+  const r = panel.getBoundingClientRect();
+  if(r.right > window.innerWidth){ panel.style.left='auto'; panel.style.right='0'; }
+  if(r.bottom > window.innerHeight){ panel.style.top='auto'; panel.style.bottom='calc(100% + 4px)'; }
+}
 let levelRefreshCallbacks = []; // re-run every button's badge refresh whenever state.levels changes
 document.addEventListener('click', (e)=>{
   if(openPanel && !openPanel.contains(e.target) && !openPanel._btn.contains(e.target)){
@@ -2201,6 +2269,7 @@ function createPivotFilter(mount, key, label, values, levelField){
     if(openPanel) openPanel.classList.remove('open');
     buildPanel('');
     panel.classList.add('open'); openPanel = panel;
+    positionPanelInViewport(panel);
   });
   refreshBtn();
   wrap.appendChild(btn); wrap.appendChild(panel);
@@ -2311,6 +2380,7 @@ function createDateShortcutFilter(mount, key, label, values, formatFn){
     if(openPanel) openPanel.classList.remove('open');
     buildPanel('');
     panel.classList.add('open'); openPanel = panel;
+    positionPanelInViewport(panel);
   }
   arrowBtn.addEventListener('click', (e)=>{ e.stopPropagation(); togglePanel(); });
   refreshBtn();
@@ -2376,6 +2446,7 @@ function createDayNameFilter(mount){
     if(openPanel) openPanel.classList.remove('open');
     buildPanel();
     panel.classList.add('open'); openPanel = panel;
+    positionPanelInViewport(panel);
   }
   arrowBtn.addEventListener('click', (e)=>{ e.stopPropagation(); togglePanel(); });
   refreshBtn();
@@ -2404,9 +2475,14 @@ function renderSinglePills(containerId, items, currentVal, onChange){
   });
 }
 
+// ADDED 2026-08-31: which dimension keys route into the "Lokasi" sub-group vs "Mitra & Sumber" -
+// see the #groupFiltersLoc/#groupFiltersEntity split above. Everything not in this Set goes to
+// Mitra & Sumber.
+const LOC_DIMENSION_KEYS = new Set(['provinsi','distrik']);
 function populateFilters(){
   levelRefreshCallbacks = [];
-  const gf = document.getElementById('groupFilters'); gf.innerHTML='';
+  const gfLoc = document.getElementById('groupFiltersLoc'); gfLoc.innerHTML='';
+  const gfEntity = document.getElementById('groupFiltersEntity'); gfEntity.innerHTML='';
   DIMENSIONS.forEach(d=>{
     let vals;
     if(d.key==='expeditur'){
@@ -2422,7 +2498,7 @@ function populateFilters(){
       vals = uniqSorted(RE, d.field);
       if(d.key==='source') vals = injectHiddenSourceValues(vals);
     }
-    createPivotFilter(gf, d.key, d.label, vals, d.field);
+    createPivotFilter(LOC_DIMENSION_KEYS.has(d.key) ? gfLoc : gfEntity, d.key, d.label, vals, d.field);
   });
 
   renderDatePresets();
@@ -3746,6 +3822,7 @@ function buildDayOfWeekDropdown(){
     if(openPanel) openPanel.classList.remove('open');
     buildPanel();
     panel.classList.add('open'); openPanel = panel;
+    positionPanelInViewport(panel);
   }
   arrowBtn.addEventListener('click', (e)=>{ e.stopPropagation(); togglePanel(); });
 
@@ -4461,8 +4538,9 @@ function renderFilterableHeaderCell(uidPrefix, colKey, label, values, filtersObj
     if(colFilterOpenKey===uid){ colFilterOpenKey=null; panel.classList.remove('open'); return; }
     colFilterOpenKey = uid; colFilterSearchText = '';
     buildPanel(''); panel.classList.add('open');
+    positionPanelInViewport(panel);
   });
-  if(colFilterOpenKey===uid){ buildPanel(colFilterSearchText); panel.classList.add('open'); }
+  if(colFilterOpenKey===uid){ buildPanel(colFilterSearchText); panel.classList.add('open'); positionPanelInViewport(panel); }
 
   inner.appendChild(lbl); inner.appendChild(fbtn); inner.appendChild(panel);
   th.appendChild(inner);
@@ -5587,14 +5665,126 @@ document.getElementById('btnClearFilters').addEventListener('click', async ()=>{
   renderAll();
 });
 
-document.getElementById('btnExport').addEventListener('click', ()=>{
-  html2canvas(document.body, {backgroundColor:'#F4F5F5'}).then(canvas=>{
-    const link = document.createElement('a');
-    link.download = `outbound_logistic_dashboard_${new Date().toISOString().slice(0,10)}.png`;
-    link.href = canvas.toDataURL('image/png');
-    link.click();
+/* REPLACED 2026-08-31 per Rendy - see the #exportPickerOverlay comment above for the full "why".
+   The old handler here blindly screenshotted document.body: any scrolled .tablewrap was clipped
+   to its visible viewport, any collapsed panel (chart/summary/armada/scorecard/KPI are all
+   collapsed by default) rendered as empty space, and there was no way to export just one section.
+   EXPORT_SECTIONS is the ordered registry of exportable sections - order here is also the order
+   sections stack in the combined image, independent of checkbox click order. */
+const EXPORT_SECTIONS = [
+  {id:'chart', label:'Chart', getEl:()=> document.getElementById('chartTitle') ? document.getElementById('chartTitle').closest('.panel') : null},
+  {id:'kpi', label:'KPI Ringkasan', getEl:()=> null}, // special-cased in captureSection() - no shared wrapper element exists for head+body (see #kpiPanelHead/#kpiRow)
+  {id:'summary', label:'Tabel Ringkasan', getEl:()=> document.getElementById('summaryBody') ? document.getElementById('summaryBody').closest('.panel') : null},
+  {id:'armada', label:'Tabel Armada', getEl:()=> document.getElementById('armadaBody') ? document.getElementById('armadaBody').closest('.panel') : null},
+  {id:'scorecard', label:'Tabel Scorecard', getEl:()=> document.getElementById('scorecardBody') ? document.getElementById('scorecardBody').closest('.panel') : null},
+];
+function openExportPicker(){
+  const list = document.getElementById('exportPickerList');
+  list.innerHTML = '';
+  EXPORT_SECTIONS.forEach(s=>{
+    const row = document.createElement('label');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;';
+    const cb = document.createElement('input'); cb.type='checkbox'; cb.value = s.id; cb.checked = true;
+    row.appendChild(cb); row.appendChild(document.createTextNode(s.label));
+    list.appendChild(row);
   });
-});
+  document.getElementById('exportPickerStatus').textContent = '';
+  document.getElementById('exportPickerOverlay').style.display = '';
+}
+function closeExportPicker(){ document.getElementById('exportPickerOverlay').style.display = 'none'; }
+/* Temporarily forces an element to render at FULL height for a clean capture (un-collapses any
+   .panel-body.panel-collapsed inside it, un-clips any .tablewrap's scroll box), returning a
+   restore() the caller MUST invoke afterward (success or failure) to put everything back exactly
+   as it was - this must never leave the live dashboard in a different state than the user had it. */
+function forceFullRender(el){
+  const restores = [];
+  el.querySelectorAll('.panel-body.panel-collapsed').forEach(b=>{
+    b.classList.remove('panel-collapsed');
+    if(b.id==='chartBody') renderChart(); // Chart.js renders blank against a zero-size canvas while its container is display:none - must re-render once visible, same as toggleSection() does.
+    restores.push(()=> b.classList.add('panel-collapsed'));
+  });
+  el.querySelectorAll('.tablewrap').forEach(tw=>{
+    const prevMaxHeight = tw.style.maxHeight, prevOverflow = tw.style.overflow;
+    tw.style.maxHeight = 'none'; tw.style.overflow = 'visible';
+    restores.push(()=>{ tw.style.maxHeight = prevMaxHeight; tw.style.overflow = prevOverflow; });
+  });
+  return ()=> restores.forEach(fn=>fn());
+}
+async function captureSection(sectionId){
+  if(typeof html2canvas === 'undefined') return null;
+  if(sectionId==='kpi'){
+    const head = document.getElementById('kpiPanelHead'), body = document.getElementById('kpiRow');
+    if(!head || !body) return null;
+    const wasCollapsed = body.classList.contains('panel-collapsed');
+    if(wasCollapsed) body.classList.remove('panel-collapsed');
+    // No shared wrapper exists for head+body (siblings, see #kpiPanelHead/#kpiRow) - clone both
+    // into an offscreen container instead of touching the live DOM structure, so this can't
+    // disturb anything else on the page while it's being captured.
+    const wrap = document.createElement('div');
+    wrap.style.cssText = 'position:fixed;left:-99999px;top:0;background:#ffffff;padding:12px;width:'+Math.max(body.scrollWidth,600)+'px;';
+    wrap.appendChild(head.cloneNode(true));
+    wrap.appendChild(body.cloneNode(true));
+    document.body.appendChild(wrap);
+    await new Promise(r=> setTimeout(r, 200));
+    try{ return await html2canvas(wrap, {backgroundColor:'#ffffff', scale:2}); }
+    finally{ document.body.removeChild(wrap); if(wasCollapsed) body.classList.add('panel-collapsed'); }
+  }
+  const s = EXPORT_SECTIONS.find(x=>x.id===sectionId);
+  const el = s && s.getEl();
+  if(!el) return null;
+  const restore = forceFullRender(el);
+  // Let Chart.js repaint (if we just un-collapsed it) and table layout settle before the capture -
+  // html2canvas reads the DOM synchronously and would otherwise sometimes grab a half-drawn chart.
+  await new Promise(r=> setTimeout(r, 350));
+  try{ return await html2canvas(el, {backgroundColor:'#ffffff', scale:2}); }
+  finally{ restore(); }
+}
+async function runExportPicker(mode){
+  const checked = [...document.querySelectorAll('#exportPickerList input[type=checkbox]:checked')].map(cb=>cb.value);
+  const status = document.getElementById('exportPickerStatus');
+  if(!checked.length){ status.textContent = 'Pilih minimal satu bagian.'; return; }
+  if(typeof html2canvas === 'undefined'){ status.textContent = 'html2canvas tidak tersedia.'; return; }
+  status.textContent = 'Menyiapkan gambar...';
+  const pieces = [];
+  for(const s of EXPORT_SECTIONS){ // fixed order, not checkbox click order
+    if(!checked.includes(s.id)) continue;
+    const canvas = await captureSection(s.id);
+    if(canvas) pieces.push(canvas);
+  }
+  if(!pieces.length){ status.textContent = 'Tidak ada bagian yang berhasil diambil.'; return; }
+  // Stack every selected piece vertically into ONE combined image (confirmed with Rendy: combined
+  // single image, not separate files - also the only sane target for a clipboard Copy anyway).
+  const gap = 24;
+  const maxWidth = Math.max(...pieces.map(c=>c.width));
+  const totalHeight = pieces.reduce((sum,c)=> sum + c.height, 0) + gap*(pieces.length+1);
+  const combo = document.createElement('canvas');
+  combo.width = maxWidth + gap*2;
+  combo.height = totalHeight;
+  const ctx = combo.getContext('2d');
+  ctx.fillStyle = '#F4F5F5'; ctx.fillRect(0,0,combo.width,combo.height);
+  let y = gap;
+  pieces.forEach(c=>{
+    ctx.drawImage(c, gap + (maxWidth-c.width)/2, y);
+    y += c.height + gap;
+  });
+  if(mode==='download'){
+    const a = document.createElement('a');
+    a.download = `export-dashboard-${new Date().toISOString().slice(0,10)}.png`;
+    a.href = combo.toDataURL('image/png');
+    a.click();
+    status.textContent = 'Gambar terunduh.';
+  } else {
+    combo.toBlob(async (blob)=>{
+      try{
+        await navigator.clipboard.write([new ClipboardItem({'image/png': blob})]);
+        status.textContent = 'Gambar tersalin ke clipboard.';
+      } catch(err){
+        status.textContent = 'Browser ini tidak mendukung copy ke clipboard - gunakan Download.';
+      }
+    }, 'image/png');
+  }
+}
+document.getElementById('btnExport').addEventListener('click', openExportPicker);
 
 
 /* ================= INIT ================= */
