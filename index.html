@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.08.31.23';
+window.APP_VERSION = 'build.2026.08.31.24';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -2040,19 +2040,32 @@ const state = {
   // weeknum, year, and dayname"). Two different kinds of filter, confirmed with Rendy before
   // building (this replaces the old Tahun/Bulan checklist model removed pre-2026-07-26, see
   // createPivotFilter's stale comment about it):
-  //  - filterYear/filterMonth/filterWeek are SHORTCUTS, not persistent membership filters - ticking
-  //    boxes here recomputes and overwrites fDateFrom/fDateTo (see applyDateShortcut()), exactly
-  //    like clicking "This Month"/"Last 7 Days" already does. They do NOT feed matchRow() directly.
-  //    Empty Set = nothing picked yet (no-op). Combine via min(all starts)/max(all ends) across
-  //    every ticked combination, so e.g. Month={Juli,Agustus} spans 1 Jul - 31 Agu in one range.
+  //  - filterYear/filterMonth/filterWeek: ticking boxes here still recomputes/overwrites
+  //    fDateFrom/fDateTo (see applyDateShortcut()) exactly like clicking "This Month"/"Last 7
+  //    Days" already does - that part is UNCHANGED, still a bounding window for display + a
+  //    performance-friendly [from,to] narrowing. Empty Set = nothing picked yet (no-op).
+  //    CHANGED 2026-08-31 per Rendy ("bisa pilih multiple, misal Januari dan Juli, atau week
+  //    24/28/32 saja"): on top of that bounding window, these three are now ALSO genuine AND/
+  //    membership filters applied in matchRow() (see dateMatchesPeriodFilters()), same tier as
+  //    filterDayName below. Before this change, ticking Month={Juli,Agustus} produced a single
+  //    span 1 Jul - 31 Agu that INCLUDED every row in between - now it means exactly "Jul or Agu
+  //    rows only". A single ticked month/week is a no-op vs. the old behavior (the narrowed
+  //    from/to already covered exactly that one period); the difference only shows up with
+  //    multiple disjoint selections.
   //  - filterWeek deliberately does NOT require filterYear to be set first ("independen dari
   //    tahun" per Rendy) - defaults to every year currently loaded in RE when filterYear is empty.
-  //    NOTE: with more than one year of data loaded this can span the full gap between the
-  //    earliest and latest matching week (a real limitation of the shortcut/single-range model
-  //    Rendy chose over a true cross-year membership filter) - fine today since RE is 2026-only.
+  //    NOTE: with more than one year of data loaded the bounding window (fDateFrom/fDateTo) can
+  //    still span the full gap between the earliest and latest matching week even though the
+  //    membership filter itself is now exact - fine today since RE is 2026-only.
   //  - filterDayName is different in kind: a genuine AND/membership filter (like the existing
   //    hourlyDow, but global instead of hourly-chart-only) - default all 7 days selected = no
   //    restriction. Applied directly in matchRow()/matchRowLM(), same tier as provinsi/distrik/etc.
+  //  - All four membership filters (day/month/week/year) are also honored by targetForBucket()/
+  //    soForBucket() via the shared dateMatchesPeriodFilters()/filterBucketDates() helpers, so the
+  //    Target/SO overlay lines prorate against the SAME subset of days Realisasi is filtered to -
+  //    this also retroactively fixes a pre-existing gap where filterDayName alone never reached
+  //    those two functions (Target line used to show the full 7-day prorated value even with only
+  //    Monday ticked, silently mismatched against Monday-only realisasi bars).
   filterYear: new Set(),
   filterMonth: new Set(),
   filterWeek: new Set(),
@@ -2213,10 +2226,13 @@ function uniqueISOWeeksInRE(){
 /* Recomputes fDateFrom/fDateTo from whatever's currently ticked across filterYear/filterMonth/
    filterWeek and fires the normal date-change pipeline - exactly like clicking a preset pill
    (renderDatePresets()), just built from checkboxes instead of a single fixed [from,to] fn().
-   Combines every ticked box via min(all starts)/max(all ends) so multiple selections still
-   collapse to one contiguous range (e.g. Month={Juli,Agustus} -> 1 Jul..31 Agu). No-ops (leaves
-   the current range untouched) if all three are empty - these are shortcuts, not filters that
-   need an "off" state of their own. */
+   Combines every ticked box via min(all starts)/max(all ends) into one bounding [from,to] window
+   (e.g. Month={Juli,Agustus} -> window 1 Jul..31 Agu) - this window is a display range + a cheap
+   pre-narrowing, NOT the actual selection anymore. CHANGED 2026-08-31: the real "only Jul or Agu"
+   exactness now comes from matchRow()'s dateMatchesPeriodFilters() membership check reading these
+   same Sets directly (see getFilterState()) - so Feb-Jun rows inside the bounding window get
+   excluded by that check even though the window itself still spans them. No-ops (leaves the
+   current range untouched) if all three are empty. */
 function applyDateShortcut(){
   const years = state.filterYear.size ? [...state.filterYear] : uniqueYearsInRE();
   if(!years.length) return;
@@ -2251,7 +2267,7 @@ function createDateShortcutFilter(mount, key, label, values, formatFn){
   btn.appendChild(labelBtn); btn.appendChild(arrowBtn);
   const panel = document.createElement('div'); panel.className='pvpanel';
   panel._btn = btn;
-  labelBtn.title = 'Centang untuk otomatis mengatur Rentang Tanggal di atas (bisa pilih lebih dari satu)';
+  labelBtn.title = 'Centang untuk memfilter tepat ke periode yang dicentang (bisa pilih lebih dari satu, mis. Januari + Juli saja - bulan di antaranya ikut tersaring, bukan cuma memperlebar rentang tanggal)';
 
   function refreshBtn(){
     const n = state[key].size;
@@ -2515,10 +2531,18 @@ function getFilterState(){
     distributor: state.distributor, expeditur: state.expeditur, source: state.source, incoterm: state.incoterm,
     gran: state.gran, value: state.value, chartType: state.chartType,
     // ADDED 2026-08-31: Nama Hari (day-of-week) AND filter - see the state.filterDayName comment
-    // block and createDayNameFilter(). filterYear/filterMonth/filterWeek deliberately NOT included
-    // here - those are one-shot Rentang Tanggal shortcuts (applyDateShortcut()), not something
-    // matchRow() itself needs to check.
+    // block and createDayNameFilter().
     filterDayName: state.filterDayName,
+    // ADDED 2026-08-31 per Rendy ("bisa pilih multiple, misal Januari dan Juli, atau week
+    // 24/28/32 saja"): filterYear/filterMonth/filterWeek now ALSO feed matchRow() as genuine AND/
+    // membership filters, same tier as filterDayName - previously excluded here on purpose because
+    // they were one-shot Rentang Tanggal shortcuts only (applyDateShortcut() still does that part
+    // unchanged). A single ticked month/week is a no-op vs. before (the shortcut's narrowed
+    // from/to already covered exactly that period); multiple disjoint selections now correctly
+    // exclude everything in between instead of being swallowed into one spanning range.
+    filterMonth: state.filterMonth,
+    filterWeek: state.filterWeek,
+    filterYear: state.filterYear,
   };
 }
 function shiftMonthBack(d){ return d ? new Date(d.getFullYear(), d.getMonth()-1, d.getDate()) : null; }
@@ -2576,11 +2600,13 @@ function matchRow(r, f, dateField){
   if(!f.expeditur.has(normVal(r.EXPEDITUR_NAMA))) return false;
   if(!f.source.has(normVal(r.SOURCE_PLANT))) return false;
   if(!f.incoterm.has(normVal(r.INCOTERM))) return false;
-  // ADDED 2026-08-31 per Rendy's Nama Hari quick-pick filter - uses the SAME `d` this function
-  // already resolved above (dateField-aware: _d/_dMasuk/_dKeluar depending on the caller), so
-  // day-name filtering always matches whichever date basis the rest of this row-match already
-  // used, instead of always re-reading TGL_SPJ regardless of context.
-  if(f.filterDayName && f.filterDayName.size<7 && d && !f.filterDayName.has(d.getDay())) return false;
+  // ADDED 2026-08-31 per Rendy's Nama Hari quick-pick filter, BROADENED 2026-08-31 to also cover
+  // Bulan/Minggu/Tahun multi-select ("Januari + Juli saja", "week 24/28/32 saja") - uses the SAME
+  // `d` this function already resolved above (dateField-aware: _d/_dMasuk/_dKeluar depending on
+  // the caller), so all four membership checks always match whichever date basis the rest of this
+  // row-match already used, instead of always re-reading TGL_SPJ regardless of context. See
+  // dateMatchesPeriodFilters() for the shared rule also used by targetForBucket()/soForBucket().
+  if(!dateMatchesPeriodFilters(d, f)) return false;
   return true;
 }
 // BUG FIXED 2026-08-10 per Rendy: "when i filter date, the date is filter based on rilis date (jam
@@ -3011,6 +3037,27 @@ function bucketYearMonth(bk, gran){
   else { const d = parseLocalDateInput(bk); year=d.getFullYear(); month=d.getMonth()+1; }
   return {year, month};
 }
+/* ADDED 2026-08-31 per Rendy's multi-select month/week request - the single source of truth for
+   "is this calendar date currently selected", shared by matchRow() (row-level filtering) AND
+   targetForBucket()/soForBucket() (target/SO line proration) so both sides always agree. Before
+   this, filterDayName existed in matchRow() alone and was never honored by the target/SO
+   proration math at all - a real, silent mismatch (Target line showed the full 7-day prorated
+   value even with only Monday ticked, against Monday-only realisasi bars). Fixed as a side effect
+   of building this shared helper for the new filterMonth/filterWeek/filterYear membership checks. */
+function dateMatchesPeriodFilters(d, f){
+  if(!d || !f) return true;
+  if(f.filterDayName && f.filterDayName.size>0 && f.filterDayName.size<7 && !f.filterDayName.has(d.getDay())) return false;
+  if(f.filterMonth && f.filterMonth.size>0 && !f.filterMonth.has(d.getMonth()+1)) return false;
+  // filterWeek stores bare ISO week numbers (see state.filterWeek comment) - isoWeekMonday(d)
+  // returns a "YYYY-Www" bucket-key string, so pull the week int back out of it rather than
+  // duplicating the ISO-week math a second time.
+  if(f.filterWeek && f.filterWeek.size>0 && !f.filterWeek.has(parseInt(isoWeekMonday(d).split('-W')[1],10))) return false;
+  if(f.filterYear && f.filterYear.size>0 && !f.filterYear.has(d.getFullYear())) return false;
+  return true;
+}
+function filterBucketDates(dates, f){
+  return dates.filter(d=> dateMatchesPeriodFilters(d, f));
+}
 /** Every actual calendar date a bucket key represents, so the target line can be prorated per
     bucket instead of showing the whole month's target flat/repeated (the bug Rendy flagged:
     "target and realisasi not align... cumulative per date, not cumulative total per day" — the
@@ -3052,7 +3099,10 @@ function datesInBucket(bk, gran){
    object (TARGET_CAPABLE_FIELDS-keyed, e.g. {NAMA_PROPINSI:'JAMBI'}) instead of being wired
    directly to chartGroupField/rowFocus inline. */
 function soForBucket(bk, gran, f, scope){
-  const dates = datesInBucket(bk, gran);
+  // CHANGED 2026-08-31: dates now run through filterBucketDates() so this bucket's window
+  // reflects the active day/month/week/year membership filters, not just the bucket's raw
+  // calendar span.
+  const dates = filterBucketDates(datesInBucket(bk, gran), f);
   if(!dates.length) return null;
   const from = dates[0], to = dates[dates.length-1];
   const subF = Object.assign({}, f, {from, to});
@@ -3062,7 +3112,12 @@ function soForBucket(bk, gran, f, scope){
     const val = scope[field];
     return (r)=> normVal(r[soKey])===val;
   }).filter(Boolean);
-  const extraMatch = matchers.length ? (r)=> matchers.every(m=>m(r)) : null;
+  // ADDED 2026-08-31: narrowing [from,to] to the filtered dates' own min/max isn't enough alone
+  // when a membership filter excludes days WITHIN that window (e.g. only Monday ticked - the
+  // window still spans Mon-Sun) - re-check each SO row's own _d against the same rule so those
+  // in-window exclusions apply per-row too, not just at the window's outer edges.
+  matchers.push(r=> dateMatchesPeriodFilters(r._d, f));
+  const extraMatch = (r)=> matchers.every(m=>m(r));
   return soTonaseFor(subF, extraMatch);
 }
 /** Target value for one chart bucket, prorated to the SAME granularity as Realisasi's own
@@ -3075,7 +3130,11 @@ function soForBucket(bk, gran, f, scope){
     only pulled ONE month's target via the bucket's "mid-quarter month" approximation — a real
     under-count, fixed as a side effect of this rewrite). */
 function targetForBucket(bk, gran, f, scope, sourceTypeOverride){
-  const dates = datesInBucket(bk, gran);
+  // CHANGED 2026-08-31: filterBucketDates() narrows this bucket's dates to whichever ones also
+  // pass the active day/month/week/year membership filters, so the D{day}/weekday-weight sums
+  // below prorate against the SAME subset of days Realisasi itself is filtered to (fixes the
+  // pre-existing filterDayName gap too - see dateMatchesPeriodFilters()'s comment).
+  const dates = filterBucketDates(datesInBucket(bk, gran), f);
   const byMonth = new Map(); // "y-m" -> [dates]
   dates.forEach(d=>{
     const k = d.getFullYear()+'-'+(d.getMonth()+1);
