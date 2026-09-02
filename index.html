@@ -497,7 +497,7 @@ window.addEventListener('error', function(e){
   <div class="panel">
     <div class="panel-head" onclick="toggleSection('summaryBody')">
       <h2><span class="panel-caret" id="summaryBody-caret">▼</span> Ringkasan — Level: <span id="groupByLabel">Tidak ada (Total)</span></h2>
-      <span class="sub" style="font-size:10px;color:var(--sub);">Warna %Achiev/%OF: hijau ≥100%, kuning→merah di bawah 100%. Target hanya tersedia bila semua level drill-down aktif = Provinsi/Distrik/Expeditur/Source (tidak untuk Distributor; Incoterm selalu FRC jadi tidak membatasi). % vs LM = dibanding periode yang sama persis digeser mundur 1 bulan.</span>
+      <span class="sub" style="font-size:10px;color:var(--sub);">Warna %Achiev/%OF: hijau ≥100%, kuning→merah di bawah 100%. Target hanya tersedia bila semua level drill-down aktif = Provinsi/Distrik/Expeditur/Source (tidak untuk Distributor), DAN filter Incoterm sedang dibatasi ke FRC saja (Target tidak ada untuk FOT/self-haul). % vs LM = dibanding periode yang sama persis digeser mundur 1 bulan.</span>
     </div>
     <div class="panel-body" id="summaryBody">
       <div class="tablewrap"><table id="summaryTable"></table></div>
@@ -1194,8 +1194,14 @@ function buildTargetSoGapRows(plantCode, incoterm, propinsi, includeSO){
   // Realized, month-to-date THROUGH the snapshot day - matches the target's own MTD proration
   // cutoff (previously this summed ALL loaded realisasi for the propinsi with no date scoping
   // at all, which only "worked" by coincidence when the target basis was a flat full-month figure).
+  // FIXED 2026-09-02 per FOT-into-RE backfill: this never filtered by INCOTERM even though the
+  // function receives one - harmless while RE was 100% FRC, but once FOT rows exist this would
+  // silently sum FRC+FOT together against an FRC-only Target. This popup is only ever reachable
+  // with incoterm==='FRC' anyway (sisaClickAttr/prognCellClickAttr make the FOT case non-clickable),
+  // so the added filter is a no-op today but makes the function correct on its own terms instead of
+  // correct only by the caller's accident.
   const realMap = {};
-  reArr.filter(r=> r.NAMA_PROPINSI===propinsi && r._d && r._d.getFullYear()===snapY && (r._d.getMonth()+1)===snapM && r._d.getDate()<=snapD).forEach(r=>{
+  reArr.filter(r=> r.NAMA_PROPINSI===propinsi && r.INCOTERM===incoterm && r._d && r._d.getFullYear()===snapY && (r._d.getMonth()+1)===snapM && r._d.getDate()<=snapD).forEach(r=>{
     const d = normDistrict(r.NAMA_AREA_DISTRIK); const v = r.EXPEDITUR_KODE;
     const k = d+'|'+v;
     realMap[k] = (realMap[k]||0) + (r.TONASE||0);
@@ -1204,7 +1210,7 @@ function buildTargetSoGapRows(plantCode, incoterm, propinsi, includeSO){
   // Realized on the snapshot day ONLY (===snapD, not <=snapD like realMap above) - the actual side
   // of "sisa dari target hari ini".
   const todayRealMap = {};
-  reArr.filter(r=> r.NAMA_PROPINSI===propinsi && r._d && r._d.getFullYear()===snapY && (r._d.getMonth()+1)===snapM && r._d.getDate()===snapD).forEach(r=>{
+  reArr.filter(r=> r.NAMA_PROPINSI===propinsi && r.INCOTERM===incoterm && r._d && r._d.getFullYear()===snapY && (r._d.getMonth()+1)===snapM && r._d.getDate()===snapD).forEach(r=>{
     const d = normDistrict(r.NAMA_AREA_DISTRIK); const v = r.EXPEDITUR_KODE;
     const k = d+'|'+v;
     todayRealMap[k] = (todayRealMap[k]||0) + (r.TONASE||0);
@@ -2572,9 +2578,13 @@ function renderValueList(){
 }
 /* Grouping is now driven by state.levels (ordered, click-toggled — see createPivotFilter above),
    not a single selector. Target (Kontrak/RKAP/SNOP) exists at Provinsi/Distrik/Expeditur/Source
-   grain as of 2026-07-27 (see SOURCE_PLANT note below); Incoterm is a no-op (always FRC). Only
-   Distributor has no target dimension — if it's an active drill-down level, target is suppressed
-   entirely for both the table and the chart (volume/SO/trip metrics are unaffected). */
+   grain as of 2026-07-27 (see SOURCE_PLANT note below). Incoterm is a trivial GROUPING dimension
+   (grouping by it never further restricts the target query, since target data has no Incoterm
+   column) but is NOT a no-op as a FILTER since 2026-09-02's FOT backfill — see incotermIsFrcOnly()
+   near TARGET_TRIVIAL_FIELDS for why the active Incoterm filter must be exactly {FRC} for target to
+   show at all. Distributor has no target dimension at all (grouping OR filtering) — if it's an
+   active drill-down level, target is suppressed entirely for both the table and the chart
+   (volume/SO/trip metrics are unaffected). */
 const DIM_LABELS = {NAMA_PROPINSI:'Provinsi',NAMA_AREA_DISTRIK:'Distrik',DISTRIBUTOR:'Distributor',EXPEDITUR_NAMA:'Expeditur',SOURCE_PLANT:'Source',INCOTERM:'Incoterm'};
 function levelLabelForField(field){ return DIM_LABELS[field] || field; }
 function levelsBreadcrumb(){ return state.levels.length ? state.levels.map(levelLabelForField).join(' › ') : 'Tidak ada (Total)'; }
@@ -2589,14 +2599,27 @@ function levelsBreadcrumb(){ return state.levels.length ? state.levels.map(level
    guessed 50/50 - documented in that row's CATATAN. 2 routes (Pelabuhan Teluk Bayur jumbo-bag/NN,
    Kota Pematangsiantar's no-vendor-code gap) have no plant data available and are left blank,
    flagged in CATATAN, consistent with "don't fabricate, flag gaps" project rule - 0.28% of total
-   target tonnage. INCOTERM is NOT added here even though it's a group-by dimension: every row in
-   this dataset is already Incoterm=FRC (100%, confirmed via the source SNOP sheet's TERM column),
-   so grouping by Incoterm never actually restricts anything - it's handled as a trivial pass-
-   through below (TARGET_TRIVIAL_FIELDS), not a real scope key, since targets_monthly.csv has no
-   INCOTERM column to filter by. */
+   target tonnage. INCOTERM is NOT added here even though it's a group-by dimension: targets_monthly.csv
+   has no INCOTERM column at all - SNOP/RKAP/CONTRACT targets only ever existed for FRC-managed
+   volume, so grouping by Incoterm never restricts the target side - it's handled as a trivial
+   pass-through below (TARGET_TRIVIAL_FIELDS), not a real scope key.
+   UPDATED 2026-09-02 per Rendy: FOT realisasi (customer self-haul, "ANGKUT SENDIRI") was backfilled
+   into re_YYYY-MM.json alongside FRC, filterable via the existing Incoterm checklist. Since target
+   data is FRC-only and always will be, showing Target/%Achievement/Gap-to-SNOP whenever the active
+   Incoterm filter includes FOT (whether FOT-only or FRC+FOT combined) would silently compare a
+   partly-or-wholly non-FRC Realisasi number against an FRC-only Target - a meaningless ratio, not
+   just an approximation. incotermIsFrcOnly() below gates every target computation on the CURRENT
+   incoterm filter selection actually being exactly {FRC} - default/unrestricted state (both FRC and
+   FOT selected, e.g. right after this feature ships) no longer counts as target-capable the way it
+   trivially did back when FRC was the only value in existence. Users must explicitly restrict the
+   Incoterm filter to FRC only to see Target/%Achievement figures again. */
 const TARGET_CAPABLE_FIELDS = new Set(['NAMA_PROPINSI','NAMA_AREA_DISTRIK','EXPEDITUR_NAMA','SOURCE_PLANT']);
 const TARGET_TRIVIAL_FIELDS = new Set(['INCOTERM']);
-function levelsAreTargetCapable(levels){ return levels.every(l=> TARGET_CAPABLE_FIELDS.has(l) || TARGET_TRIVIAL_FIELDS.has(l)); }
+function incotermIsFrcOnly(){
+  const active = isRestricted('incoterm') ? state.incoterm : new Set(ALLV.incoterm||[]);
+  return active.size===1 && active.has('FRC');
+}
+function levelsAreTargetCapable(levels){ return incotermIsFrcOnly() && levels.every(l=> TARGET_CAPABLE_FIELDS.has(l) || TARGET_TRIVIAL_FIELDS.has(l)); }
 
 /* ================= FILTER STATE ================= */
 function getFilterState(){
@@ -3388,7 +3411,8 @@ function computeSeries(f){
   // Target overlay lines: independently toggleable per source type (state.targetToggle ->
   // SNOP / CONTRACT="Vol. Kontrak" / RKAP), only for Tonase view, and only when every active
   // drill-down level AND the chart's own series-split dim are at Provinsi/Distrik/Expeditur/Source
-  // grain — never rendered when Distributor is involved anywhere (Incoterm is a no-op, doesn't block this).
+  // grain — never rendered when Distributor is involved anywhere, or when the Incoterm filter isn't
+  // restricted to FRC only (see incotermIsFrcOnly(), folded into levelsAreTargetCapable() below).
   //
   // Stacked Bar is a special case: the bar's TOTAL height already represents the sum across every
   // group in the stack, so the target line must collapse to ONE cumulative line per type regardless
@@ -4319,7 +4343,18 @@ function renderKPIs(){
   const gapEl = document.getElementById('gapNote');
   const notes = [];
   if(!levelsAreTargetCapable(state.levels)){
-    notes.push('Target (SNOP/Vol. Kontrak/RKAP) tidak ditampilkan karena level drill-down Distributor aktif — kolom Target/%Achiev untuk kombinasi ini adalah N/A, bukan 0. (Provinsi/Distrik/Expeditur/Source semua punya data target; Incoterm selalu FRC jadi tidak membatasi apa pun.)');
+    // UPDATED 2026-09-02: this gate now fails for two independent reasons - Distributor drill-down
+    // active (no target dimension for it), OR the Incoterm filter isn't restricted to FRC only
+    // (target data is FRC-only; showing it against a FOT-inclusive Realisasi would be meaningless -
+    // see incotermIsFrcOnly() comment above). Message covers both so it doesn't claim Incoterm never matters.
+    const distributorActive = state.levels.includes('DISTRIBUTOR');
+    if(!incotermIsFrcOnly() && distributorActive){
+      notes.push('Target (SNOP/Vol. Kontrak/RKAP) tidak ditampilkan: level drill-down Distributor aktif DAN filter Incoterm belum dibatasi ke FRC saja — kolom Target/%Achiev untuk kombinasi ini adalah N/A, bukan 0.');
+    } else if(!incotermIsFrcOnly()){
+      notes.push('Target (SNOP/Vol. Kontrak/RKAP) tidak ditampilkan karena filter Incoterm sedang mencakup FOT (data self-haul) — target hanya ada untuk FRC. Batasi filter Incoterm ke FRC saja untuk melihat Target/%Achiev.');
+    } else {
+      notes.push('Target (SNOP/Vol. Kontrak/RKAP) tidak ditampilkan karena level drill-down Distributor aktif — kolom Target/%Achiev untuk kombinasi ini adalah N/A, bukan 0. (Provinsi/Distrik/Expeditur/Source semua punya data target.)');
+    }
   } else if(unscopable){
     notes.push('Filter Distributor aktif — target tetap dihitung pada level Provinsi/Distrik/Expeditur/Source yang aktif (tidak bisa menyempit ke Distributor), karena data target tidak punya dimensi tersebut.');
   }
