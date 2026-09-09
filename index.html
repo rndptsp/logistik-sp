@@ -19,7 +19,7 @@
    and force a cache-busted reload if they differ. Runs once per detected version via
    sessionStorage guard so a broken/stale version.json can't cause an infinite reload loop.
    MUST bump APP_VERSION (and chunks/../version.json's "v") on every future deploy. */
-window.APP_VERSION = 'build.2026.09.09.08';
+window.APP_VERSION = 'build.2026.09.09.09';
 (function(){
   // Skip entirely under file:// (double-clicked standalone build): there's no host to redeploy
   // to and no version.json will ever be reachable there, so the fetch always fails - it was
@@ -2172,6 +2172,18 @@ function applyDefaultSourceExclusions(set){
   SOURCE_EXCLUDED_BY_DEFAULT.forEach(v=> set.delete(v));
   return set;
 }
+// Incoterm values excluded from the DEFAULT view. Added 2026-09-09 per Rendy ("FOT default
+// uncheck"): FOT is now real, first-class data in RE (backfilled 2026-09-02, self-haul/customer
+// pickup, no Target exists for it - see incotermIsFrcOnly()/TARGET_TRIVIAL_FIELDS above) but on
+// first load the dashboard should still open scoped to FRC only, matching the original all-FRC
+// view most users expect and keeping Target/%Achievement visible by default (target requires the
+// active Incoterm filter to be exactly {FRC} - see levelsAreTargetCapable()). Fully togglable
+// either way, same as the Source exclusion above - this only changes the default selection.
+const INCOTERM_EXCLUDED_BY_DEFAULT = ['FOT'];
+function applyDefaultIncotermExclusions(set){
+  INCOTERM_EXCLUDED_BY_DEFAULT.forEach(v=> set.delete(v));
+  return set;
+}
 // PP BELAWAN SBA per Rendy 2026-08-02 ("keep it visible, but by default uncheck") - HIDDEN_PLANT_CODE
 // ('79B4') strips every realisasi/SO row for this plant before RE/SO are ever built, so it can NEVER
 // come from uniqSorted(RE,'SOURCE_PLANT') the way every other Source checkbox does - without this,
@@ -2187,6 +2199,7 @@ function createPivotFilter(mount, key, label, values, levelField){
   if(state[key].size===0){
     state[key] = new Set(values); // default: all checked...
     if(key==='source') applyDefaultSourceExclusions(state[key]); // ...except SBA/SMBR, see above.
+    if(key==='incoterm') applyDefaultIncotermExclusions(state[key]); // ...except FOT, see above.
   }
 
   const wrap = document.createElement('div'); wrap.className = 'pvwrap';
