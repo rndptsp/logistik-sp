@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Outbound Logistics — Semen Padang</title>
+<link rel="icon" href="assets/icon-192.png">
+<link rel="stylesheet" href="style.css?v=build.2026.10.05.06">
+</head>
+<body>
+
+<!-- ===================== Password gate ===================== -->
+<div id="gate">
+  <div class="gate-bg"></div>
+  <form class="gate-card" id="gateForm" autocomplete="off">
+    <img src="assets/semenpadang-logo.png" alt="Semen Padang">
+    <div class="gate-title">Outbound Logistics</div>
+    <div class="gate-sub">PT Semen Padang &middot; data internal</div>
+    <input type="password" id="gatePw" placeholder="Kata sandi" autocomplete="current-password" aria-label="Kata sandi">
+    <button type="submit" id="gateBtn">Masuk</button>
+    <div class="gate-msg" id="gateMsg"></div>
+  </form>
+</div>
+
+<!-- ===================== App ===================== -->
+<div id="app" hidden>
+  <header>
+    <a class="brand" href="#/">
+      <img src="assets/semenpadang-logo.png" alt="Semen Padang">
+      <div class="name">Semen Padang<small>Outbound Logistics</small></div>
+    </a>
+    <nav id="mainNav">
+      <div class="navitem" data-nav="home"><a class="navbtn" href="#/">Home</a></div>
+      <div class="navitem" data-nav="overview">
+        <div class="navbtn" data-toggle>Overview <span class="caret">&#9660;</span></div>
+        <div class="dropdown">
+          <a href="#/">Ringkasan<small>Headline, peta, KPI bulan berjalan</small></a>
+          <a href="#/provinsi">Semua provinsi<small>Rank pencapaian per provinsi</small></a>
+          <a href="#/tren">Tren<small>Tonase mingguan &amp; bulanan</small></a>
+          <a href="#/armada">Armada<small>Truk aktif, trip, dwell time</small></a>
+          <a href="#/scorecard">Scorecard<small>Ringkasan performa ekspeditur</small></a>
+        </div>
+      </div>
+      <div class="navitem" data-nav="forecast">
+        <div class="navbtn" data-toggle>Forecast <span class="caret">&#9660;</span></div>
+        <div class="mega">
+          <div class="mega-title">Granularitas</div>
+          <div class="gran-chips">
+            <a href="#/forecast/harian">Harian</a><a href="#/forecast/mingguan">Mingguan</a><a href="#/forecast/bulanan">Bulanan</a>
+          </div>
+          <div class="mega-cols">
+            <div>
+              <div class="mega-title">Incoterm</div>
+              <div class="mega-list">
+                <a href="#/incoterm/FRC">FRC — Franco<span>via ekspeditur</span></a>
+                <a href="#/incoterm/FOT">FOT — Free on Truck<span>diambil distributor</span></a>
+              </div>
+            </div>
+            <div>
+              <div class="mega-title">Provinsi</div>
+              <div class="mega-list" id="navProvList"></div>
+            </div>
+          </div>
+          <a class="mega-foot" href="#/provinsi">Lihat semua provinsi &rsaquo;</a>
+        </div>
+      </div>
+      <div class="navitem" data-nav="ekspeditur">
+        <div class="navbtn" data-toggle>Ekspeditur <span class="caret">&#9660;</span></div>
+        <div class="mega mega-eksp">
+          <div class="mega-title">Mitra ekspeditur &middot; pencapaian bulan terpilih</div>
+          <div class="eksp-grid" id="navEkspList"></div>
+          <a class="mega-foot" href="#/ekspeditur">Lihat semua ekspeditur &rsaquo;</a>
+        </div>
+      </div>
+      <div class="navitem nav-right" data-nav="filter">
+        <div class="navbtn" data-toggle>Filter <span class="caret">&#9660;</span></div>
+        <div class="filter-panel" id="filterPanel"></div>
+      </div>
+    </nav>
+    <div class="headerright">
+      <div class="search">
+        <input type="search" id="searchBox" placeholder="Search" aria-label="Search provinsi, distrik, ekspeditur">
+        <div class="search-results" id="searchResults"></div>
+      </div>
+      <div class="daylabel" id="dayLabel"></div>
+    </div>
+  </header>
+  <div class="filter-strip" id="filterStrip"></div>
+  <main id="view"></main>
+  <footer class="foot" id="foot"></footer>
+</div>
+
+<script src="app.js?v=build.2026.10.05.06"></script>
+</body>
+</html>
