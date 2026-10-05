@@ -304,3 +304,29 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12.5px;}
   .attn .cta{margin-left:0;}
   .bars .bval{font-size:9px;}
 }
+
+/* ---------- Compare + drill-down ---------- */
+.pt-tools{display:flex;gap:8px;align-items:center;flex-wrap:wrap;}
+.cmp-sel{font-size:12px;font-weight:600;padding:6px 8px;border:1px solid var(--line);border-radius:2px;background:#fff;color:var(--black);max-width:220px;text-transform:none;letter-spacing:0;}
+.bars.pair .bwrap{gap:3px;}
+.bars.pair .b{width:38%;}
+.bars .b.b2{background:#BCC3C5;}
+.bars .bcmp{font-size:9.5px;font-weight:800;margin-bottom:2px;white-space:nowrap;}
+.bars.dense{gap:3px;}
+.bars.dense .bval,.bars.dense .bpct,.bars.dense .bcmp{visibility:hidden;}
+.bars.dense .bcol:hover .bval,.bars.dense .bcol:hover .bpct,.bars.dense .bcol:hover .bcmp,
+.bars.dense .bcol:last-child .bval,.bars.dense .bcol:last-child .bpct,.bars.dense .bcol:last-child .bcmp,
+.bars.dense .bcol.sel .bval,.bars.dense .bcol.sel .bpct{visibility:visible;}
+.bars.dense .blabel{font-size:9.5px;}
+.bars .bcol.sel .b{outline:2px solid #000;outline-offset:1px;}
+.main-chart{margin-bottom:34px;}
+.main-chart .bars{height:220px;}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;display:flex;align-items:flex-start;justify-content:center;padding:6vh 16px;animation:dropIn .15s ease both;}
+.modal{background:#fff;width:min(1040px,100%);max-height:88vh;overflow:auto;border-top:4px solid var(--red);box-shadow:0 24px 60px rgba(0,0,0,.35);padding:20px 24px 24px;}
+.modal-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:16px;}
+.modal-title{font-size:19px;font-weight:800;}
+.modal-sub{font-size:12px;color:var(--sub);margin-top:3px;}
+.modal-x{border:0;background:var(--gray-l);width:34px;height:34px;font-size:22px;line-height:1;cursor:pointer;border-radius:2px;flex:none;}
+.modal-x:hover{background:var(--line);}
+.modal .tbl-wrap{max-height:52vh;}
+@media(max-width:560px){.modal{padding:16px;}.modal-title{font-size:16px;}.cmp-sel{max-width:150px;}}

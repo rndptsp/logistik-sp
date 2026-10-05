@@ -169,88 +169,220 @@ function trucksFor(m, sc){
 }
 function prevMonth(m){ const y = +m.slice(0, 4), mo = +m.slice(5); return mo === 1 ? (y - 1) + '-12' : y + '-' + String(mo - 1).padStart(2, '0'); }
 
-/* Range (date-based) realisasi + target, for weekly trends and weekly forecast. */
-function rangeTotals(fromISO, toISO, sc){
-  sc = sc || {};
-  let vol = 0, frc = 0, tgt = 0, hasTgt = false;
+/* Range (date-based) realisasi + target, optionally grouped by prov/dist/eksp/src. */
+const pad2 = n => String(n).padStart(2, '0');
+function addDays(s, n){ const d = parseISO(s); d.setDate(d.getDate() + n); return iso(d); }
+function rangeGroup(fromISO, toISO, sc, group){
+  sc = sc || {}; group = group || 'all';
+  const out = new Map();
+  const get = k => { let o = out.get(k); if(!o){ o = {key:k, vol:0, frc:0, trips:0, tgt:0, hasTgt:false}; out.set(k, o); } return o; };
   B.facts.forEach(f => {
     const ds = B.days[f[0]];
     if(ds < fromISO || ds > toISO || !srcOk(f[2]) || !scopeOkF(f, sc)) return;
-    if(f[1] === 0) frc += f[6];
-    if(incOk(f[1])) vol += f[6];
+    const o = get(FK[group](f));
+    if(f[1] === 0) o.frc += f[6];
+    if(incOk(f[1])){ o.vol += f[6]; o.trips += f[7]; }
   });
   if(frcOn()){
     const from = parseISO(fromISO), to = parseISO(toISO);
     B.targets.forEach(t => {
-      if(!srcOk(t[4]) || !scopeOkT(t, sc)) return;
-      const m = t[0], y = +m.slice(0, 4), mo = +m.slice(5) - 1, n = dim(m);
+      const m = t[0];
+      if(m + '-31' < fromISO || m + '-01' > toISO || !srcOk(t[4]) || !scopeOkT(t, sc)) return;
+      const y = +m.slice(0, 4), mo = +m.slice(5) - 1, n = dim(m);
+      let add = 0, any = false;
       for(let d = 1; d <= n; d++){
         const dt = new Date(y, mo, d);
         if(dt < from || dt > to) continue;
-        tgt += t[6] ? (t[6][d - 1] || 0) : t[5] / n; hasTgt = true;
+        add += t[6] ? (t[6][d - 1] || 0) : t[5] / n; any = true;
       }
+      if(any){ const o = get(TK[group](t)); o.tgt += add; o.hasTgt = true; }
     });
   }
-  return {vol, frc, tgt, pct: hasTgt && frcOn() ? pctOf(frc, tgt) : null};
+  out.forEach(o => { o.pct = o.hasTgt && frcOn() ? pctOf(o.frc, o.tgt) : null; o.gap = o.frc - o.tgt; });
+  return out;
+}
+function rangeTotals(fromISO, toISO, sc){
+  return rangeGroup(fromISO, toISO, sc, 'all').get(0) || {vol:0, frc:0, trips:0, tgt:0, hasTgt:false, pct:null, gap:0};
 }
 
-/* ===================== Trend panel (weekly / monthly) ===================== */
-function trendData(sc, gran, n){
-  const asOf = B.asOf;
-  if(gran === 'bulanan'){
+/* ===================== Trend panels: periods, compare, drill-down ===================== */
+/* A bucket is one bar: {from, to, label, long}. */
+function buckets(gran, n){
+  const ld = lastDayOf(F.month), endISO = F.month + '-' + pad2(ld), out = [];
+  if(gran === 'mtd'){
+    // cumulative month-to-date: bar d = realisasi tgl 1..d vs target tgl 1..d
+    for(let d = 1; d <= ld; d++) out.push({from: F.month + '-01', to: F.month + '-' + pad2(d), label: String(d), long: 'MTD 1–' + d + ' ' + MON3[+F.month.slice(5) - 1] + ' ' + F.month.slice(0, 4)});
+  } else if(gran === 'bulanan'){
     const idx = D.months.indexOf(F.month);
-    const ms = D.months.slice(Math.max(0, idx - (n || 6) + 1), idx + 1);
-    return ms.map(m => { const t = total(m, sc); return {label: monthShort(m), long: monthLabel(m) + (m === D.months[D.months.length - 1] ? ' (MTD s.d. tgl ' + lastDayOf(m) + ')' : ''), vol: t.vol, frc: t.frc, tgt: t.hasTgt ? t.tgt : null, pct: t.pct}; });
-  }
-  if(gran === 'harian'){
-    const m = F.month, ld = lastDayOf(m), out = [];
-    for(let d = Math.max(1, ld - (n || 14) + 1); d <= ld; d++){
-      const ds = m + '-' + String(d).padStart(2, '0');
-      const r = rangeTotals(ds, ds, sc);
-      out.push({label: String(d), long: DAYS[parseISO(ds).getDay()] + ', ' + dayLabel(ds), vol: r.vol, frc: r.frc, tgt: r.pct == null ? null : r.tgt, pct: r.pct});
+    D.months.slice(Math.max(0, idx - (n || 6) + 1), idx + 1).forEach(m => {
+      const toDay = m === F.month ? ld : lastDayOf(m);
+      out.push({from: m + '-01', to: m + '-' + pad2(toDay), label: monthShort(m), long: monthLabel(m) + (toDay < dim(m) ? ' (s.d. tgl ' + toDay + ')' : '')});
+    });
+  } else if(gran === 'harian'){
+    for(let i = (n || 14) - 1; i >= 0; i--){
+      const s = addDays(endISO, -i), d = parseISO(s);
+      out.push({from: s, to: s, label: d.getDate() === 1 || i === (n || 14) - 1 ? d.getDate() + '/' + (d.getMonth() + 1) : String(d.getDate()), long: DAYS[d.getDay()] + ', ' + dayLabel(s)});
     }
-    return out;
-  }
-  // mingguan: Monday–Sunday weeks ending at the selected month's last data day
-  const end = parseISO(F.month + '-' + String(lastDayOf(F.month)).padStart(2, '0'));
-  const out = [];
-  const monday = new Date(end); monday.setDate(end.getDate() - ((end.getDay() + 6) % 7));
-  for(let w = (n || 8) - 1; w >= 0; w--){
-    const a = new Date(monday); a.setDate(monday.getDate() - 7 * w);
-    const b = new Date(a); b.setDate(a.getDate() + 6);
-    const bb = b > end ? end : b;
-    const r = rangeTotals(iso(a), iso(bb), sc);
-    out.push({label: a.getDate() + '/' + (a.getMonth() + 1), long: a.getDate() + ' ' + MON3[a.getMonth()] + ' – ' + bb.getDate() + ' ' + MON3[bb.getMonth()] + (bb < b ? ' (berjalan)' : ''), vol: r.vol, frc: r.frc, tgt: r.pct == null ? null : r.tgt, pct: r.pct});
+  } else {
+    const end = parseISO(endISO), monday = new Date(end);
+    monday.setDate(end.getDate() - ((end.getDay() + 6) % 7));
+    for(let w = (n || 8) - 1; w >= 0; w--){
+      const a = new Date(monday); a.setDate(monday.getDate() - 7 * w);
+      const b = new Date(a); b.setDate(a.getDate() + 6);
+      const bb = b > end ? end : b;
+      out.push({from: iso(a), to: iso(bb), label: a.getDate() + '/' + (a.getMonth() + 1), long: a.getDate() + ' ' + MON3[a.getMonth()] + ' – ' + bb.getDate() + ' ' + MON3[bb.getMonth()] + ' ' + bb.getFullYear() + (bb < b ? ' (berjalan)' : '')});
+    }
   }
   return out;
 }
+/* Previous comparable period: daily -> same weekday last week; weekly -> previous week;
+   monthly -> previous month (same day range when the month is still running). */
+function shiftBucket(b, gran){
+  if(gran !== 'bulanan' && gran !== 'mtd') return {from: addDays(b.from, -7), to: addDays(b.to, -7)};
+  const m = b.from.slice(0, 7), pm = prevMonth(m), full = +b.to.slice(8) >= dim(m);
+  return {from: pm + '-01', to: pm + '-' + pad2(full ? dim(pm) : Math.min(+b.to.slice(8), dim(pm)))};
+}
+const PREV_LBL = {mtd: 'MTD bulan lalu (tgl sama)', harian: 'hari sama minggu lalu', mingguan: 'minggu sebelumnya', bulanan: 'bulan sebelumnya'};
+function scName(sc){
+  if(sc.dist != null) return tc(B.dims.dist[sc.dist]);
+  if(sc.eksp != null) return B.dims.eksp[sc.eksp] || 'Tanpa ekspeditur';
+  if(sc.prov != null) return tc(B.dims.prov[sc.prov]);
+  return 'Semua provinsi';
+}
+function cmpScope(code){ if(!code || code === 'prev') return null; const [k, v] = code.split(':'); return {[k]: +v}; }
+function cmpLabel(T){ return T.cmp === 'prev' ? PREV_LBL[T.gran] : T.cmp ? scName(cmpScope(T.cmp)) : ''; }
+function withInc(T, fn){ const s = F.inc; if(T && T.incFix) F.inc = T.incFix; try { return fn(); } finally { F.inc = s; } }
+function trendData(T){
+  return withInc(T, () => buckets(T.gran).map(b => {
+    const r = rangeTotals(b.from, b.to, T.sc);
+    const d = Object.assign({}, b, {vol: r.vol, frc: r.frc, tgt: r.pct == null ? null : r.tgt, pct: r.pct});
+    if(T.cmp){
+      const cb = T.cmp === 'prev' ? shiftBucket(b, T.gran) : b;
+      const c = rangeTotals(cb.from, cb.to, T.cmp === 'prev' ? T.sc : cmpScope(T.cmp));
+      d.c = {vol: c.vol, frc: c.frc, tgt: c.pct == null ? null : c.tgt, pct: c.pct, from: cb.from, to: cb.to};
+    }
+    return d;
+  }));
+}
 const TRENDS = {};
+function deltaHTML(a, b){
+  if(!b) return '<div class="bcmp">–</div>';
+  const p = (a / b - 1) * 100;
+  return '<div class="bcmp" style="color:' + (p >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (p >= 0 ? '▲' : '▼') + Math.abs(Math.round(p)) + '%</div>';
+}
 function barsHTML(id, data){
-  const max = Math.max(1, ...data.map(d => Math.max(d.vol, d.tgt || 0)));
-  return '<div class="bars">' + data.map((d, i) => {
+  const hasC = data.some(d => d.c);
+  const max = Math.max(1, ...data.map(d => Math.max(d.vol, d.tgt || 0, d.c ? d.c.vol : 0)));
+  return '<div class="bars' + (hasC ? ' pair' : '') + (data.length > 16 ? ' dense' : '') + '">' + data.map((d, i) => {
     const h = Math.max(2, d.vol / max * 100);
     const th = d.tgt != null ? Math.min(100, d.tgt / max * 100) : null;
     const c = d.pct != null ? tierColor(d.pct) : 'var(--black)';
-    return '<div class="bcol click" data-bar="' + id + ':' + i + '">' +
+    const unit = d.unit === 'jam' ? fmt1(d.vol) : fmt(d.vol);
+    return '<div class="bcol click" data-bar="' + id + ':' + i + '" title="' + esc(d.long || d.label) + ' — klik untuk rincian">' +
       (d.pct != null ? '<div class="bpct" style="color:' + c + '">' + Math.round(d.pct) + '%</div>' : '') +
-      '<div class="bval">' + fmt(d.vol) + '</div>' +
-      '<div class="bwrap"><div class="b" style="height:' + h + '%;background:' + c + ';animation-delay:' + (i * 50) + 'ms"></div>' +
+      '<div class="bval">' + unit + '</div>' + (d.c ? deltaHTML(d.vol, d.c.vol) : '') +
+      '<div class="bwrap"><div class="b" style="height:' + h + '%;background:' + (d.color || c) + ';animation-delay:' + (i * 50) + 'ms"></div>' +
+      (d.c ? '<div class="b b2" style="height:' + Math.max(2, d.c.vol / max * 100) + '%;animation-delay:' + (i * 50 + 25) + 'ms"></div>' : '') +
       (th != null ? '<div class="tick" style="bottom:' + th + '%"></div>' : '') + '</div>' +
       '<div class="blabel">' + esc(d.label) + '</div></div>';
   }).join('') + '</div>';
 }
-function trendPanel(sc, gran, title){
+function cmpOptions(T){
+  const sc = T.sc, opt = [['', 'Tanpa pembanding'], ['prev', 'vs ' + PREV_LBL[T.gran]]];
+  const groups = [];
+  if(sc.dist != null){
+    const p = B.dims.distProv[sc.dist];
+    const ds = [...D.liveDist].filter(i => i !== sc.dist && B.dims.distProv[i] === p).sort((a, b) => B.dims.dist[a].localeCompare(B.dims.dist[b]));
+    groups.push(['Distrik lain di ' + tc(B.dims.prov[p]), ds.map(i => ['dist:' + i, tc(B.dims.dist[i])])]);
+  } else if(sc.eksp != null){
+    groups.push(['Ekspeditur lain', D.ekspList.filter(e => D.ekspIdx[e] !== sc.eksp).map(e => ['eksp:' + D.ekspIdx[e], e])]);
+  } else {
+    groups.push(['Provinsi', [...D.liveProv].filter(i => i !== sc.prov).sort((a, b) => B.dims.prov[a].localeCompare(B.dims.prov[b])).map(i => ['prov:' + i, tc(B.dims.prov[i])])]);
+  }
+  return '<select class="cmp-sel" data-cmp="' + T.id + '" aria-label="Bandingkan">' +
+    opt.map(o => '<option value="' + o[0] + '"' + ((T.cmp || '') === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>').join('') +
+    groups.map(g => '<optgroup label="' + esc(g[0]) + '">' + g[1].map(o => '<option value="' + o[0] + '"' + (T.cmp === o[0] ? ' selected' : '') + '>vs ' + esc(o[1]) + '</option>').join('') + '</optgroup>').join('') + '</select>';
+}
+function trendPanel(sc, gran, title, opt){
   const id = 't' + Math.random().toString(36).slice(2, 8);
-  TRENDS[id] = {sc, gran: gran || 'mingguan', title: title || 'Tren realisasi'};
+  TRENDS[id] = Object.assign({id, sc: sc || {}, gran: gran || 'mingguan', title: title || 'Tren realisasi', cmp: null}, opt || {});
   return '<div class="dp-panel" id="' + id + '">' + trendInner(id) + '</div>';
 }
 function trendInner(id){
-  const T = TRENDS[id], data = trendData(T.sc, T.gran);
+  const T = TRENDS[id], data = trendData(T);
   T.data = data;
-  const chips = [['harian','Harian'],['mingguan','Mingguan'],['bulanan','Bulanan']].map(g => '<span class="' + (g[0] === T.gran ? 'on' : '') + '" data-gran="' + id + ':' + g[0] + '">' + g[1] + '</span>').join('');
-  return '<div class="pt">' + esc(T.title) + ' (ton)<div class="gran-chips">' + chips + '</div></div>' + barsHTML(id, data) +
-    '<div class="trend-legend">' + (frcOn() ? '<span><i style="background:var(--green)"></i>&ge;100% target</span><span><i style="background:var(--amber)"></i>85–99%</span><span><i style="background:var(--red)"></i>&lt;85%</span><span><i class="dash"></i>target SNOP</span>' : '<span><i style="background:var(--black)"></i>volume FOT (tanpa target)</span>') + '</div>' +
-    '<div class="trend-detail" id="' + id + '-d">Klik salah satu batang untuk lihat rincian periode.</div>';
+  const chips = [['mtd','MTD'],['harian','Harian'],['mingguan','Mingguan'],['bulanan','Bulanan']].map(g => '<span class="' + (g[0] === T.gran ? 'on' : '') + '" data-gran="' + id + ':' + g[0] + '">' + g[1] + '</span>').join('');
+  const inc = T.incFix || F.inc;
+  const legend = (inc !== 'FOT' ? '<span><i style="background:var(--green)"></i>&ge;100% target</span><span><i style="background:var(--amber)"></i>85–99%</span><span><i style="background:var(--red)"></i>&lt;85%</span><span><i class="dash"></i>target SNOP</span>' : '<span><i style="background:var(--black)"></i>volume FOT (tanpa target)</span>') +
+    (T.cmp ? '<span><i style="background:#BCC3C5"></i>' + esc(cmpLabel(T)) + '</span><span>▲▼ = selisih vs pembanding</span>' : '');
+  return '<div class="pt"><span>' + esc(T.title) + ' (ton)</span><div class="pt-tools">' + cmpOptions(T) + '<div class="gran-chips">' + chips + '</div></div></div>' + barsHTML(id, data) +
+    '<div class="trend-legend">' + legend + '</div>' +
+    '<div class="trend-detail" id="' + id + '-d">Klik batang mana pun untuk rincian per provinsi, distrik, ekspeditur &amp; source' + (T.cmp ? ', dibandingkan dengan ' + esc(cmpLabel(T)) : '') + '.</div>';
+}
+
+/* ===================== Drill-down modal ===================== */
+let MODAL = null;
+const DIM_LBL = {prov: 'Provinsi', dist: 'Distrik', eksp: 'Ekspeditur', src: 'Source plant'};
+function dimName(dim, k){
+  if(dim === 'prov') return tc(B.dims.prov[k]);
+  if(dim === 'dist') return tc(B.dims.dist[k]);
+  if(dim === 'eksp') return B.dims.eksp[k] || '(tanpa ekspeditur / FOT)';
+  return tc(B.dims.src[k] || '(tanpa plant)');
+}
+function dimHref(dim, k){
+  if(dim === 'prov') return '#/provinsi/' + enc(B.dims.prov[k]);
+  if(dim === 'dist') return '#/distrik/' + enc(B.dims.dist[k]);
+  if(dim === 'eksp') return B.dims.eksp[k] ? '#/ekspeditur/' + enc(B.dims.eksp[k]) : null;
+  return null;
+}
+function openModal(title, sub, html){
+  const old = $('#modal'); if(old) old.remove();   // keep MODAL state: openBreakdown sets it before calling us
+  const el = document.createElement('div');
+  el.className = 'modal-bg'; el.id = 'modal';
+  el.innerHTML = '<div class="modal" role="dialog" aria-modal="true" aria-label="' + esc(title) + '"><div class="modal-head"><div><div class="modal-title">' + esc(title) + '</div><div class="modal-sub">' + sub + '</div></div><button class="modal-x" data-act="closemodal" aria-label="Tutup">&times;</button></div><div id="modalBody">' + html + '</div></div>';
+  document.body.appendChild(el); document.body.style.overflow = 'hidden';
+}
+function closeModal(){ const m = $('#modal'); if(m){ m.remove(); document.body.style.overflow = ''; } MODAL = null; }
+function openBreakdown(T, i){
+  const d = T.data[i];
+  const dims = ['prov', 'dist', 'eksp', 'src'].filter(k => !(k === 'prov' && (T.sc.prov != null || T.sc.dist != null)) && !(k === 'dist' && T.sc.dist != null) && !(k === 'eksp' && T.sc.eksp != null));
+  MODAL = {T, d, dims, dim: dims[0]};
+  const range = d.from === d.to ? dayLabel(d.from) : dayLabel(d.from) + ' – ' + dayLabel(d.to);
+  if(!T.sc) T.sc = {};
+  openModal(scName(T.sc) + ' · ' + (d.long || d.label), esc(range) + ' · ' + esc(T.incFix || (F.inc === 'ALL' ? 'FRC + FOT' : F.inc)), modalBody());
+}
+function modalBody(){
+  const {T, d, dims, dim} = MODAL;
+  const pb = shiftBucket(d, T.gran);
+  return withInc(T, () => {
+    const cur = rangeGroup(d.from, d.to, T.sc, dim), prv = rangeGroup(pb.from, pb.to, T.sc, dim);
+    const rows = [...cur.values()].filter(o => o.vol > 0 || o.tgt > 0).map(o => Object.assign(o, {prev: (prv.get(o.key) || {}).vol || 0}));
+    rows.sort((a, b) => (b.pct == null ? -1 : b.pct) - (a.pct == null ? -1 : a.pct) || b.vol - a.vol);
+    let r = 0; rows.forEach(o => { o.rank = o.pct == null ? null : ++r; });
+    const tot = rangeTotals(d.from, d.to, T.sc), tp = rangeTotals(pb.from, pb.to, T.sc);
+    const chg = tp.vol ? (tot.vol / tp.vol - 1) * 100 : null;
+    let cmpCell = '';
+    if(d.c && T.cmp !== 'prev'){
+      const cc = d.c, dv = cc.vol ? (d.vol / cc.vol - 1) * 100 : null;
+      cmpCell = '<div class="prog-cell"><div class="pl">vs ' + esc(cmpLabel(T)) + '</div><div class="pv">' + fmt(cc.vol) + ' t</div><div class="pd">capaian ' + pctTxt(cc.pct) + (dv != null ? ' · selisih ' + (dv >= 0 ? '+' : '') + Math.round(dv) + '%' : '') + '</div></div>';
+    }
+    const head = '<div class="prog-row" style="margin-bottom:18px">' +
+      '<div class="prog-cell"><div class="pl">Realisasi</div><div class="pv">' + fmt(tot.vol) + ' t</div><div class="pd">' + fmt(tot.trips) + ' trip</div></div>' +
+      '<div class="prog-cell"><div class="pl">Target SNOP</div><div class="pv">' + (tot.hasTgt ? fmt(tot.tgt) + ' t' : '–') + '</div><div class="pd">gap ' + (tot.hasTgt ? signed(tot.gap) + ' t' : '–') + '</div></div>' +
+      '<div class="prog-cell"><div class="pl">Capaian</div><div class="pv" style="color:' + tierColor(tot.pct) + '">' + pctTxt(tot.pct) + '</div><div class="pd">FRC vs SNOP</div></div>' +
+      '<div class="prog-cell"><div class="pl">vs ' + esc(PREV_LBL[T.gran]) + '</div><div class="pv" style="color:' + (chg == null ? 'inherit' : chg >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (chg == null ? '–' : (chg >= 0 ? '+' : '') + Math.round(chg) + '%') + '</div><div class="pd">' + fmt(tp.vol) + ' t (' + esc(pb.from === pb.to ? dayLabel(pb.from) : dayLabel(pb.from) + ' – ' + dayLabel(pb.to)) + ')</div></div>' +
+      cmpCell + '</div>';
+    const tabs = '<div class="gran-chips" style="margin-bottom:14px">' + dims.map(k => '<span class="' + (k === dim ? 'on' : '') + '" data-mdim="' + k + '">Per ' + DIM_LBL[k].toLowerCase() + '</span>').join('') + '</div>';
+    const cols = [C.rank,
+      {h: DIM_LBL[dim], cls: 'name', val: o => dimName(dim, o.key), html: o => esc(dimName(dim, o.key)) + (dim === 'dist' ? '<small>' + esc(tc(B.dims.prov[B.dims.distProv[o.key]])) + '</small>' : '')},
+      {h: 'Realisasi (t)', num: true, val: o => o.vol, html: o => fmt(o.vol)},
+      {h: 'Target (t)', num: true, val: o => o.hasTgt ? o.tgt : null, html: o => o.hasTgt ? fmt(o.tgt) : '–'},
+      C.pct, C.gap, C.trips,
+      {h: 'Periode lalu (t)', num: true, val: o => o.prev, html: o => fmt(o.prev)},
+      {h: 'Δ', num: true, val: o => o.prev ? o.vol / o.prev - 1 : null, html: o => o.prev ? '<span style="color:' + (o.vol >= o.prev ? 'var(--green)' : 'var(--red)') + '">' + (o.vol >= o.prev ? '+' : '') + Math.round((o.vol / o.prev - 1) * 100) + '%</span>' : (o.vol ? 'baru' : '–')}];
+    return head + tabs + (rows.length ? table(cols, rows, {go: o => dimHref(dim, o.key)}) : '<div class="dp-review">Tidak ada data untuk periode ini.</div>') +
+      '<div class="note" style="margin-top:8px">“Periode lalu” = ' + esc(PREV_LBL[T.gran]) + '. Klik baris untuk membuka halamannya, klik judul kolom untuk mengurutkan.</div>';
+  });
 }
 
 /* ===================== Sortable tables ===================== */
@@ -452,6 +584,8 @@ function pageHome(){
     '<div class="hero"><img src="assets/hero-logistik.jpg" alt=""><div class="hero-grad"></div><div class="hero-text"><div class="eyebrow">Ringkasan ' + monthLabel(m) + (isLatest ? ' — bulan berjalan' : '') + '</div><h1>' + head + '</h1></div><div class="hero-arrow"></div></div>' +
     '<div class="wrap"><div class="data-asof">Data realisasi s.d. ' + dayLabel(B.asOf) + (prog.date ? ' · snapshot Prognosa ' + dayLabel(prog.date) + ' ' + esc(prog.time) : '') + ' · ' + esc(B.build || '') + '</div>' +
     attn +
+    '<div class="section-head"><div class="section-title">Capaian MTD ' + monthLabel(m) + '</div><a class="section-link" href="#/tren">Semua tren &rsaquo;</a></div>' +
+    '<div class="main-chart">' + trendPanel({}, 'mtd', 'Realisasi kumulatif vs target SNOP') + '</div>' +
     '<div class="section-head"><div class="section-title">Peta Interaktif Sumatera</div><a class="section-link" href="#/provinsi">Lihat semua &rsaquo;</a></div>' +
     mapHTML(provRows) +
     '<div class="section-sub">Batas provinsi sesuai peta BAKOSURTANAL, diwarnai menurut capaian FRC vs target SNOP. Provinsi yang berkedip paling tertinggal. Arahkan kursor untuk angka, klik provinsi untuk rincian.</div>' +
@@ -648,19 +782,19 @@ function pageForecast(gran){
     const days = [...Array(7)].map((_, i) => { const d = new Date(mon); d.setDate(mon.getDate() + i); return d; });
     const data = days.map(d => {
       const s = iso(d), future = d > end, r = future ? rangeTotals(s, s) : rangeTotals(s, s);
-      return {label: DAYS[d.getDay()].slice(0, 3) + ' ' + d.getDate(), long: DAYS[d.getDay()] + ', ' + dayLabel(s) + (future ? ' (belum terjadi)' : ''), vol: future ? 0 : r.vol, frc: future ? 0 : r.frc, tgt: r.pct == null && !future ? null : r.tgt, pct: future ? null : r.pct};
+      return {from: s, to: s, label: DAYS[d.getDay()].slice(0, 3) + ' ' + d.getDate(), long: DAYS[d.getDay()] + ', ' + dayLabel(s) + (future ? ' (belum terjadi)' : ''), vol: future ? 0 : r.vol, frc: future ? 0 : r.frc, tgt: r.pct == null && !future ? null : r.tgt, pct: future ? null : r.pct};
     });
     const sofar = data.filter((d, i) => days[i] <= end);
     const sReal = sofar.reduce((a, d) => a + d.frc, 0), sTgt = sofar.reduce((a, d) => a + (d.tgt || 0), 0), wTgt = data.reduce((a, d) => a + (d.tgt || 0), 0);
     const runrate = sofar.length ? sReal / sofar.length : 0, proj = sReal + runrate * (7 - sofar.length);
-    const id = 'tw'; TRENDS[id] = {data, sc: {}, gran: 'x'};
+    const id = 'tw'; TRENDS[id] = {id, data, sc: {}, gran: 'harian'};
     body = '<div class="prog-row">' +
       '<div class="prog-cell"><div class="pl">Realisasi minggu ini</div><div class="pv">' + fmt(sReal) + ' t</div><div class="pd">' + sofar.length + ' dari 7 hari</div></div>' +
       '<div class="prog-cell"><div class="pl">Target s.d. hari ini</div><div class="pv">' + fmt(sTgt) + ' t</div><div class="pd">capaian ' + pctTxt(pctOf(sReal, sTgt)) + '</div></div>' +
       '<div class="prog-cell"><div class="pl">Proyeksi minggu</div><div class="pv" style="color:' + tierColor(pctOf(proj, wTgt)) + '">' + fmt(proj) + ' t</div><div class="pd">laju ' + fmt(runrate) + ' t/hari</div></div>' +
       '<div class="prog-cell"><div class="pl">Target minggu penuh</div><div class="pv">' + fmt(wTgt) + ' t</div><div class="pd">proyeksi ' + pctTxt(pctOf(proj, wTgt)) + '</div></div></div>' +
       '<div class="dp-panel" style="margin-bottom:34px"><div class="pt">Realisasi FRC per hari vs target SNOP, ' + days[0].getDate() + ' ' + MON3[days[0].getMonth()] + ' – ' + days[6].getDate() + ' ' + MON3[days[6].getMonth()] + '</div>' + barsHTML(id, data) +
-      '<div class="trend-legend"><span><i style="background:var(--green)"></i>&ge;100%</span><span><i style="background:var(--amber)"></i>85–99%</span><span><i style="background:var(--red)"></i>&lt;85%</span><span><i class="dash"></i>target SNOP</span></div><div class="trend-detail" id="tw-d">Klik batang untuk rincian hari.</div></div>' +
+      '<div class="trend-legend"><span><i style="background:var(--green)"></i>&ge;100%</span><span><i style="background:var(--amber)"></i>85–99%</span><span><i style="background:var(--red)"></i>&lt;85%</span><span><i class="dash"></i>target SNOP</span></div><div class="trend-detail" id="tw-d">Klik batang untuk rincian hari itu per provinsi, distrik, ekspeditur &amp; source.</div></div>' +
       noteBasis('Proyeksi = realisasi minggu berjalan + rata-rata harian minggu ini × sisa hari. Bukan prognosa sistem.');
   } else {
     const m = F.month, ld = lastDayOf(m), n = dim(m);
@@ -714,7 +848,7 @@ function pageIncoterm(code){
       kpi('pin', 'var(--black)', 'Provinsi', fmt(rows.length)) +
     '</div>' +
     '<div class="dp-cols even"><div class="dp-panel"><div class="pt">Per provinsi</div>' + (rows.length ? rows.map(o => '<a class="rate-row" href="#/provinsi/' + enc(B.dims.prov[o.key]) + '"><div class="rl">' + esc(tc(B.dims.prov[o.key])) + '</div><div class="rtrack"><div class="rfill" style="width:' + (o.vol / rows[0].vol * 100) + '%;background:var(--black)"></div></div><div class="rv">' + fmt(o.vol) + '</div></a>').join('') : '<div class="empty">Tidak ada data.</div>') + '</div>' +
-    (function(){ const s = F.inc; F.inc = code; const h = trendPanel({}, 'bulanan', 'Tren ' + code); F.inc = s; TRENDS[Object.keys(TRENDS).pop()].incFix = code; return h; })() + '</div>' +
+    trendPanel({}, 'bulanan', 'Tren ' + code, {incFix: code}) + '</div>' +
     side + noteBasis(code === 'FOT' ? 'FOT tidak memiliki target SNOP; transportir FOT = distributor.' : '') + '</div>', 'forecast');
 }
 
@@ -735,8 +869,20 @@ function pageArmada(){
     B.facts.forEach(f => { if(D.dayMonth[f[0]] === m && D.dayDow[f[0]] === d && incOk(f[1]) && srcOk(f[2])){ s += f[8]; n += f[9]; } });
     return {label: DAYS[d].slice(0, 3), long: DAYS[d], vol: n ? s / n : 0, tgt: null, pct: null, dec: true};
   });
-  TRENDS.ab = {data: bdata.map(x => Object.assign({}, x, {unit: 'truk'}))}; TRENDS.ad = {data: dow.map(x => Object.assign({}, x, {unit: 'jam'}))};
-  const dwellBars = '<div class="bars">' + dow.map((d, i) => { const mx = Math.max(...dow.map(x => x.vol), 1); const c = d.vol <= 3.5 ? 'var(--green)' : d.vol <= 4.5 ? 'var(--amber)' : 'var(--red)'; return '<div class="bcol"><div class="bval">' + fmt1(d.vol) + '</div><div class="bwrap"><div class="b" style="height:' + Math.max(2, d.vol / mx * 100) + '%;background:' + c + ';animation-delay:' + (i * 50) + 'ms"></div></div><div class="blabel">' + d.label + '</div></div>'; }).join('') + '</div>';
+  const dowNum = [1, 2, 3, 4, 5, 6, 0];
+  dow.forEach(d => { d.unit = 'jam'; d.color = d.vol <= 3.5 ? 'var(--green)' : d.vol <= 4.5 ? 'var(--amber)' : 'var(--red)'; });
+  TRENDS.ab = {id: 'ab', data: bdata, click: i => {
+    const b = buckets[i], list = trucks.filter(x => x.trips >= b[1] && x.trips <= b[2]);
+    openModal('Truk dengan ' + b[0] + ' trip', fmt(list.length) + ' truk · ' + esc(periodSub()), table(cols, list, {limit: 500}));
+  }};
+  TRENDS.ad = {id: 'ad', data: dow, click: i => {
+    const wd = dowNum[i], per = new Map();
+    B.facts.forEach(f => { if(D.dayMonth[f[0]] === m && D.dayDow[f[0]] === wd && incOk(f[1]) && srcOk(f[2])){ const o = per.get(f[5]) || {key: f[5], s: 0, n: 0, trips: 0, vol: 0}; o.s += f[8]; o.n += f[9]; o.trips += f[7]; o.vol += f[6]; per.set(f[5], o); } });
+    const rows = [...per.values()].filter(o => o.n).map(o => Object.assign(o, {dw: o.s / o.n}));
+    openModal('Dwell hari ' + DAYS[wd], esc(periodSub()) + ' · per ekspeditur',
+      table([{h:'Ekspeditur', cls:'name', val: o => B.dims.eksp[o.key] || 'FOT (distributor)'}, {h:'Rata-rata dwell (jam)', num:true, cls:'pc', val: o => o.dw, html: o => fmt1(o.dw), style: o => 'color:' + (o.dw <= 3.5 ? 'var(--green)' : o.dw <= 4.5 ? 'var(--amber)' : 'var(--red)')}, {h:'Trip', num:true, val: o => o.trips}, {h:'Tonase', num:true, val: o => o.vol, html: o => fmt(o.vol)}], rows, {go: o => B.dims.eksp[o.key] ? '#/ekspeditur/' + enc(B.dims.eksp[o.key]) : null, sort: 1}));
+  }};
+  const dwellBars = barsHTML('ad', dow);
   const one = trucks.filter(x => x.trips === 1).length;
   const cols = [{h:'#', cls:'rank', val: r => r.trips, html: (r, i) => '#' + (i + 1)}, {h:'Nopol', cls:'name', val: r => B.dims.truck[r.truck]},
     {h:'Ekspeditur', val: r => [...r.eksp.keys()].map(e => B.dims.eksp[e] || 'FOT').join(', ')}, {h:'Trip', num:true, val: r => r.trips}, {h:'Tonase', num:true, val: r => r.ton, html: r => fmt(r.ton)},
@@ -750,8 +896,8 @@ function pageArmada(){
       kpi('clock', 'var(--amber)', 'Rata-rata dwell', t.dwell == null ? '–' : fmt1(t.dwell) + ' <small>jam</small>', {hint: 'masuk → keluar pabrik'}) +
       kpi('box', 'var(--black)', 'Ton / trip', fmt1(t.vol / Math.max(1, t.trips))) +
     '</div>' +
-    '<div class="dp-cols even"><div class="dp-panel"><div class="pt">Sebaran trip per truk</div>' + barsHTML('ab', bdata) + '<div class="trend-detail" id="ab-d">Banyak truk 1 trip = armada tidak kontinu.</div></div>' +
-    '<div class="dp-panel"><div class="pt">Rata-rata dwell per hari (jam) — makin rendah makin baik</div>' + dwellBars + '<div class="trend-legend"><span><i style="background:var(--green)"></i>&le;3,5 jam</span><span><i style="background:var(--amber)"></i>3,5–4,5</span><span><i style="background:var(--red)"></i>&gt;4,5</span></div></div></div>' +
+    '<div class="dp-cols even"><div class="dp-panel"><div class="pt">Sebaran trip per truk</div>' + barsHTML('ab', bdata) + '<div class="trend-detail" id="ab-d">Banyak truk 1 trip = armada tidak kontinu. Klik batang untuk daftar truknya.</div></div>' +
+    '<div class="dp-panel"><div class="pt">Rata-rata dwell per hari (jam) — makin rendah makin baik</div>' + dwellBars + '<div class="trend-legend"><span><i style="background:var(--green)"></i>&le;3,5 jam</span><span><i style="background:var(--amber)"></i>3,5–4,5</span><span><i style="background:var(--red)"></i>&gt;4,5</span><span>klik batang = dwell per ekspeditur</span></div></div></div>' +
     '<div class="section-head"><div class="section-title">Daftar truk</div></div>' + table(cols, trucks, {limit: 400}) +
     noteBasis('Dwell = jam masuk s.d. jam keluar pabrik; baris yang ditandai CHECK (negatif / &gt;48 jam) di sumber tidak dihitung.') + '</div>', 'overview');
 }
@@ -780,6 +926,7 @@ function notFound(what){ page('<div class="wrap">' + crumb([['Tidak ditemukan']]
 function route(){
   if(!B) return;
   closeNav(); $('#searchResults').classList.remove('show');
+  closeModal();
   for(const k in TRENDS) delete TRENDS[k];
   for(const k in TABLES) delete TABLES[k];
   const parts = (location.hash.replace(/^#\/?/, '') || '').split('/').map(decodeURIComponent);
@@ -822,6 +969,7 @@ function bindEvents(){
       if(a === 'reset'){ draft = {month: D.months[D.months.length - 1], inc: 'FRC', srcOff: new Set(DEFAULT_SRC_OFF)}; applyFilter(); }
       if(a === 'openfilter'){ e.stopPropagation(); closeNav(); const it = $('[data-nav="filter"]'); it.classList.add('open'); buildFilterPanel(); }
       if(a === 'logout'){ logout(); }
+      if(a === 'closemodal'){ closeModal(); }
       return;
     }
     const inc = e.target.closest('[data-inc]');
@@ -831,14 +979,15 @@ function bindEvents(){
     const src = e.target.closest('[data-src]');
     if(src){ src.checked ? draft.srcOff.delete(src.dataset.src) : draft.srcOff.add(src.dataset.src); return; }
     const gran = e.target.closest('[data-gran]');
-    if(gran){ const [id, g] = gran.dataset.gran.split(':'); const T = TRENDS[id]; T.gran = g; const s = F.inc; if(T.incFix) F.inc = T.incFix; $('#' + id).innerHTML = trendInner(id); F.inc = s; return; }
+    if(gran){ const [id, g] = gran.dataset.gran.split(':'); TRENDS[id].gran = g; $('#' + id).innerHTML = trendInner(id); return; }
+    const mdim = e.target.closest('[data-mdim]');
+    if(mdim && MODAL){ MODAL.dim = mdim.dataset.mdim; $('#modalBody').innerHTML = modalBody(); return; }
+    if(e.target.id === 'modal'){ closeModal(); return; }
     const bar = e.target.closest('[data-bar]');
     if(bar){
-      const [id, i] = bar.dataset.bar.split(':'); const d = TRENDS[id].data[+i];
+      const [id, i] = bar.dataset.bar.split(':'); const T = TRENDS[id];
       $$('[data-bar^="' + id + ':"]').forEach(x => x.classList.toggle('sel', x === bar));
-      const strip = $('#' + id + '-d');
-      if(strip) strip.innerHTML = d.unit ? '<b>' + esc(d.long) + '</b> — ' + (d.unit === 'jam' ? fmt1(d.vol) : fmt(d.vol)) + ' ' + d.unit + '.' :
-        '<b>' + esc(d.long) + '</b> — Realisasi ' + fmt(d.vol) + ' t' + (d.tgt != null ? ' · FRC ' + fmt(d.frc) + ' t vs target ' + fmt(d.tgt) + ' t · capaian <b style="color:' + tierColor(d.pct) + '">' + pctTxt(d.pct) + '</b> · gap ' + signed(d.frc - d.tgt) + ' t' : '') + '.';
+      if(T.click) T.click(+i); else if(T.data[+i].from) openBreakdown(T, +i);
       return;
     }
     const sort = e.target.closest('[data-sort]');
@@ -848,8 +997,10 @@ function bindEvents(){
     if(!e.target.closest('#mainNav')) closeNav();
     if(!e.target.closest('.search')) $('#searchResults').classList.remove('show');
   });
-  document.addEventListener('change', e => { if(e.target.id === 'fpMonth') draft.month = e.target.value; if(e.target.id === 'fpJump' && e.target.value){ location.hash = e.target.value; closeNav(); } });
-  document.addEventListener('keydown', e => { if(e.key === 'Escape'){ closeNav(); $('#searchResults').classList.remove('show'); } });
+  document.addEventListener('change', e => {
+    if(e.target.dataset && e.target.dataset.cmp){ const T = TRENDS[e.target.dataset.cmp]; T.cmp = e.target.value || null; $('#' + T.id).innerHTML = trendInner(T.id); return; }
+    if(e.target.id === 'fpMonth') draft.month = e.target.value; if(e.target.id === 'fpJump' && e.target.value){ location.hash = e.target.value; closeNav(); } });
+  document.addEventListener('keydown', e => { if(e.key === 'Escape'){ closeNav(); closeModal(); $('#searchResults').classList.remove('show'); } });
   const sb = $('#searchBox');
   sb.addEventListener('input', () => doSearch(sb.value));
   sb.addEventListener('focus', () => doSearch(sb.value));
