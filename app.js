@@ -505,8 +505,8 @@ const MAP_LABEL = {
 const PLANTS = [  // [label, lon, lat, label side]
   ['CP Indarung', 100.47, -0.95, 'left'], ['GP Dumai', 101.45, 1.67, 'right'], ['PP Bengkulu', 102.27, -3.80, 'right'], ['PP Belawan', 98.69, 3.78, 'right']
 ];
-function mapHTML(provRows){
-  const G = window.SUMATRA;
+function mapHTML(provRows, opt){
+  const G = window.SUMATRA, hero = !!(opt && opt.hero);
   const byName = Object.fromEntries(provRows.map(o => [B.dims.prov[o.key], o]));
   const withPct = provRows.filter(o => o.pct != null);
   const worst = withPct.length ? withPct.reduce((a, b) => a.pct < b.pct ? a : b) : null;
@@ -515,22 +515,23 @@ function mapHTML(provRows){
     '<linearGradient id="gAmber" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#C9952E"/><stop offset="100%" stop-color="#8A5A00"/></linearGradient>' +
     '<linearGradient id="gRed" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FF6B74"/><stop offset="100%" stop-color="#E02A36"/></linearGradient>' +
     '<linearGradient id="gInk" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#5A5A5A"/><stop offset="100%" stop-color="#2B2B2B"/></linearGradient>' +
-    '<linearGradient id="gSea" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#EEF4F7"/><stop offset="100%" stop-color="#E2ECF1"/></linearGradient>' +
+    (hero ? '<radialGradient id="gSea" cx="45%" cy="45%" r="75%"><stop offset="0%" stop-color="#22343F"/><stop offset="100%" stop-color="#0F1A21"/></radialGradient>'
+          : '<linearGradient id="gSea" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#EEF4F7"/><stop offset="100%" stop-color="#E2ECF1"/></linearGradient>') +
     '<filter id="softShadow" x="-10%" y="-10%" width="120%" height="120%"><feDropShadow dx="0" dy="1.5" stdDeviation="2" flood-color="#000" flood-opacity="0.18"/></filter></defs>';
-  const sea = '<rect width="' + G.w + '" height="' + G.h + '" fill="url(#gSea)"/>' +
+  const sea = '<rect width="' + G.w + '" height="' + G.h + '" fill="' + (hero ? 'transparent' : 'url(#gSea)') + '"/>' +
     '<text x="40" y="360" class="sea-lbl">SAMUDRA HINDIA</text><text x="290" y="70" class="sea-lbl">SELAT MALAKA</text><text x="420" y="150" class="sea-lbl">LAUT NATUNA</text>';
   let shapes = '', labels = '';
   Object.keys(G.p).forEach(id => {
     const g = G.p[id], o = byName[id], L = MAP_LABEL[id] || [tc(id)];
     const lx = g.cx + (L[1] || 0), ly = g.cy + (L[2] || 0);
     if(!o){
-      shapes += '<path class="map-region" d="' + g.d + '" fill="#D9DEDF" stroke="#fff" stroke-width="1" data-tip="' + esc(tc(id) + '|Tidak ada pengiriman darat di data') + '"/>';
+      shapes += '<path class="map-region" d="' + g.d + '" fill="' + (hero ? '#34424B' : '#D9DEDF') + '" stroke="' + (hero ? '#1B2730' : '#fff') + '" stroke-width="1" data-tip="' + esc(tc(id) + '|Tidak ada pengiriman darat di data') + '"/>';
       labels += '<text x="' + lx + '" y="' + ly + '" class="map-lbl dim">' + esc(L[0]) + '</text>';
       return;
     }
     const fill = o.pct != null ? 'url(#g' + tierName(o.pct) + ')' : 'url(#gInk)';
     const tip = tc(id) + '|Realisasi ' + fmt(o.vol) + ' t' + (o.hasTgt ? ' · Target MTD ' + fmt(o.tgt) + ' t' : '') + '|' + (o.pct != null ? 'Capaian ' + pctTxt(o.pct) + ' · gap ' + signed(o.gap) + ' t' : 'Tanpa target SNOP');
-    shapes += '<path class="map-region live' + (worst && o === worst ? ' is-attn' : '') + '" d="' + g.d + '" fill="' + fill + '" stroke="#fff" stroke-width="1.2" filter="url(#softShadow)" data-href="#/provinsi/' + enc(id) + '" data-tip="' + esc(tip) + '"/>';
+    shapes += '<path class="map-region live' + (worst && o === worst ? ' is-attn' : '') + '" d="' + g.d + '" fill="' + fill + '" stroke="' + (hero ? '#0F1A21' : '#fff') + '" stroke-width="1.2" filter="url(#softShadow)" data-href="#/provinsi/' + enc(id) + '" data-tip="' + esc(tip) + '"/>';
     const out = L[3] === 'out' ? ' out' : '';   // label placed in the sea next to a narrow province
     labels += '<text x="' + lx + '" y="' + (ly - 4) + '" class="map-lbl' + out + '">' + esc(L[0]) + '</text>' +
       '<text x="' + lx + '" y="' + (ly + 11) + '" class="map-pct' + out + '" style="' + (out ? 'fill:' + tierColor(o.pct) : '') + '">' + (o.pct != null ? pctTxt(o.pct) : fmt(o.vol) + ' t') + '</text>';
@@ -546,7 +547,9 @@ function mapHTML(provRows){
     return '<a class="map-row" href="#/provinsi/' + enc(name) + '"><span class="dot" style="background:' + tierColor(o.pct) + '"></span><span class="nm">#' + (i + 1) + ' ' + esc(tc(name)) + '</span><span class="tn">' + fmt(o.vol) + ' t</span><span class="pc" style="color:' + tierColor(o.pct) + '">' + pctTxt(o.pct) + '</span></a>';
   }).join('') + '<div class="map-row muted"><span class="dot" style="background:#D9DEDF"></span><span class="nm">Aceh, Kep. Riau, Babel, Lampung</span><span class="pc">—</span></div>' +
     '<div class="map-key"><span><i style="background:#1A7A42"></i>&ge;100%</span><span><i style="background:#8A5A00"></i>85–99%</span><span><i style="background:#E02A36"></i>&lt;85%</span><span><i class="pin"></i>plant</span></div>';
-  return '<div class="map-wrap"><svg class="map-svg" viewBox="0 0 ' + G.w + ' ' + G.h + '" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Peta pencapaian per provinsi di Sumatera">' + defs + sea + shapes + labels + pins + '</svg><div class="map-legend">' + legend + '</div></div>';
+  const svg = '<svg class="map-svg" viewBox="0 0 ' + G.w + ' ' + G.h + '" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Peta pencapaian per provinsi di Sumatera">' + defs + sea + shapes + labels + pins + '</svg>';
+  if(hero) return svg;
+  return '<div class="map-wrap">' + svg + '<div class="map-legend">' + legend + '</div></div>';
 }
 
 /* ===================== Pages ===================== */
@@ -581,14 +584,11 @@ function pageHome(){
   const trucks = trucksFor(m);
   const prog = B.prog;
   page(
-    '<div class="hero"><img src="assets/hero-logistik.jpg" alt=""><div class="hero-grad"></div><div class="hero-text"><div class="eyebrow">Ringkasan ' + monthLabel(m) + (isLatest ? ' — bulan berjalan' : '') + '</div><h1>' + head + '</h1></div><div class="hero-arrow"></div></div>' +
+    mapHero(provRows, t, head, chg, isLatest) +
     '<div class="wrap"><div class="data-asof">Data realisasi s.d. ' + dayLabel(B.asOf) + (prog.date ? ' · snapshot Prognosa ' + dayLabel(prog.date) + ' ' + esc(prog.time) : '') + ' · ' + esc(B.build || '') + '</div>' +
     attn +
     '<div class="section-head"><div class="section-title">Capaian MTD ' + monthLabel(m) + '</div><a class="section-link" href="#/tren">Semua tren &rsaquo;</a></div>' +
     '<div class="main-chart">' + trendPanel({}, 'mtd', 'Realisasi kumulatif vs target SNOP') + '</div>' +
-    '<div class="section-head"><div class="section-title">Peta Interaktif Sumatera</div><a class="section-link" href="#/provinsi">Lihat semua &rsaquo;</a></div>' +
-    mapHTML(provRows) +
-    '<div class="section-sub">Batas provinsi sesuai peta BAKOSURTANAL, diwarnai menurut capaian FRC vs target SNOP. Provinsi yang berkedip paling tertinggal. Arahkan kursor untuk angka, klik provinsi untuk rincian.</div>' +
     '<div class="section-head"><div class="section-title">Pencapaian per provinsi</div><a class="section-link" href="#/provinsi">Lihat tabel &rsaquo;</a></div>' +
     '<div class="card-row">' + cards + '</div>' +
     '<div class="section-head"><div class="section-title">Jelajahi</div></div>' +
@@ -604,7 +604,33 @@ function pageHome(){
       kpi('clock', 'var(--amber)', 'Rata-rata dwell', t.dwell == null ? '–' : fmt1(t.dwell) + ' <small>jam</small>', {href:'#/armada', hint:'masuk → keluar pabrik'}) +
       kpi('check', 'var(--green)', 'Realisasi / SO', pctTxt(t.of), {href:'#/scorecard', hint: t.so ? 'SO ' + MON3[+m.slice(5) - 1] + ' ' + fmt(t.so) + ' t' + (isLatest ? ' (s.d. akhir bulan)' : '') : 'SO tidak tersedia'}) +
     '</div>' +
-    noteBasis('Peta hanya mewarnai provinsi yang punya pengiriman darat di data; provinsi abu-abu tidak dilayani via darat.') + '</div>', 'home');
+    noteBasis('Peta: batas provinsi BAKOSURTANAL 1:250.000; provinsi abu-abu tidak dilayani via darat. Provinsi yang berkedip paling tertinggal.') + '</div>', 'home');
+}
+
+/* Home hero: the interactive Sumatra map is the centerpiece, headline + ranking beside it. */
+function mapHero(provRows, t, head, chg, isLatest){
+  const m = F.month;
+  const rank = provRows.slice().sort((a, b) => (b.pct == null ? -1 : b.pct) - (a.pct == null ? -1 : a.pct) || b.vol - a.vol);
+  const maxV = Math.max(1, ...rank.map(o => o.vol));
+  const list = rank.map((o, i) => {
+    const name = B.dims.prov[o.key];
+    return '<a class="mh-row" href="#/provinsi/' + enc(name) + '" data-prov="' + esc(name) + '"><span class="mh-rk">' + (i + 1) + '</span><span class="mh-nm">' + esc(tc(name)) + '<i style="width:' + (o.vol / maxV * 100) + '%;background:' + tierColor(o.pct) + '"></i></span><span class="mh-tn">' + fmt(o.vol) + ' t</span><span class="mh-pc" style="color:' + tierColor(o.pct) + '">' + pctTxt(o.pct) + '</span></a>';
+  }).join('');
+  const chip = (l, v, sub, color) => '<div class="mh-chip"><div class="l">' + l + '</div><div class="v"' + (color ? ' style="color:' + color + '"' : '') + '>' + v + '</div>' + (sub ? '<div class="s">' + sub + '</div>' : '') + '</div>';
+  return '<section class="map-hero"><div class="mh-bg"></div><div class="mh-inner">' +
+    '<div class="mh-left"><div class="eyebrow">Peta capaian · ' + monthLabel(m) + (isLatest ? ' — MTD s.d. ' + lastDayOf(m) + ' ' + MON3[+m.slice(5) - 1] : '') + '</div>' +
+      '<h1>' + head + '</h1>' +
+      '<div class="mh-chips">' +
+        chip('Realisasi', fmt(t.vol) + ' <small>t</small>', fmt(t.trips) + ' trip') +
+        chip('Target SNOP' + (isLatest ? ' MTD' : ''), t.hasTgt ? fmt(t.tgt) + ' <small>t</small>' : '–', t.hasTgt ? 'gap ' + signed(t.gap) + ' t' : '') +
+        chip('Capaian', pctTxt(t.pct), 'FRC vs SNOP', t.pct == null ? null : t.pct >= 100 ? '#5FD08F' : t.pct >= 85 ? '#E8B04A' : '#FF6B74') +
+        chip('vs bulan lalu', chg == null ? '–' : (chg >= 0 ? '▲ ' : '▼ ') + Math.abs(Math.round(chg)) + '%', 'periode sama', chg == null ? null : chg >= 0 ? '#5FD08F' : '#FF6B74') +
+      '</div>' +
+      '<div class="mh-list"><div class="mh-lh"><span>Rank provinsi</span><a href="#/provinsi">Lihat tabel &rsaquo;</a></div>' + list + '</div>' +
+      '<div class="mh-key"><span><i style="background:#2E9E5C"></i>&ge;100%</span><span><i style="background:#C9952E"></i>85–99%</span><span><i style="background:#FF6B74"></i>&lt;85%</span><span><i style="background:#34424B"></i>tidak dilayani darat</span><span><i class="pin"></i>plant</span></div>' +
+    '</div>' +
+    '<div class="mh-map">' + mapHTML(provRows, {hero: true}) + '<div class="mh-hint">Arahkan kursor untuk angka · klik / ketuk provinsi untuk rincian</div></div>' +
+  '</div></section>';
 }
 
 function pageProvList(){
@@ -1009,6 +1035,12 @@ function bindEvents(){
     let i = links.findIndex(a => a.classList.contains('sel'));
     if(e.key === 'ArrowDown' || e.key === 'ArrowUp'){ e.preventDefault(); i = (i + (e.key === 'ArrowDown' ? 1 : -1) + links.length) % links.length; links.forEach((a, j) => a.classList.toggle('sel', j === i)); }
     if(e.key === 'Enter'){ e.preventDefault(); location.hash = links[Math.max(0, i)].getAttribute('href'); sb.value = ''; sb.blur(); $('#searchResults').classList.remove('show'); }
+  });
+  // ranking list <-> map highlight
+  document.addEventListener('mouseover', e => {
+    const r = e.target.closest && e.target.closest('.mh-row');
+    $$('.map-hero .map-region.hl').forEach(x => x.classList.remove('hl'));
+    if(r) $$('.map-hero .map-region.live').forEach(x => { if(x.dataset.href === '#/provinsi/' + enc(r.dataset.prov)) x.classList.add('hl'); });
   });
   // map tooltip
   const tip = document.createElement('div'); tip.className = 'map-tip'; document.body.appendChild(tip);
