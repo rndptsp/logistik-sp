@@ -159,7 +159,7 @@ def build(cfg):
     # ---------------- Realisasi (FRC + FOT) ----------------
     facts = defaultdict(lambda: [0.0, 0, 0.0, 0])        # (day, inc, src, prov, dist, eksp) -> ton, trips, dwellSum, dwellN
     ship = defaultdict(lambda: [0.0, 0])                   # (day, inc, src, prov, dist, distributor, eksp, toko) -> ton, trips
-    trucks = defaultdict(lambda: [0, 0.0, 0.0, 0, 99, 0, set(), defaultdict(float)])
+    trucks = defaultdict(lambda: [0, 0.0, 0.0, 0])   # (day, truck, inc, eksp, src, prov) -> trips, ton, dwellSum, dwellN
     last_day = {}
     n_real = 0
     check = defaultdict(int)          # data-quality counters, printed at the end
@@ -216,11 +216,10 @@ def build(cfg):
             g[0] += ton; g[1] += 1
             nopol = up(r.get("NOPOL"))
             if nopol:
-                tk = trucks[(month, truck(nopol), inc, e, s)]
+                tk = trucks[(d.isoformat(), truck(nopol), inc, e, s, p)]
                 tk[0] += 1; tk[1] += ton
                 if ok_dwell:
                     tk[2] += num(dwell); tk[3] += 1
-                tk[4] = min(tk[4], d.day); tk[5] = max(tk[5], d.day); tk[6].add(d.day); tk[7][p] += ton
     print(f"  realisasi rows: {n_real:,}")
     for k, v in sorted(check.items()):
         print(f"    cek: {k}: {v:,}")
@@ -297,8 +296,9 @@ def build(cfg):
         # one row per day x incoterm x source x province x district x distributor x ekspeditur x ship-to
         "ship": [[day_idx[k[0]], 0 if k[1] == "FRC" else 1, k[2], k[3], k[4], k[5], k[6], k[7], round(v[0], 2), v[1]]
                  for k, v in ship.items()],
-        "trucks": [[k[0], k[1], 0 if k[2] == "FRC" else 1, k[3], k[4], v[0], round(v[1], 2), round(v[2], 2), v[3],
-                    v[4], v[5], len(v[6]), max(v[7], key=v[7].get)] for k, v in trucks.items()],
+        # per day, so any date range can be cut exactly: [day, truck, inc, eksp, src, prov, trips, ton, dwellSum, dwellN]
+        "trucks": [[day_idx[k[0]], k[1], 0 if k[2] == "FRC" else 1, k[3], k[4], k[5], v[0], round(v[1], 2), round(v[2], 2), v[3]]
+                   for k, v in trucks.items()],
         "targets": targets,
         "so": [[k[0], k[1], k[2], k[3], round(v, 2)] for k, v in so.items() if v],
         "prog": {"date": latest[0], "time": latest[1], "fields": fields, "rows": prog},

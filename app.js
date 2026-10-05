@@ -71,7 +71,7 @@ function rateRow(label, p, href, sub){
 /* ===================== State ===================== */
 let B = null;            // decrypted bundle
 let D = null;            // derived indexes
-const F = { month: null, inc: 'FRC', srcOff: new Set(['PP BELAWAN SBA']) };
+const F = { per: null, inc: 'FRC', srcOff: new Set(['PP BELAWAN SBA']) };   // per: {kind:'month',month} | {kind:'ytd'} | {kind:'range',from,to}
 const DEFAULT_SRC_OFF = ['PP BELAWAN SBA'];
 
 function prepare(){
@@ -90,12 +90,49 @@ function prepare(){
   const sources = [...new Set(B.facts.map(f => f[2]))].filter(i => i !== srcEmpty).map(i => dims.src[i]).sort();
   D = { dayMonth, dayNum, dayDow, months, provIdx, ekspIdx, distIdx, srcEmpty, eksEmpty,
         ekspList: [...frcEksp].map(i => dims.eksp[i]).sort(), liveProv, liveDist, sources };
-  F.month = months[months.length - 1];
+  F.per = {kind: 'month', month: months[months.length - 1]};
 }
 const srcOk = i => i === D.srcEmpty || !F.srcOff.has(B.dims.src[i]);
 const incOk = inc => F.inc === 'ALL' || (F.inc === 'FRC' ? inc === 0 : inc === 1);
 const lastDayOf = m => Math.min(B.lastDay[m] || dim(m), dim(m));
 const frcOn = () => F.inc !== 'FOT';
+
+/* ===================== Periods ===================== */
+/* Every page works on a period {from, to} (ISO dates). A "month" is just one kind of period.
+   Target always runs only to the last day with data (tgtTo), so a period reaching into the future stays fair. */
+const pad2 = n => String(n).padStart(2, '0');
+function addDays(s, n){ const d = parseISO(s); d.setDate(d.getDate() + n); return iso(d); }
+const shortDate = s => { const d = parseISO(s); return d.getDate() + ' ' + MON3[d.getMonth()] + (s.slice(0, 4) !== B.asOf.slice(0, 4) ? ' ' + s.slice(0, 4) : ''); };
+function makePer(kind, from, to, extra){
+  if(to > B.asOf) to = B.asOf;
+  if(from < B.days[0]) from = B.days[0];
+  if(from > to) from = to;
+  const isLatest = to === B.asOf, days = Math.round((parseISO(to) - parseISO(from)) / 864e5) + 1;
+  let label, sub;
+  if(kind === 'month'){
+    const m = from.slice(0, 7), full = +to.slice(8) >= dim(m);
+    label = monthLabel(m); sub = label + (full ? '' : ' · MTD s.d. ' + shortDate(to));
+  } else if(kind === 'ytd'){
+    label = 'YTD ' + to.slice(0, 4); sub = 'Tahun berjalan · ' + shortDate(from) + ' – ' + shortDate(to);
+  } else {
+    label = shortDate(from) + ' – ' + shortDate(to); sub = label + ' (' + days + ' hari)';
+  }
+  return Object.assign({kind, from, to, tgtTo: to, label, sub, isLatest, days, month: to.slice(0, 7)}, extra || {});
+}
+function monthPer(m, toDay){ return makePer('month', m + '-01', m + '-' + pad2(toDay != null ? Math.min(toDay, dim(m)) : lastDayOf(m))); }
+function PER(){
+  const p = F.per || {kind: 'month', month: D.months[D.months.length - 1]};
+  if(p.kind === 'ytd') return makePer('ytd', B.asOf.slice(0, 4) + '-01-01', B.asOf);
+  if(p.kind === 'range') return makePer('range', p.from, p.to);
+  return monthPer(p.month);
+}
+const toPer = x => typeof x === 'string' ? monthPer(x) : x;
+/* Previous comparable period: month -> previous month (same days when running); otherwise the same number of days just before. */
+function prevPer(per){
+  if(per.kind === 'month'){ const pm = prevMonth(per.month); const full = +per.to.slice(8) >= dim(per.month); return monthPer(pm, full ? dim(pm) : +per.to.slice(8)); }
+  return makePer('range', addDays(per.from, -per.days), addDays(per.from, -1));
+}
+const inPer = (dayIdx, per) => { const s = B.days[dayIdx]; return s >= per.from && s <= per.to; };
 
 /* ===================== Aggregation core ===================== */
 /* Group key extractors work on the shared column layout: facts/targets/so all carry prov,dist,eksp
@@ -106,34 +143,40 @@ const SK = {prov: s => s[1], dist: s => s[2], eksp: s => s[3], src: () => null, 
 function scopeOkF(f, sc){ return (sc.prov == null || f[3] === sc.prov) && (sc.dist == null || f[4] === sc.dist) && (sc.eksp == null || f[5] === sc.eksp); }
 function scopeOkT(t, sc){ return (sc.prov == null || t[1] === sc.prov) && (sc.dist == null || t[2] === sc.dist) && (sc.eksp == null || t[3] === sc.eksp); }
 
-function targetMTD(t, m, toDay){
-  const ld = toDay == null ? lastDayOf(m) : toDay;
-  if(t[6]) { let s = 0; for(let d = 0; d < ld; d++) s += t[6][d] || 0; return s; }
-  return t[5] * ld / dim(m);
+/* Target of one SNOP row between two ISO dates (daily values when present, else monthly ÷ days). */
+function targetBetween(t, from, to){
+  const m = t[0], n = dim(m), a = m + '-01', b = m + '-' + pad2(n);
+  if(b < from || a > to) return 0;
+  const d0 = from > a ? +from.slice(8) : 1, d1 = to < b ? +to.slice(8) : n;
+  if(t[6]){ let s = 0; for(let d = d0; d <= d1; d++) s += t[6][d - 1] || 0; return s; }
+  return t[5] * (d1 - d0 + 1) / n;
 }
 function blank(){ return {vol:0, frc:0, trips:0, dwS:0, dwN:0, tgt:0, tgtFull:0, so:0, hasTgt:false}; }
 
-/** Summary per group for one month. vol = selected incoterm(s); frc = FRC-only realisasi (achievement basis). */
-function summarize(group, m, sc, opt){
+/** Summary per group for a period (or a 'YYYY-MM' month). vol = selected incoterm(s); frc = FRC-only realisasi (achievement basis).
+    tgt = target up to the last data day; tgtFull = target for the whole period (whole month for a month period). */
+function summarize(group, per, sc, opt){
   sc = sc || {}; opt = opt || {};
+  per = opt.toDay != null && typeof per === 'string' ? monthPer(per, opt.toDay) : toPer(per);
+  const fullTo = per.kind === 'month' ? per.month + '-' + pad2(dim(per.month)) : per.to;
   const out = new Map();
   const get = k => { let o = out.get(k); if(!o){ o = blank(); o.key = k; out.set(k, o); } return o; };
-  const fromDay = opt.fromDay || 1, toDay = opt.toDay || 31;
   B.facts.forEach(f => {
-    if(D.dayMonth[f[0]] !== m || !srcOk(f[2]) || !scopeOkF(f, sc)) return;
-    const dn = D.dayNum[f[0]]; if(dn < fromDay || dn > toDay) return;
+    if(!inPer(f[0], per) || !srcOk(f[2]) || !scopeOkF(f, sc)) return;
     const o = get(FK[group](f));
     if(f[1] === 0) o.frc += f[6];
     if(incOk(f[1])){ o.vol += f[6]; o.trips += f[7]; o.dwS += f[8]; o.dwN += f[9]; }
   });
   if(frcOn()){
+    const m0 = per.from.slice(0, 7), m1 = fullTo.slice(0, 7);
     B.targets.forEach(t => {
-      if(t[0] !== m || !srcOk(t[4]) || !scopeOkT(t, sc)) return;
+      if(t[0] < m0 || t[0] > m1 || !srcOk(t[4]) || !scopeOkT(t, sc)) return;
       const o = get(TK[group](t));
-      o.tgt += targetMTD(t, m, opt.toDay); o.tgtFull += t[5]; o.hasTgt = true;
+      o.tgt += targetBetween(t, per.from, per.tgtTo); o.tgtFull += targetBetween(t, per.from, fullTo); o.hasTgt = true;
     });
+    // SO is monthly (PERIODE): every month that the period touches is counted in full
     if(group !== 'src') B.so.forEach(s => {
-      if(s[0] !== m || !scopeOkT(s, sc)) return;
+      if(s[0] < m0 || s[0] > per.to.slice(0, 7) || !scopeOkT(s, sc)) return;
       get(SK[group](s)).so += s[4];
     });
   }
@@ -145,7 +188,7 @@ function summarize(group, m, sc, opt){
   });
   return out;
 }
-const total = (m, sc, opt) => summarize('all', m, sc, opt).get(0) || Object.assign(blank(), {pct:null, of:null, gap:0, dwell:null});
+const total = (per, sc, opt) => summarize('all', per, sc, opt).get(0) || Object.assign(blank(), {pct:null, of:null, gap:0, dwell:null});
 function ranked(map){
   const arr = [...map.values()].filter(o => o.vol > 0 || o.tgt > 0);
   arr.sort((a, b) => (b.pct == null ? -1 : b.pct) - (a.pct == null ? -1 : a.pct) || b.vol - a.vol);
@@ -153,25 +196,25 @@ function ranked(map){
   arr.rankTotal = r;
   return arr;
 }
-function trucksFor(m, sc){
-  sc = sc || {};
-  const per = new Map();
+/* B.trucks rows: [day, truck, inc, eksp, src, prov, trips, ton, dwellSum, dwellN] */
+function trucksFor(per, sc){
+  per = toPer(per); sc = sc || {};
+  const out = new Map();
   B.trucks.forEach(t => {
-    if(t[0] !== m || !incOk(t[2]) || !srcOk(t[4])) return;
+    if(!inPer(t[0], per) || !incOk(t[2]) || !srcOk(t[4])) return;
     if(sc.eksp != null && t[3] !== sc.eksp) return;
-    if(sc.prov != null && t[12] !== sc.prov) return;
-    let o = per.get(t[1]);
-    if(!o){ o = {truck:t[1], trips:0, ton:0, dwS:0, dwN:0, first:99, last:0, days:0, eksp:new Map(), prov:t[12], inc:t[2]}; per.set(t[1], o); }
-    o.trips += t[5]; o.ton += t[6]; o.dwS += t[7]; o.dwN += t[8]; o.first = Math.min(o.first, t[9]); o.last = Math.max(o.last, t[10]);
-    o.days = Math.max(o.days, t[11]); o.eksp.set(t[3], (o.eksp.get(t[3]) || 0) + t[5]);
+    if(sc.prov != null && t[5] !== sc.prov) return;
+    let o = out.get(t[1]);
+    if(!o){ o = {truck:t[1], trips:0, ton:0, dwS:0, dwN:0, first:t[0], last:t[0], daySet:new Set(), eksp:new Map(), provTon:new Map(), inc:t[2]}; out.set(t[1], o); }
+    o.trips += t[6]; o.ton += t[7]; o.dwS += t[8]; o.dwN += t[9]; o.first = Math.min(o.first, t[0]); o.last = Math.max(o.last, t[0]);
+    o.daySet.add(t[0]); o.eksp.set(t[3], (o.eksp.get(t[3]) || 0) + t[6]); o.provTon.set(t[5], (o.provTon.get(t[5]) || 0) + t[7]);
   });
-  return [...per.values()];
+  return [...out.values()].map(o => { o.days = o.daySet.size; o.prov = [...o.provTon.entries()].sort((a, b) => b[1] - a[1])[0][0]; return o; });
 }
+const activeTxt = r => r.first === r.last ? shortDate(B.days[r.first]) : shortDate(B.days[r.first]) + ' – ' + shortDate(B.days[r.last]);
 function prevMonth(m){ const y = +m.slice(0, 4), mo = +m.slice(5); return mo === 1 ? (y - 1) + '-12' : y + '-' + String(mo - 1).padStart(2, '0'); }
 
 /* Range (date-based) realisasi + target, optionally grouped by prov/dist/eksp/src. */
-const pad2 = n => String(n).padStart(2, '0');
-function addDays(s, n){ const d = parseISO(s); d.setDate(d.getDate() + n); return iso(d); }
 function rangeGroup(fromISO, toISO, sc, group){
   sc = sc || {}; group = group || 'all';
   const out = new Map();
@@ -208,29 +251,42 @@ function rangeTotals(fromISO, toISO, sc){
 /* ===================== Trend panels: periods, compare, drill-down ===================== */
 /* A bucket is one bar: {from, to, label, long}. */
 function buckets(gran, n){
-  const ld = lastDayOf(F.month), endISO = F.month + '-' + pad2(ld), out = [];
+  const per = PER(), endISO = per.to, out = [];
   if(gran === 'mtd'){
-    // cumulative month-to-date: bar d = realisasi tgl 1..d vs target tgl 1..d
-    for(let d = 1; d <= ld; d++) out.push({from: F.month + '-01', to: F.month + '-' + pad2(d), label: String(d), long: 'MTD 1–' + d + ' ' + MON3[+F.month.slice(5) - 1] + ' ' + F.month.slice(0, 4)});
+    // cumulative from the start of the period: daily bars up to 45 days, weekly beyond that
+    const step = per.days > 45 ? 7 : 1;
+    let d = per.from;
+    while(true){
+      let to = step === 1 ? d : addDays(d, 6);
+      if(to > endISO) to = endISO;
+      const dd = parseISO(to);
+      out.push({from: per.from, to, label: step === 1 ? String(dd.getDate()) : dd.getDate() + '/' + (dd.getMonth() + 1), long: 'Kumulatif ' + shortDate(per.from) + ' – ' + shortDate(to)});
+      if(to >= endISO) break;
+      d = addDays(to, 1);
+    }
   } else if(gran === 'bulanan'){
-    const idx = D.months.indexOf(F.month);
-    D.months.slice(Math.max(0, idx - (n || 6) + 1), idx + 1).forEach(m => {
-      const toDay = m === F.month ? ld : lastDayOf(m);
-      out.push({from: m + '-01', to: m + '-' + pad2(toDay), label: monthShort(m), long: monthLabel(m) + (toDay < dim(m) ? ' (s.d. tgl ' + toDay + ')' : '')});
+    const last = endISO.slice(0, 7), idx = D.months.indexOf(last);
+    const first = per.kind === 'month' ? D.months[Math.max(0, idx - (n || 6) + 1)] : per.from.slice(0, 7);
+    D.months.filter(m => m >= first && m <= last).forEach(m => {
+      const from = m === per.from.slice(0, 7) && per.kind !== 'month' ? per.from : m + '-01';
+      const to = m === last ? endISO : m + '-' + pad2(lastDayOf(m));
+      out.push({from, to, label: monthShort(m), long: monthLabel(m) + (+to.slice(8) < dim(m) || from.slice(8) !== '01' ? ' (' + shortDate(from) + ' – ' + shortDate(to) + ')' : '')});
     });
   } else if(gran === 'harian'){
-    for(let i = (n || 14) - 1; i >= 0; i--){
-      const s = addDays(endISO, -i), d = parseISO(s);
-      out.push({from: s, to: s, label: d.getDate() === 1 || i === (n || 14) - 1 ? d.getDate() + '/' + (d.getMonth() + 1) : String(d.getDate()), long: DAYS[d.getDay()] + ', ' + dayLabel(s)});
+    const cnt = Math.min(n || 14, Math.max(per.days, n || 14));
+    for(let i = cnt - 1; i >= 0; i--){
+      const s2 = addDays(endISO, -i), d = parseISO(s2);
+      out.push({from: s2, to: s2, label: d.getDate() === 1 || i === cnt - 1 ? d.getDate() + '/' + (d.getMonth() + 1) : String(d.getDate()), long: DAYS[d.getDay()] + ', ' + dayLabel(s2)});
     }
   } else {
     const end = parseISO(endISO), monday = new Date(end);
     monday.setDate(end.getDate() - ((end.getDay() + 6) % 7));
-    for(let w = (n || 8) - 1; w >= 0; w--){
-      const a = new Date(monday); a.setDate(monday.getDate() - 7 * w);
-      const b = new Date(a); b.setDate(a.getDate() + 6);
-      const bb = b > end ? end : b;
-      out.push({from: iso(a), to: iso(bb), label: a.getDate() + '/' + (a.getMonth() + 1), long: a.getDate() + ' ' + MON3[a.getMonth()] + ' – ' + bb.getDate() + ' ' + MON3[bb.getMonth()] + ' ' + bb.getFullYear() + (bb < b ? ' (berjalan)' : '')});
+    const weeks = Math.min(53, Math.max(n || 8, Math.ceil(per.days / 7)));
+    for(let w = weeks - 1; w >= 0; w--){
+      const a2 = new Date(monday); a2.setDate(monday.getDate() - 7 * w);
+      const b2 = new Date(a2); b2.setDate(a2.getDate() + 6);
+      const bb = b2 > end ? end : b2;
+      out.push({from: iso(a2), to: iso(bb), label: a2.getDate() + '/' + (a2.getMonth() + 1), long: a2.getDate() + ' ' + MON3[a2.getMonth()] + ' – ' + bb.getDate() + ' ' + MON3[bb.getMonth()] + ' ' + bb.getFullYear() + (bb < b2 ? ' (berjalan)' : '')});
     }
   }
   return out;
@@ -238,11 +294,12 @@ function buckets(gran, n){
 /* Previous comparable period: daily -> same weekday last week; weekly -> previous week;
    monthly -> previous month (same day range when the month is still running). */
 function shiftBucket(b, gran){
-  if(gran !== 'bulanan' && gran !== 'mtd') return {from: addDays(b.from, -7), to: addDays(b.to, -7)};
+  if(gran === 'mtd'){ const pp = prevPer(PER()); return {from: pp.from, to: addDays(pp.from, Math.round((parseISO(b.to) - parseISO(b.from)) / 864e5))}; }
+  if(gran !== 'bulanan') return {from: addDays(b.from, -7), to: addDays(b.to, -7)};
   const m = b.from.slice(0, 7), pm = prevMonth(m), full = +b.to.slice(8) >= dim(m);
   return {from: pm + '-01', to: pm + '-' + pad2(full ? dim(pm) : Math.min(+b.to.slice(8), dim(pm)))};
 }
-const PREV_LBL = {mtd: 'MTD bulan lalu (tgl sama)', harian: 'hari sama minggu lalu', mingguan: 'minggu sebelumnya', bulanan: 'bulan sebelumnya'};
+const PREV_LBL = {mtd: 'periode sebelumnya', harian: 'hari sama minggu lalu', mingguan: 'minggu sebelumnya', bulanan: 'bulan sebelumnya'};
 function scName(sc){
   if(sc.dist != null) return tc(B.dims.dist[sc.dist]);
   if(sc.eksp != null) return B.dims.eksp[sc.eksp] || 'Tanpa ekspeditur';
@@ -427,10 +484,10 @@ const C = {
 function setActiveNav(key){ $$('#mainNav .navitem').forEach(n => n.classList.toggle('on', n.dataset.nav === key)); }
 function closeNav(){ $$('#mainNav .navitem').forEach(n => n.classList.remove('open')); }
 function buildNav(){
-  const pm = summarize('prov', F.month);
+  const pm = summarize('prov', PER());
   const provs = [...pm.values()].filter(o => o.vol > 0 || o.tgt > 0).sort((a, b) => b.vol - a.vol);
   $('#navProvList').innerHTML = provs.map(o => '<a href="#/provinsi/' + enc(B.dims.prov[o.key]) + '">' + esc(tc(B.dims.prov[o.key])) + '<span>' + pctTxt(o.pct) + '</span></a>').join('') || '<span class="empty">—</span>';
-  const em = summarize('eksp', F.month);
+  const em = summarize('eksp', PER());
   $('#navEkspList').innerHTML = D.ekspList.map(code => {
     const o = em.get(D.ekspIdx[code]);
     const p = o ? o.pct : null;
@@ -440,29 +497,49 @@ function buildNav(){
 }
 let draft = null;
 function buildFilterPanel(){
-  draft = {month: F.month, inc: F.inc, srcOff: new Set(F.srcOff)};
-  const monthOpts = D.months.slice().reverse().map(m => '<option value="' + m + '"' + (m === draft.month ? ' selected' : '') + '>' + monthLabel(m) + (m === D.months[D.months.length - 1] ? ' (berjalan)' : '') + '</option>').join('');
+  const cur = PER();
+  draft = {per: Object.assign({}, F.per), inc: F.inc, srcOff: new Set(F.srcOff),
+           from: cur.from, to: cur.to, month: cur.month};
+  renderFilterPanel();
+}
+function renderFilterPanel(){
+  const k = draft.per.kind, first = B.days[0], last = B.asOf;
+  const mode = [['month','Bulan'],['ytd','Tahun berjalan'],['range','Rentang tanggal']].map(x => '<span data-pmode="' + x[0] + '" class="' + (k === x[0] ? 'on' : '') + '">' + x[1] + '</span>').join('');
+  let body = '';
+  if(k === 'month'){
+    const monthOpts = D.months.slice().reverse().map(m => '<option value="' + m + '"' + (m === draft.per.month ? ' selected' : '') + '>' + monthLabel(m) + (m === D.months[D.months.length - 1] ? ' (berjalan)' : '') + '</option>').join('');
+    body = '<select class="fp-select" id="fpMonth">' + monthOpts + '</select><div class="fp-chips" style="margin-top:8px"><span data-qm="cur">Bulan ini</span><span data-qm="prev">Bulan lalu</span></div>';
+  } else if(k === 'ytd'){
+    body = '<div class="fp-note">' + shortDate(last.slice(0, 4) + '-01-01') + ' – ' + shortDate(last) + ' (tahun berjalan, s.d. data terakhir)</div>';
+  } else {
+    body = '<div class="fp-dates"><label>Dari<input type="date" id="fpFrom" min="' + first + '" max="' + last + '" value="' + draft.from + '"></label>' +
+      '<label>Sampai<input type="date" id="fpTo" min="' + first + '" max="' + last + '" value="' + draft.to + '"></label></div>' +
+      '<div class="fp-chips" style="margin-top:8px"><span data-qr="7">7 hari</span><span data-qr="30">30 hari</span><span data-qr="90">90 hari</span></div>';
+  }
   const inc = [['FRC','FRC'],['FOT','FOT'],['ALL','FRC + FOT']].map(x => '<span data-inc="' + x[0] + '" class="' + (draft.inc === x[0] ? 'on' : '') + '">' + x[1] + '</span>').join('');
-  const quick = '<span data-qm="cur">Bulan ini</span><span data-qm="prev">Bulan lalu</span>';
-  const src = D.sources.map(s => '<label class="fp-check"><input type="checkbox" data-src="' + esc(s) + '"' + (draft.srcOff.has(s) ? '' : ' checked') + '> ' + esc(tc(s)) + (DEFAULT_SRC_OFF.includes(s) ? ' <small>(default tidak dicentang)</small>' : '') + '</label>').join('');
+  const src = D.sources.map(s2 => '<label class="fp-check"><input type="checkbox" data-src="' + esc(s2) + '"' + (draft.srcOff.has(s2) ? '' : ' checked') + '> ' + esc(tc(s2)) + (DEFAULT_SRC_OFF.includes(s2) ? ' <small>(default tidak dicentang)</small>' : '') + '</label>').join('');
   $('#filterPanel').innerHTML =
-    '<div class="fp-row"><div class="fp-group"><label class="fl">Periode</label><select class="fp-select" id="fpMonth">' + monthOpts + '</select><div class="fp-chips" style="margin-top:8px">' + quick + '</div></div>' +
-    '<div class="fp-group"><label class="fl">Incoterm</label><div class="fp-chips">' + inc + '</div><div style="font-size:11.5px;color:var(--sub);margin-top:8px;line-height:1.5">% pencapaian selalu dihitung dari FRC vs target SNOP. FOT tidak punya target.</div></div></div>' +
+    '<div class="fp-row"><div class="fp-group"><label class="fl">Periode</label><div class="fp-chips" style="margin-bottom:10px">' + mode + '</div>' + body + '</div>' +
+    '<div class="fp-group"><label class="fl">Incoterm</label><div class="fp-chips">' + inc + '</div><div style="font-size:11.5px;color:var(--sub);margin-top:8px;line-height:1.5">% pencapaian selalu dihitung dari FRC vs target SNOP sampai hari data terakhir. FOT tidak punya target.</div></div></div>' +
     '<div class="fp-row"><div class="fp-group"><label class="fl">Source plant</label>' + src + '</div>' +
-    '<div class="fp-group"><label class="fl">Berlaku untuk</label><div style="font-size:12px;color:var(--gray-d);line-height:1.6">Semua halaman: peta, grafik, tabel, ekspeditur, armada &amp; prognosa. Pilihan tersimpan selama sesi.</div></div></div>' +
+    '<div class="fp-group"><label class="fl">Berlaku untuk</label><div style="font-size:12px;color:var(--gray-d);line-height:1.6">Semua halaman: peta, grafik, tabel, ekspeditur, distributor, armada &amp; prognosa. Pilihan tersimpan selama sesi.</div></div></div>' +
     '<div class="fp-foot"><div class="fp-reset" data-act="reset">Reset filter</div><div class="fp-apply" data-act="apply">Terapkan</div></div>';
 }
 function filterStrip(){
   const offs = [...F.srcOff];
-  const isLatest = F.month === D.months[D.months.length - 1];
-  $('#filterSummary').innerHTML = '<span>Menampilkan</span><span class="tag"><b>' + monthLabel(F.month) + '</b>' + (isLatest ? ' · MTD s.d. ' + lastDayOf(F.month) + ' ' + MON3[+F.month.slice(5) - 1] : '') + '</span>' +
+  const per = PER();
+  $('#filterSummary').innerHTML = '<span>Menampilkan</span><span class="tag"><b>' + esc(per.label) + '</b>' + (per.sub !== per.label ? ' · ' + esc(per.sub.replace(per.label + ' · ', '').replace(per.label, '')) : '') + '</span>' +
     '<span class="tag"><b>' + (F.inc === 'ALL' ? 'FRC + FOT' : F.inc) + '</b></span>' +
     (offs.length ? '<span class="tag">tanpa ' + offs.map(s => esc(tc(s))).join(', ') + '</span>' : '<span class="tag">semua source</span>') +
     '<span class="edit" data-act="openfilter">Ubah filter &#9662;</span>';
 }
 function applyFilter(){
-  F.month = draft.month; F.inc = draft.inc; F.srcOff = new Set(draft.srcOff);
-  try { sessionStorage.setItem('osp_f', JSON.stringify({month: F.month, inc: F.inc, srcOff: [...F.srcOff]})); } catch(e) {}
+  const k = draft.per.kind;
+  if(k === 'range'){ let a = draft.from || B.days[0], b = draft.to || B.asOf; if(a > b) [a, b] = [b, a]; F.per = {kind: 'range', from: a, to: b}; }
+  else if(k === 'ytd') F.per = {kind: 'ytd'};
+  else F.per = {kind: 'month', month: draft.per.month || D.months[D.months.length - 1]};
+  F.inc = draft.inc; F.srcOff = new Set(draft.srcOff);
+  try { sessionStorage.setItem('osp_f', JSON.stringify({per: F.per, inc: F.inc, srcOff: [...F.srcOff]})); } catch(e) {}
   closeNav(); closeFilter(); buildNav(); filterStrip(); route();
 }
 function closeFilter(){ const f = $('#filterStrip'); if(f) f.classList.remove('open'); }
@@ -476,7 +553,7 @@ function openFilter(){
 function restoreFilter(){
   try {
     const s = JSON.parse(sessionStorage.getItem('osp_f') || 'null');
-    if(s && D.months.includes(s.month)){ F.month = s.month; F.inc = s.inc; F.srcOff = new Set(s.srcOff); }
+    if(s && s.per && (s.per.kind !== 'month' || D.months.includes(s.per.month))){ F.per = s.per; F.inc = s.inc; F.srcOff = new Set(s.srcOff); }
   } catch(e) {}
 }
 
@@ -567,7 +644,8 @@ function mapHTML(provRows, opt){
 const SHK = {prov: r => r[3], dist: r => r[4], distr: r => r[5], eksp: r => r[6], toko: r => r[7]};
 function shipRows(m, sc){
   sc = sc || {};
-  return B.ship.filter(r => (m == null || D.dayMonth[r[0]] === m) && incOk(r[1]) && srcOk(r[2]) &&
+  const per = m == null ? null : toPer(m);
+  return B.ship.filter(r => (per == null || inPer(r[0], per)) && incOk(r[1]) && srcOk(r[2]) &&
     (sc.prov == null || r[3] === sc.prov) && (sc.dist == null || r[4] === sc.dist) &&
     (sc.distr == null || r[5] === sc.distr) && (sc.eksp == null || r[6] === sc.eksp));
 }
@@ -644,7 +722,7 @@ function distrSummary(rows){
 }
 
 function pageDistrList(){
-  const m = F.month, rows = shipRows(m), list = distrSummary(rows).sort((a, b) => b.vol - a.vol);
+  const m = PER(), rows = shipRows(m), list = distrSummary(rows).sort((a, b) => b.vol - a.vol);
   list.forEach((o, i) => o.rank = i + 1);
   const tot = list.reduce((a, o) => a + o.vol, 0), unk = rows.filter(r => !(B.dims.toko[r[7]] && B.dims.toko[r[7]][0])).reduce((a, r) => a + r[8], 0);
   const cols = [{h:'#', cls:'rank', val: o => o.rank, html: o => '#' + o.rank}, {h:'Distributor', cls:'name', val: o => tc(B.dims.distr[o.key])},
@@ -662,11 +740,11 @@ function pageDistrList(){
 function pageDistr(name){
   const di = B.dims.distr.indexOf(name);
   if(di < 0) return notFound('Distributor ' + name);
-  const m = F.month, sc = {distr: di}, rows = shipRows(m, sc);
+  const m = PER(), sc = {distr: di}, rows = shipRows(m, sc);
   const s = distrSummary(rows)[0] || {frc: 0, fot: 0, vol: 0, trips: 0, prov: new Set(), dist: new Set(), toko: new Set(), last: -1};
   const ekspTree = buildTree(rows, ['eksp']);
   // monthly volume, last 6 months; bar click lists that month's ship-to points
-  const idx = D.months.indexOf(m), months = D.months.slice(Math.max(0, idx - 5), idx + 1);
+  const idx = D.months.indexOf(m.month), months = m.kind === 'month' ? D.months.slice(Math.max(0, idx - 5), idx + 1) : D.months.filter(x => x >= m.from.slice(0, 7) && x <= m.month);
   const all = shipRows(null, sc);
   const data = months.map(mm => ({label: monthShort(mm), long: monthLabel(mm), vol: all.filter(r => D.dayMonth[r[0]] === mm).reduce((a, r) => a + r[8], 0), tgt: null, pct: null, month: mm}));
   TRENDS.dm = {id: 'dm', data, click: i => {
@@ -692,24 +770,24 @@ function pageDistr(name){
 const view = () => $('#view');
 function page(html, nav){ view().innerHTML = '<div class="page-fade">' + html + '</div>'; setActiveNav(nav); window.scrollTo(0, 0); }
 function crumb(parts){ return '<div class="crumb"><a href="#/">Home</a>' + parts.map(p => '<span class="sep">/</span>' + (p[1] ? '<a href="' + p[1] + '">' + esc(p[0]) + '</a>' : esc(p[0]))).join('') + '</div>'; }
-function periodSub(){ const latest = F.month === D.months[D.months.length - 1]; return monthLabel(F.month) + (latest ? ' · MTD s.d. ' + lastDayOf(F.month) + ' ' + MON3[+F.month.slice(5) - 1] : ''); }
+function periodSub(){ return PER().sub; }
 function noteBasis(extra){
   return '<div class="note"><b>Sumber:</b> MASTER_DATA_OUTBOUND_LOGISTIC.xlsx, dibangun ' + esc(B.built) + ', data realisasi s.d. ' + dayLabel(B.asOf) + '. ' +
     '<b>Capaian</b> = realisasi FRC ÷ target SNOP MTD (jumlah target harian tgl 1 s.d. hari data terakhir). ' + (extra || '') + '</div>';
 }
 
 function pageHome(){
-  const m = F.month, t = total(m);
+  const m = PER(), t = total(m);
   const pm = summarize('prov', m);
   const provRows = [...pm.values()].filter(o => o.vol > 0 || o.tgt > 0);
-  const ld = lastDayOf(m), pmn = prevMonth(m);
-  const prev = D.months.includes(pmn) ? total(pmn, {}, {toDay: ld}) : null;
+  const pp = prevPer(m), prev = pp.to >= B.days[0] && pp.from >= B.days[0] ? total(pp) : null;
   const chg = prev && prev.vol ? (t.vol / prev.vol - 1) * 100 : null;
-  const isLatest = m === D.months[D.months.length - 1];
+  const isLatest = m.isLatest && m.kind === 'month';
   const incTxt = F.inc === 'ALL' ? 'FRC + FOT' : F.inc;
-  const head = 'Volume ' + incTxt + ' ' + monthLabel(m) + ' <b>' + fmt(t.vol) + ' ton</b>' +
+  const prevTxt = m.kind === 'month' ? 'periode sama bulan lalu' : 'periode ' + m.days + ' hari sebelumnya';
+  const head = 'Volume ' + incTxt + ' ' + esc(m.label) + ' <b>' + fmt(t.vol) + ' ton</b>' +
     (t.pct != null ? (F.inc === 'ALL' ? '; FRC ' : ', ') + (isLatest ? 'sudah ' : '') + 'mencapai <b>' + pctTxt(t.pct) + '</b> dari target SNOP' + (isLatest ? ' MTD' : '') : '') +
-    (chg != null ? ' — ' + (chg >= 0 ? 'naik ' : 'turun ') + Math.abs(Math.round(chg)) + '% dari periode sama bulan lalu.' : '.');
+    (chg != null ? ' — ' + (chg >= 0 ? 'naik ' : 'turun ') + Math.abs(Math.round(chg)) + '% dari ' + prevTxt + '.' : '.');
   const withPct = provRows.filter(o => o.pct != null);
   const worst = withPct.length ? withPct.reduce((a, b) => a.gap < b.gap ? a : b) : null;
   const attn = worst && worst.gap < 0 ? '<div class="attn"><div><span class="dot"></span></div><div><div class="t1">Perlu perhatian — ' + esc(tc(B.dims.prov[worst.key])) + '</div><div class="t2">Capaian ' + pctTxt(worst.pct) + ' dari target SNOP MTD — gap ' + fmt(-worst.gap) + ' ton, terbesar di antara semua provinsi. Realisasi ' + fmt(worst.frc) + ' t vs target ' + fmt(worst.tgt) + ' t.</div></div><a class="cta" href="#/provinsi/' + enc(B.dims.prov[worst.key]) + '">Lihat rincian &rsaquo;</a></div>' : '';
@@ -719,21 +797,21 @@ function pageHome(){
     mapHero(provRows, t, head, chg, isLatest) +
     '<div class="wrap"><div class="data-asof">Data realisasi s.d. ' + dayLabel(B.asOf) + (prog.date ? ' · snapshot Prognosa ' + dayLabel(prog.date) + ' ' + esc(prog.time) : '') + ' · ' + esc(B.build || '') + '</div>' +
     attn +
-    '<div class="section-head"><div class="section-title">Capaian ' + monthLabel(m) + '</div></div>' +
+    '<div class="section-head"><div class="section-title">Capaian ' + esc(m.label) + '</div></div>' +
     '<div class="main-chart">' + trendPanel({}, 'harian', 'Realisasi vs target SNOP', {grans: ['harian', 'mingguan', 'bulanan'], noCmp: true}) + '</div>' +
     '<div class="section-head"><div class="section-title">Ringkasan operasional</div><a class="section-link" href="#/armada">Armada &rsaquo;</a></div>' +
     '<div class="kpi-row">' +
-      kpi('trend', 'var(--black)', 'Trip', fmt(t.trips), {href:'#/armada', hint: incTxt + ' · ' + MON3[+m.slice(5) - 1]}) +
+      kpi('trend', 'var(--black)', 'Trip', fmt(t.trips), {href:'#/armada', hint: incTxt + ' · ' + esc(m.label)}) +
       kpi('truck', 'var(--black)', 'Truk aktif', fmt(trucks.length), {href:'#/armada', hint: fmt1(t.trips / Math.max(1, trucks.length)) + ' trip / truk'}) +
       kpi('clock', 'var(--amber)', 'Rata-rata dwell', t.dwell == null ? '–' : fmt1(t.dwell) + ' <small>jam</small>', {href:'#/armada', hint:'masuk → keluar pabrik'}) +
-      kpi('check', 'var(--green)', 'Realisasi / SO', pctTxt(t.of), {href:'#/ekspeditur', hint: t.so ? 'SO ' + MON3[+m.slice(5) - 1] + ' ' + fmt(t.so) + ' t' + (isLatest ? ' (s.d. akhir bulan)' : '') : 'SO tidak tersedia'}) +
+      kpi('check', 'var(--green)', 'Realisasi / SO', pctTxt(t.of), {href:'#/ekspeditur', hint: t.so ? 'SO ' + fmt(t.so) + ' t (bulan penuh yang tercakup)' : 'SO tidak tersedia'}) +
     '</div>' +
     noteBasis('Peta: batas provinsi BAKOSURTANAL 1:250.000; provinsi abu-abu tidak dilayani via darat. Provinsi yang berkedip paling tertinggal.') + '</div>', 'home');
 }
 
 /* Home hero: the interactive Sumatra map is the centerpiece, headline + ranking beside it. */
 function mapHero(provRows, t, head, chg, isLatest){
-  const m = F.month;
+  const m = PER();
   const rank = provRows.slice().sort((a, b) => (b.pct == null ? -1 : b.pct) - (a.pct == null ? -1 : a.pct) || b.vol - a.vol);
   const maxV = Math.max(1, ...rank.map(o => o.vol));
   const list = rank.map((o, i) => {
@@ -742,13 +820,13 @@ function mapHero(provRows, t, head, chg, isLatest){
   }).join('');
   const chip = (l, v, sub, color) => '<div class="mh-chip"><div class="l">' + l + '</div><div class="v"' + (color ? ' style="color:' + color + '"' : '') + '>' + v + '</div>' + (sub ? '<div class="s">' + sub + '</div>' : '') + '</div>';
   return '<section class="map-hero"><div class="mh-bg"></div><div class="mh-inner">' +
-    '<div class="mh-left"><div class="eyebrow">Peta capaian · ' + monthLabel(m) + (isLatest ? ' — MTD s.d. ' + lastDayOf(m) + ' ' + MON3[+m.slice(5) - 1] : '') + '</div>' +
+    '<div class="mh-left"><div class="eyebrow">Peta capaian · ' + esc(m.sub) + '</div>' +
       '<h1>' + head + '</h1>' +
       '<div class="mh-chips">' +
         chip('Realisasi', fmt(t.vol) + ' <small>t</small>', fmt(t.trips) + ' trip') +
         chip('Target SNOP' + (isLatest ? ' MTD' : ''), t.hasTgt ? fmt(t.tgt) + ' <small>t</small>' : '–', t.hasTgt ? 'gap ' + signed(t.gap) + ' t' : '') +
         chip('Capaian', pctTxt(t.pct), 'FRC vs SNOP', t.pct == null ? null : t.pct >= 100 ? '#5FD08F' : t.pct >= 85 ? '#E8B04A' : '#FF6B74') +
-        chip('vs bulan lalu', chg == null ? '–' : (chg >= 0 ? '▲ ' : '▼ ') + Math.abs(Math.round(chg)) + '%', 'periode sama', chg == null ? null : chg >= 0 ? '#5FD08F' : '#FF6B74') +
+        chip(m.kind === 'month' ? 'vs bulan lalu' : 'vs periode lalu', chg == null ? '–' : (chg >= 0 ? '▲ ' : '▼ ') + Math.abs(Math.round(chg)) + '%', 'periode sama', chg == null ? null : chg >= 0 ? '#5FD08F' : '#FF6B74') +
       '</div>' +
       '<div class="mh-list"><div class="mh-lh"><span>Rank provinsi</span><a href="#/provinsi">Lihat tabel &rsaquo;</a></div>' + list + '</div>' +
       '<div class="mh-key"><span><i style="background:#2E9E5C"></i>&ge;100%</span><span><i style="background:#C9952E"></i>85–99%</span><span><i style="background:#FF6B74"></i>&lt;85%</span><span><i style="background:#34424B"></i>tidak dilayani darat</span><span><i class="pin"></i>plant</span></div>' +
@@ -758,8 +836,8 @@ function mapHero(provRows, t, head, chg, isLatest){
 }
 
 function pageProvList(){
-  const rows = ranked(summarize('prov', F.month));
-  const t = total(F.month);
+  const rows = ranked(summarize('prov', PER()));
+  const t = total(PER());
   const cols = [C.rank, {h:'Provinsi', cls:'name', val: r => tc(B.dims.prov[r.key])}, C.vol(), C.tgt, C.pct, C.gap, C.so, C.of, C.trips, C.note];
   cols[2].total = fmt(t.vol); cols[3].total = fmt(t.tgt); cols[4].total = pctTxt(t.pct); cols[5].total = signed(t.gap); cols[6].total = fmt(t.so); cols[7].total = pctTxt(t.of); cols[8].total = fmt(t.trips);
   page('<div class="wrap">' + crumb([['Wilayah'], ['Semua provinsi']]) +
@@ -769,7 +847,7 @@ function pageProvList(){
     noteBasis() + '</div>', 'wilayah');
 }
 function sourcePanel(sc){
-  const rows = [...summarize('src', F.month, sc).values()].filter(o => o.vol > 0 || o.tgt > 0).sort((a, b) => b.vol - a.vol);
+  const rows = [...summarize('src', PER(), sc).values()].filter(o => o.vol > 0 || o.tgt > 0).sort((a, b) => b.vol - a.vol);
   return '<div class="dp-panel"><div class="pt">Per source plant</div>' + (rows.length ? rows.map(o => rateRow(tc(B.dims.src[o.key]) + ' · ' + fmt(o.vol) + ' t', o.pct, null, o.hasTgt ? 'target ' + fmt(o.tgt) + ' t' : 'tanpa target')).join('') : '<div class="empty">Tidak ada data.</div>') +
     '<div class="trend-detail">Baris tanpa atribusi plant pada target dihitung di semua source. ' + (F.srcOff.size ? 'Dikecualikan: ' + [...F.srcOff].map(s => esc(tc(s))).join(', ') + '.' : '') + '</div></div>';
 }
@@ -794,7 +872,7 @@ function progRows(filter){
 function pageProv(name){
   const pi = D.provIdx[name];
   if(pi == null) return notFound('Provinsi ' + name);
-  const m = F.month, sc = {prov: pi};
+  const m = PER(), sc = {prov: pi};
   const all = ranked(summarize('prov', m));
   const me = all.find(o => o.key === pi) || Object.assign(blank(), {pct:null, of:null, gap:0, dwell:null});
   const dist = ranked(summarize('dist', m, sc));
@@ -824,7 +902,7 @@ function pageProv(name){
 function pageDist(name){
   const di = D.distIdx[name];
   if(di == null) return notFound('Distrik ' + name);
-  const m = F.month, sc = {dist: di}, pname = B.dims.prov[B.dims.distProv[di]] || '';
+  const m = PER(), sc = {dist: di}, pname = B.dims.prov[B.dims.distProv[di]] || '';
   const me = total(m, sc);
   const eks = [...summarize('eksp', m, sc).values()].filter(o => (o.vol > 0 || o.tgt > 0) && o.key !== D.eksEmpty).sort((a, b) => b.vol - a.vol);
   const ekCols = [{h:'Ekspeditur', cls:'name', val: r => B.dims.eksp[r.key]}, C.vol(), C.tgt, C.pct, C.gap, C.so, C.of, C.trips, C.dwell];
@@ -848,7 +926,7 @@ function pageDist(name){
 }
 
 function pageEkspList(){
-  const m = F.month, t = total(m);
+  const m = PER(), t = total(m);
   const list = ranked(summarize('eksp', m)).filter(r => r.key !== D.eksEmpty);
   const tr = trucksFor(m);
   const perE = new Map(); tr.forEach(x => x.eksp.forEach((n, e) => { const o = perE.get(e) || {n: 0, one: 0}; o.n++; if(x.trips === 1) o.one++; perE.set(e, o); }));
@@ -871,19 +949,19 @@ function pageEkspList(){
 function pageEksp(code){
   const ei = D.ekspIdx[code];
   if(ei == null) return notFound('Ekspeditur ' + code);
-  const m = F.month, sc = {eksp: ei};
+  const m = PER(), sc = {eksp: ei};
   const all = ranked(summarize('eksp', m));
   const me = all.find(o => o.key === ei) || Object.assign(blank(), {pct:null, of:null, gap:0, dwell:null});
   const provs = [...summarize('prov', m, sc).values()].filter(o => o.vol > 0 || o.tgt > 0).sort((a, b) => b.vol - a.vol);
   const dist = ranked(summarize('dist', m, sc));
   const trucks = trucksFor(m, sc).sort((a, b) => b.trips - a.trips);
-  const served = new Set(B.targets.filter(t => t[0] === m && t[3] === ei).map(t => t[2]));
+  const served = new Set(B.targets.filter(t => t[0] >= m.from.slice(0, 7) && t[0] <= m.month && t[3] === ei).map(t => t[2]));
   const soh = [1, 2, 3].map(h => B.soh.filter(s => s[0] === h && served.has(s[2]) && s[3] === 'FRC').reduce((a, s) => a + s[4], 0));
   const one = trucks.filter(t => t.trips === 1).length;
   const distCols = [C.rank, {h:'Distrik', cls:'name', val: r => tc(B.dims.dist[r.key]), html: r => esc(tc(B.dims.dist[r.key])) + '<small>' + esc(tc(B.dims.prov[B.dims.distProv[r.key]])) + '</small>'}, C.vol(), C.tgt, C.pct, C.gap, C.trips, C.note];
   const truckCols = [{h:'Nopol', cls:'name', val: r => B.dims.truck[r.truck]}, {h:'Trip', num:true, val: r => r.trips}, {h:'Tonase', num:true, val: r => r.ton, html: r => fmt(r.ton)},
     {h:'Hari aktif', num:true, val: r => r.days}, {h:'Dwell (jam)', num:true, val: r => r.dwN ? r.dwS / r.dwN : null, html: r => r.dwN ? fmt1(r.dwS / r.dwN) : '–'},
-    {h:'Aktif', val: r => r.first, html: r => 'tgl ' + r.first + '–' + r.last}, {h:'Provinsi utama', val: r => tc(B.dims.prov[r.prov])}];
+    {h:'Aktif', val: r => r.first, html: r => activeTxt(r)}, {h:'Provinsi utama', val: r => tc(B.dims.prov[r.prov])}];
   page('<div class="wrap">' + crumb([['Ekspeditur', '#/ekspeditur'], [code]]) +
     '<div class="dp-head"><div><div class="nm">' + esc(code) + '</div><div class="sub">Mitra ekspeditur FRC · ' + periodSub() + '</div></div><div class="badges">' + (me.rank ? '<div class="dp-badge">Rank ' + me.rank + ' / ' + all.filter(o => o.key !== D.eksEmpty && o.rank).length + '</div>' : '') + '<div class="dp-badge ' + tierClass(me.pct) + '">' + pctTxt(me.pct) + ' dari target</div></div></div>' +
     '<div class="dp-review">' + reviewText(me.pct) + (me.hasTgt ? ' Realisasi ' + fmt(me.frc) + ' t vs target MTD ' + fmt(me.tgt) + ' t (gap ' + signed(me.gap) + ' t).' : '') + (one ? ' ' + one + ' truk baru 1 trip bulan ini.' : '') + '</div>' +
@@ -936,7 +1014,7 @@ function pageForecast(gran){
     }).join('');
     body += noteBasis('Rilis = sudah keluar pabrik; Potensi = rilis + antri + timbang; Prognose = potensi + booking (dari file monitoring, snapshot terakhir). Angka dalam kurung = jumlah truk.');
   } else if(gran === 'mingguan'){
-    const end = parseISO(F.month + '-' + String(lastDayOf(F.month)).padStart(2, '0'));
+    const end = parseISO(PER().to);
     const mon = new Date(end); mon.setDate(end.getDate() - ((end.getDay() + 6) % 7));
     const days = [...Array(7)].map((_, i) => { const d = new Date(mon); d.setDate(mon.getDate() + i); return d; });
     const data = days.map(d => {
@@ -956,7 +1034,7 @@ function pageForecast(gran){
       '<div class="trend-legend"><span><i style="background:var(--green)"></i>&ge;100%</span><span><i style="background:var(--amber)"></i>85–99%</span><span><i style="background:var(--red)"></i>&lt;85%</span><span><i class="dash"></i>target SNOP</span></div><div class="trend-detail" id="tw-d">Klik batang untuk rincian hari itu per provinsi, distrik, ekspeditur &amp; source.</div></div>' +
       noteBasis('Proyeksi = realisasi minggu berjalan + rata-rata harian minggu ini × sisa hari. Bukan prognosa sistem.');
   } else {
-    const m = F.month, ld = lastDayOf(m), n = dim(m);
+    const m = PER().month, ld = lastDayOf(m), n = dim(m);
     const rows = [...summarize('prov', m).values()].filter(o => o.hasTgt || o.vol > 0).map(o => {
       const rr = o.frc / ld, proj = o.frc + rr * (n - ld);
       return Object.assign(o, {rr, proj, projPct: o.hasTgt ? pctOf(proj, o.tgtFull) : null});
@@ -977,17 +1055,17 @@ function pageForecast(gran){
   }
   const pname = {harian: 'Hari ini', mingguan: 'Minggu ini', bulanan: 'Akhir bulan'}[gran];
   page('<div class="wrap">' + crumb([['Prognosa'], [pname]]) +
-    '<div class="dp-head"><div><div class="nm">Prognosa — ' + pname + '</div><div class="sub">' + (gran === 'harian' ? 'Prognosa pengiriman hari ini dari file monitoring' : gran === 'mingguan' ? 'Minggu berjalan, Senin–Minggu' : 'Proyeksi akhir ' + monthLabel(F.month)) + '</div></div></div>' +
+    '<div class="dp-head"><div><div class="nm">Prognosa — ' + pname + '</div><div class="sub">' + (gran === 'harian' ? 'Prognosa pengiriman hari ini dari file monitoring' : gran === 'mingguan' ? 'Minggu berjalan, Senin–Minggu' : 'Proyeksi akhir ' + monthLabel(PER().month)) + '</div></div></div>' +
     chips + body + '</div>', 'prognosa');
 }
 
 function pageArmada(){
-  const m = F.month, t = total(m), trucks = trucksFor(m).sort((a, b) => b.trips - a.trips);
+  const m = PER(), t = total(m), trucks = trucksFor(m).sort((a, b) => b.trips - a.trips);
   const buckets = [['1', 1, 1], ['2–3', 2, 3], ['4–6', 4, 6], ['7–10', 7, 10], ['11–20', 11, 20], ['>20', 21, 1e9]];
   const bdata = buckets.map(b => ({label: b[0] + ' trip', long: b[0] + ' trip per truk', vol: trucks.filter(x => x.trips >= b[1] && x.trips <= b[2]).length, tgt: null, pct: null}));
   const dow = [1, 2, 3, 4, 5, 6, 0].map(d => {
     let s = 0, n = 0;
-    B.facts.forEach(f => { if(D.dayMonth[f[0]] === m && D.dayDow[f[0]] === d && incOk(f[1]) && srcOk(f[2])){ s += f[8]; n += f[9]; } });
+    B.facts.forEach(f => { if(inPer(f[0], m) && D.dayDow[f[0]] === d && incOk(f[1]) && srcOk(f[2])){ s += f[8]; n += f[9]; } });
     return {label: DAYS[d].slice(0, 3), long: DAYS[d], vol: n ? s / n : 0, tgt: null, pct: null, dec: true};
   });
   const dowNum = [1, 2, 3, 4, 5, 6, 0];
@@ -998,7 +1076,7 @@ function pageArmada(){
   }};
   TRENDS.ad = {id: 'ad', data: dow, click: i => {
     const wd = dowNum[i], per = new Map();
-    B.facts.forEach(f => { if(D.dayMonth[f[0]] === m && D.dayDow[f[0]] === wd && incOk(f[1]) && srcOk(f[2])){ const o = per.get(f[5]) || {key: f[5], s: 0, n: 0, trips: 0, vol: 0}; o.s += f[8]; o.n += f[9]; o.trips += f[7]; o.vol += f[6]; per.set(f[5], o); } });
+    B.facts.forEach(f => { if(inPer(f[0], m) && D.dayDow[f[0]] === wd && incOk(f[1]) && srcOk(f[2])){ const o = per.get(f[5]) || {key: f[5], s: 0, n: 0, trips: 0, vol: 0}; o.s += f[8]; o.n += f[9]; o.trips += f[7]; o.vol += f[6]; per.set(f[5], o); } });
     const rows = [...per.values()].filter(o => o.n).map(o => Object.assign(o, {dw: o.s / o.n}));
     openModal('Dwell hari ' + DAYS[wd], esc(periodSub()) + ' · per ekspeditur',
       table([{h:'Ekspeditur', cls:'name', val: o => B.dims.eksp[o.key] || 'FOT (distributor)'}, {h:'Rata-rata dwell (jam)', num:true, cls:'pc', val: o => o.dw, html: o => fmt1(o.dw), style: o => 'color:' + (o.dw <= 3.5 ? 'var(--green)' : o.dw <= 4.5 ? 'var(--amber)' : 'var(--red)')}, {h:'Trip', num:true, val: o => o.trips}, {h:'Tonase', num:true, val: o => o.vol, html: o => fmt(o.vol)}], rows, {go: o => B.dims.eksp[o.key] ? '#/ekspeditur/' + enc(B.dims.eksp[o.key]) : null, sort: 1}));
@@ -1008,7 +1086,7 @@ function pageArmada(){
   const cols = [{h:'#', cls:'rank', val: r => r.trips, html: (r, i) => '#' + (i + 1)}, {h:'Nopol', cls:'name', val: r => B.dims.truck[r.truck]},
     {h:'Ekspeditur', val: r => [...r.eksp.keys()].map(e => B.dims.eksp[e] || 'FOT').join(', ')}, {h:'Trip', num:true, val: r => r.trips}, {h:'Tonase', num:true, val: r => r.ton, html: r => fmt(r.ton)},
     {h:'Hari aktif', num:true, val: r => r.days}, {h:'Dwell (jam)', num:true, val: r => r.dwN ? r.dwS / r.dwN : null, html: r => r.dwN ? fmt1(r.dwS / r.dwN) : '–'},
-    {h:'Aktif', val: r => r.first, html: r => 'tgl ' + r.first + '–' + r.last}, {h:'Provinsi utama', val: r => tc(B.dims.prov[r.prov])}];
+    {h:'Aktif', val: r => r.first, html: r => activeTxt(r)}, {h:'Provinsi utama', val: r => tc(B.dims.prov[r.prov])}];
   page('<div class="wrap">' + crumb([['Armada']]) +
     '<div class="dp-head"><div><div class="nm">Armada</div><div class="sub">Truk aktif, trip dan dwell time · ' + (F.inc === 'ALL' ? 'FRC + FOT' : F.inc) + ' · ' + periodSub() + '</div></div><div class="badges"><div class="dp-badge">' + fmt(trucks.length) + ' truk aktif</div></div></div>' +
     '<div class="dp-grid4">' +
@@ -1075,7 +1153,7 @@ function bindEvents(){
     if(act){
       const a = act.dataset.act;
       if(a === 'apply') applyFilter();
-      if(a === 'reset'){ draft = {month: D.months[D.months.length - 1], inc: 'FRC', srcOff: new Set(DEFAULT_SRC_OFF)}; applyFilter(); }
+      if(a === 'reset'){ draft = {per: {kind: 'month', month: D.months[D.months.length - 1]}, inc: 'FRC', srcOff: new Set(DEFAULT_SRC_OFF)}; applyFilter(); }
       if(a === 'openfilter'){ e.stopPropagation(); openFilter(); }
       if(a === 'logout'){ logout(); }
       if(a === 'closemodal'){ closeModal(); }
@@ -1084,7 +1162,11 @@ function bindEvents(){
     const inc = e.target.closest('[data-inc]');
     if(inc){ draft.inc = inc.dataset.inc; $$('[data-inc]').forEach(x => x.classList.toggle('on', x === inc)); return; }
     const qm = e.target.closest('[data-qm]');
-    if(qm){ const last = D.months[D.months.length - 1]; draft.month = qm.dataset.qm === 'cur' ? last : (D.months.includes(prevMonth(last)) ? prevMonth(last) : last); $('#fpMonth').value = draft.month; return; }
+    if(qm){ const last = D.months[D.months.length - 1]; draft.per.month = qm.dataset.qm === 'cur' ? last : (D.months.includes(prevMonth(last)) ? prevMonth(last) : last); $('#fpMonth').value = draft.per.month; return; }
+    const pm = e.target.closest('[data-pmode]');
+    if(pm){ draft.per = {kind: pm.dataset.pmode, month: draft.per.month || draft.month}; renderFilterPanel(); return; }
+    const qr = e.target.closest('[data-qr]');
+    if(qr){ draft.to = B.asOf; draft.from = addDays(B.asOf, -(+qr.dataset.qr) + 1); $('#fpFrom').value = draft.from; $('#fpTo').value = draft.to; return; }
     const src = e.target.closest('[data-src]');
     if(src){ src.checked ? draft.srcOff.delete(src.dataset.src) : draft.srcOff.add(src.dataset.src); return; }
     const gran = e.target.closest('[data-gran]');
@@ -1113,7 +1195,9 @@ function bindEvents(){
   });
   document.addEventListener('change', e => {
     if(e.target.dataset && e.target.dataset.cmp){ const T = TRENDS[e.target.dataset.cmp]; T.cmp = e.target.value || null; $('#' + T.id).innerHTML = trendInner(T.id); return; }
-    if(e.target.id === 'fpMonth') draft.month = e.target.value; });
+    if(e.target.id === 'fpMonth') draft.per.month = e.target.value;
+    if(e.target.id === 'fpFrom') draft.from = e.target.value;
+    if(e.target.id === 'fpTo') draft.to = e.target.value; });
   document.addEventListener('keydown', e => { if(e.key === 'Escape'){ closeNav(); closeFilter(); closeModal(); $('#searchResults').classList.remove('show'); } });
   const sb = $('#searchBox');
   sb.addEventListener('input', () => doSearch(sb.value));
