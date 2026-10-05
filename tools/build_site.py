@@ -104,6 +104,21 @@ def as_date(v):
     return None
 
 
+def dwell_hours(r):
+    """Hours between TGL/JAM_MASUK and TGL/JAM_KELUAR, or None when either is missing."""
+    def at(tgl, jam):
+        d = as_date(tgl)
+        if not d or not jam:
+            return None
+        try:
+            h, m, *sec = [int(x) for x in str(jam).strip().split(":")]
+            return datetime.datetime(d.year, d.month, d.day, h, m, sec[0] if sec else 0)
+        except ValueError:
+            return None
+    a, b = at(r.get("TGL_MASUK"), r.get("JAM_MASUK")), at(r.get("TGL_KELUAR"), r.get("JAM_KELUAR"))
+    return round((b - a).total_seconds() / 3600, 3) if a and b else None
+
+
 def up(v):
     return str(v or "").strip().upper()
 
@@ -147,12 +162,39 @@ def build(cfg):
     trucks = defaultdict(lambda: [0, 0.0, 0.0, 0, 99, 0, set(), defaultdict(float)])
     last_day = {}
     n_real = 0
+    check = defaultdict(int)          # data-quality counters, printed at the end
+    seen_spj = set()
     for sheet, inc in (("Realisasi FRC", "FRC"), ("Realisasi H", "FOT")):
-        for r in sheet_rows(wb, sheet):
+        rows = list(sheet_rows(wb, sheet))
+        # learn ekspeditur name -> code from rows that have both, to fill rows pasted without the code
+        name2code = {}
+        for r in rows:
+            if r.get("EXPEDITUR_KODE") and r.get("EXPEDITUR_NAMA"):
+                name2code.setdefault(up(r["EXPEDITUR_NAMA"]), up(r["EXPEDITUR_KODE"]))
+        for r in rows:
             d = as_date(r.get("TGL_SPJ"))
             ton = num(r.get("TONASE"))
             if not d or ton <= 0:
+                check["baris tanpa tanggal/tonase (dilewati)"] += 1
                 continue
+            spj = str(r.get("NO_SPJ") or "").strip().split(".")[0]
+            if spj:
+                if spj in seen_spj:
+                    check["SPJ duplikat (dilewati)"] += 1
+                    continue
+                seen_spj.add(spj)
+            if inc == "FRC" and not r.get("EXPEDITUR_KODE"):
+                code = name2code.get(up(r.get("EXPEDITUR_NAMA")))
+                if code:
+                    r["EXPEDITUR_KODE"] = code; check["kode ekspeditur diisi dari nama"] += 1
+                else:
+                    check["FRC tanpa kode ekspeditur"] += 1
+            if r.get("DWELL_TIME_JAM") in (None, ""):
+                dw = dwell_hours(r)
+                if dw is not None:
+                    r["DWELL_TIME_JAM"] = dw; check["dwell dihitung dari jam masuk/keluar"] += 1
+            if not str(r.get("KODE_TOKO") or "").strip():
+                check[inc + " tanpa toko tujuan"] += 1
             n_real += 1
             month = d.strftime("%Y-%m")
             last_day[month] = max(last_day.get(month, 0), d.day)
@@ -180,6 +222,8 @@ def build(cfg):
                     tk[2] += num(dwell); tk[3] += 1
                 tk[4] = min(tk[4], d.day); tk[5] = max(tk[5], d.day); tk[6].add(d.day); tk[7][p] += ton
     print(f"  realisasi rows: {n_real:,}")
+    for k, v in sorted(check.items()):
+        print(f"    cek: {k}: {v:,}")
 
     # ---------------- SNOP targets ----------------
     targets = []

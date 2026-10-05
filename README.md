@@ -15,17 +15,21 @@ seluruh data terenkripsi (AES-GCM) di `data/site.enc` dan hanya terbuka dengan k
 
 ## Update data (rutin)
 
-1. Tambahkan baris baru di **MASTER_DATA_OUTBOUND_LOGISTIC.xlsx** (satu sheet per jenis data, jangan menimpa baris lama).
-2. Jalankan build:
+**Satu-satunya sumber: `02. DASHBOARD/MASTER_DATA_OUTBOUND_LOGISTIC.xlsx`.** Tab *PANDUAN* di file itu berisi daftar sheet, sumber dan kolom wajib.
+
+1. Tutup master Excel di komputer lain, lalu tambahkan baris baru (jangan menimpa baris lama).
+2. Simpan & tutup master Excel.
+3. Jalankan build:
    - Windows: double-click `tools\run_build.bat`
    - Mac: `python3 tools/build_site.py`
-3. Cek hasil di browser (opsional): `python3 -m http.server` lalu buka http://localhost:8000
-4. Commit & push `data/` dan `index.html` (`git pull` dulu sebelum mulai).
+4. Baca baris `cek:` di hasil build (SPJ duplikat otomatis diabaikan; dwell dihitung otomatis bila kosong; kode ekspeditur diisi dari nama bila kosong).
+5. GitHub Desktop › **Push origin**. Situs ter-update ±1–2 menit.
 
-Build pertama kali akan menanyakan lokasi master Excel bila `tools/config.json` belum ada.
-Ganti kata sandi: `python tools/build_site.py --setup` → jawab `y` → build → push, lalu bagikan kata sandi baru secara pribadi.
+Ganti kata sandi: `tools\ganti_password.bat` (Windows) atau `python3 tools/build_site.py --password`, lalu push dan bagikan password baru secara pribadi.
 
 Kebutuhan: Python 3.9+, `pip install openpyxl cryptography`.
+
+`AUTO_UPDATE/update_dashboard.py` hanya untuk situs lama (logistik-sp) dan tidak dipakai di sini.
 
 ## Aturan perhitungan
 
