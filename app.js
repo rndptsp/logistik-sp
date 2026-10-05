@@ -311,11 +311,11 @@ function trendPanel(sc, gran, title, opt){
 function trendInner(id){
   const T = TRENDS[id], data = trendData(T);
   T.data = data;
-  const chips = [['mtd','MTD'],['harian','Harian'],['mingguan','Mingguan'],['bulanan','Bulanan']].map(g => '<span class="' + (g[0] === T.gran ? 'on' : '') + '" data-gran="' + id + ':' + g[0] + '">' + g[1] + '</span>').join('');
+  const chips = [['mtd','MTD'],['harian','Harian'],['mingguan','Mingguan'],['bulanan','Bulanan']].filter(g => !T.grans || T.grans.includes(g[0])).map(g => '<span class="' + (g[0] === T.gran ? 'on' : '') + '" data-gran="' + id + ':' + g[0] + '">' + g[1] + '</span>').join('');
   const inc = T.incFix || F.inc;
   const legend = (inc !== 'FOT' ? '<span><i style="background:var(--green)"></i>&ge;100% target</span><span><i style="background:var(--amber)"></i>85–99%</span><span><i style="background:var(--red)"></i>&lt;85%</span><span><i class="dash"></i>target SNOP</span>' : '<span><i style="background:var(--black)"></i>volume FOT (tanpa target)</span>') +
     (T.cmp ? '<span><i style="background:#BCC3C5"></i>' + esc(cmpLabel(T)) + '</span><span>▲▼ = selisih vs pembanding</span>' : '');
-  return '<div class="pt"><span>' + esc(T.title) + ' (ton)</span><div class="pt-tools">' + cmpOptions(T) + '<div class="gran-chips">' + chips + '</div></div></div>' + barsHTML(id, data) +
+  return '<div class="pt"><span>' + esc(T.title) + ' (ton)</span><div class="pt-tools">' + (T.noCmp ? '' : cmpOptions(T)) + '<div class="gran-chips">' + chips + '</div></div></div>' + barsHTML(id, data) +
     '<div class="trend-legend">' + legend + '</div>' +
     '<div class="trend-detail" id="' + id + '-d">Klik batang mana pun untuk rincian per provinsi, distrik, ekspeditur &amp; source' + (T.cmp ? ', dibandingkan dengan ' + esc(cmpLabel(T)) : '') + '.</div>';
 }
@@ -577,20 +577,14 @@ function pageHome(){
   const withPct = provRows.filter(o => o.pct != null);
   const worst = withPct.length ? withPct.reduce((a, b) => a.gap < b.gap ? a : b) : null;
   const attn = worst && worst.gap < 0 ? '<div class="attn"><div><span class="dot"></span></div><div><div class="t1">Perlu perhatian — ' + esc(tc(B.dims.prov[worst.key])) + '</div><div class="t2">Capaian ' + pctTxt(worst.pct) + ' dari target SNOP MTD — gap ' + fmt(-worst.gap) + ' ton, terbesar di antara semua provinsi. Realisasi ' + fmt(worst.frc) + ' t vs target ' + fmt(worst.tgt) + ' t.</div></div><a class="cta" href="#/provinsi/' + enc(B.dims.prov[worst.key]) + '">Lihat rincian &rsaquo;</a></div>' : '';
-  const cards = provRows.slice().sort((a, b) => b.vol - a.vol).map(o => {
-    const name = B.dims.prov[o.key], bad = o.pct != null && o.pct < 85;
-    return '<a class="pcard" style="border-left-color:' + tierColor(o.pct) + '" href="#/provinsi/' + enc(name) + '"><div class="nm">' + esc(tc(name)) + (o.pct != null ? '<span>gap ' + signed(o.gap) + ' t</span>' : '') + '</div><div class="pc' + (bad ? ' bad' : '') + '">' + (o.pct != null ? pctTxt(o.pct) : fmt(o.vol) + ' t') + '</div><div class="tn">' + fmt(o.vol) + ' ton' + (o.hasTgt ? ' dari target ' + fmt(o.tgt) + ' t' : ' · tanpa target') + '</div><div class="track"><div class="fill' + (bad ? ' bad' : '') + '" style="width:' + (o.pct != null ? Math.min(100, o.pct) : 100) + '%"></div></div></a>';
-  }).join('');
   const trucks = trucksFor(m);
   const prog = B.prog;
   page(
     mapHero(provRows, t, head, chg, isLatest) +
     '<div class="wrap"><div class="data-asof">Data realisasi s.d. ' + dayLabel(B.asOf) + (prog.date ? ' · snapshot Prognosa ' + dayLabel(prog.date) + ' ' + esc(prog.time) : '') + ' · ' + esc(B.build || '') + '</div>' +
     attn +
-    '<div class="section-head"><div class="section-title">Capaian MTD ' + monthLabel(m) + '</div><a class="section-link" href="#/tren">Semua tren &rsaquo;</a></div>' +
-    '<div class="main-chart">' + trendPanel({}, 'mtd', 'Realisasi kumulatif vs target SNOP') + '</div>' +
-    '<div class="section-head"><div class="section-title">Pencapaian per provinsi</div><a class="section-link" href="#/provinsi">Lihat tabel &rsaquo;</a></div>' +
-    '<div class="card-row">' + cards + '</div>' +
+    '<div class="section-head"><div class="section-title">Capaian ' + monthLabel(m) + '</div><a class="section-link" href="#/tren">Semua tren &rsaquo;</a></div>' +
+    '<div class="main-chart">' + trendPanel({}, 'harian', 'Realisasi vs target SNOP', {grans: ['harian', 'mingguan', 'bulanan'], noCmp: true}) + '</div>' +
     '<div class="section-head"><div class="section-title">Jelajahi</div></div>' +
     '<div class="quick-row">' +
       '<a class="qcard" href="#/forecast/harian"><div class="photo p1"></div><div class="body"><div class="qt">Forecast</div><div class="qd">Rilis, potensi dan prognose hari ini; SO H+1 sampai H+3; proyeksi akhir bulan.</div><div class="qlink">Lihat forecast &rsaquo;</div></div></a>' +
