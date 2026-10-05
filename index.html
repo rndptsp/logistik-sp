@@ -6,7 +6,7 @@
 <meta name="robots" content="noindex, nofollow">
 <title>Outbound Logistics — Semen Padang</title>
 <link rel="icon" href="assets/icon-192.png">
-<link rel="stylesheet" href="style.css?v=build.2026.10.06.0459">
+<link rel="stylesheet" href="style.css?v=build.2026.10.06.0506">
 </head>
 <body>
 
@@ -31,51 +31,34 @@
       <div class="name">Semen Padang<small>Outbound Logistics</small></div>
     </a>
     <nav id="mainNav">
-      <div class="navitem" data-nav="home"><a class="navbtn" href="#/">Home</a></div>
-      <div class="navitem" data-nav="overview">
-        <div class="navbtn" data-toggle>Overview <span class="caret">&#9660;</span></div>
-        <div class="dropdown">
-          <a href="#/">Ringkasan<small>Headline, peta, KPI bulan berjalan</small></a>
-          <a href="#/provinsi">Semua provinsi<small>Rank pencapaian per provinsi</small></a>
-          <a href="#/tren">Tren<small>Tonase mingguan &amp; bulanan</small></a>
-          <a href="#/armada">Armada<small>Truk aktif, trip, dwell time</small></a>
-          <a href="#/scorecard">Scorecard<small>Ringkasan performa ekspeditur</small></a>
-        </div>
-      </div>
-      <div class="navitem" data-nav="forecast">
-        <div class="navbtn" data-toggle>Forecast <span class="caret">&#9660;</span></div>
-        <div class="mega">
-          <div class="mega-title">Granularitas</div>
-          <div class="gran-chips">
-            <a href="#/forecast/harian">Harian</a><a href="#/forecast/mingguan">Mingguan</a><a href="#/forecast/bulanan">Bulanan</a>
-          </div>
-          <div class="mega-cols">
-            <div>
-              <div class="mega-title">Incoterm</div>
-              <div class="mega-list">
-                <a href="#/incoterm/FRC">FRC — Franco<span>via ekspeditur</span></a>
-                <a href="#/incoterm/FOT">FOT — Free on Truck<span>diambil distributor</span></a>
-              </div>
-            </div>
-            <div>
-              <div class="mega-title">Provinsi</div>
-              <div class="mega-list" id="navProvList"></div>
-            </div>
-          </div>
-          <a class="mega-foot" href="#/provinsi">Lihat semua provinsi &rsaquo;</a>
+      <div class="navitem" data-nav="home"><a class="navbtn" href="#/">Ringkasan</a></div>
+      <div class="navitem" data-nav="wilayah">
+        <div class="navbtn" data-toggle>Wilayah <span class="caret">&#9660;</span></div>
+        <div class="dropdown dd-list">
+          <div class="mega-title">Provinsi &middot; capaian bulan terpilih</div>
+          <div class="mega-list" id="navProvList"></div>
+          <div class="dd-hint">Distrik ada di dalam halaman provinsi, atau cari lewat Search.</div>
+          <a class="mega-foot" href="#/provinsi">Tabel semua provinsi &rsaquo;</a>
         </div>
       </div>
       <div class="navitem" data-nav="ekspeditur">
         <div class="navbtn" data-toggle>Ekspeditur <span class="caret">&#9660;</span></div>
         <div class="mega mega-eksp">
-          <div class="mega-title">Mitra ekspeditur &middot; pencapaian bulan terpilih</div>
+          <div class="mega-title">Ekspeditur FRC &middot; capaian bulan terpilih</div>
           <div class="eksp-grid" id="navEkspList"></div>
-          <a class="mega-foot" href="#/ekspeditur">Lihat semua ekspeditur &rsaquo;</a>
+          <div class="mega-title" style="margin-top:16px">FOT (angkut sendiri)</div>
+          <div class="mega-list"><a href="#/fot">Distributor FOT<span>volume &amp; trip per distributor</span></a></div>
+          <a class="mega-foot" href="#/ekspeditur">Peringkat &amp; scorecard semua ekspeditur &rsaquo;</a>
         </div>
       </div>
-      <div class="navitem nav-right" data-nav="filter">
-        <div class="navbtn" data-toggle>Filter <span class="caret">&#9660;</span></div>
-        <div class="filter-panel" id="filterPanel"></div>
+      <div class="navitem" data-nav="armada"><a class="navbtn" href="#/armada">Armada</a></div>
+      <div class="navitem" data-nav="prognosa">
+        <div class="navbtn" data-toggle>Prognosa <span class="caret">&#9660;</span></div>
+        <div class="dropdown">
+          <a href="#/prognosa/hari-ini">Hari ini<small>Rilis, potensi, prognose &amp; SO H+1–H+3</small></a>
+          <a href="#/prognosa/minggu-ini">Minggu ini<small>Realisasi harian vs target, proyeksi minggu</small></a>
+          <a href="#/prognosa/akhir-bulan">Akhir bulan<small>Proyeksi &amp; kebutuhan per hari per provinsi</small></a>
+        </div>
       </div>
     </nav>
     <div class="headerright">
@@ -86,12 +69,12 @@
       <div class="daylabel" id="dayLabel"></div>
     </div>
   </header>
-  <div class="filter-strip" id="filterStrip"></div>
+  <div class="filter-strip" id="filterStrip"><div class="fs-summary" id="filterSummary"></div><div class="filter-panel" id="filterPanel"></div></div>
   <main id="view"></main>
   <footer class="foot" id="foot"></footer>
 </div>
 
-<script src="assets/sumatra.js?v=build.2026.10.06.0459"></script>
-<script src="app.js?v=build.2026.10.06.0459"></script>
+<script src="assets/sumatra.js?v=build.2026.10.06.0506"></script>
+<script src="app.js?v=build.2026.10.06.0506"></script>
 </body>
 </html>
