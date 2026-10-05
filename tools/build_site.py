@@ -137,12 +137,13 @@ def build(cfg):
     print(f"Reading {path} ...")
     wb = openpyxl.load_workbook(path, read_only=True, data_only=True)
 
-    prov, dist, eksp, src, distr, truck = Dict(), Dict(), Dict(), Dict(), Dict(), Dict()
+    prov, dist, eksp, src, distr, truck, toko = Dict(), Dict(), Dict(), Dict(), Dict(), Dict(), Dict()
+    toko_meta = {}   # toko index -> [kode, nama, alamat]
     dist_prov = {}
 
     # ---------------- Realisasi (FRC + FOT) ----------------
     facts = defaultdict(lambda: [0.0, 0, 0.0, 0])        # (day, inc, src, prov, dist, eksp) -> ton, trips, dwellSum, dwellN
-    fot_dist = defaultdict(lambda: [0.0, 0])               # (month, prov, distributor) -> ton, trips
+    ship = defaultdict(lambda: [0.0, 0])                   # (day, inc, src, prov, dist, distributor, eksp, toko) -> ton, trips
     trucks = defaultdict(lambda: [0, 0.0, 0.0, 0, 99, 0, set(), defaultdict(float)])
     last_day = {}
     n_real = 0
@@ -165,9 +166,12 @@ def build(cfg):
             f[0] += ton; f[1] += 1
             if ok_dwell:
                 f[2] += num(dwell); f[3] += 1
-            if inc == "FOT":
-                g = fot_dist[(month, p, distr(up(r.get("DISTRIBUTOR"))))]
-                g[0] += ton; g[1] += 1
+            kt = str(r.get("KODE_TOKO") or "").strip().split(".")[0]
+            ti = toko(kt)
+            if kt and ti not in toko_meta:
+                toko_meta[ti] = [kt, str(r.get("NAMA_TOKO") or "").strip(), str(r.get("ALAMAT_TOKO") or "").strip()]
+            g = ship[(d.isoformat(), inc, s, p, di, distr(up(r.get("DISTRIBUTOR"))), e, ti)]
+            g[0] += ton; g[1] += 1
             nopol = up(r.get("NOPOL"))
             if nopol:
                 tk = trucks[(month, truck(nopol), inc, e, s)]
@@ -241,11 +245,14 @@ def build(cfg):
         "lastDay": last_day,
         "dims": {"prov": prov.items, "dist": dist.items, "eksp": eksp.items, "src": src.items,
                  "distr": distr.items, "truck": truck.items,
+                 "toko": [toko_meta.get(i, ["", "", ""]) for i in range(len(toko.items))],
                  "distProv": [dist_prov.get(i, -1) for i in range(len(dist.items))]},
         "days": days,
         "facts": [[day_idx[k[0]], 0 if k[1] == "FRC" else 1, k[2], k[3], k[4], k[5],
                    round(v[0], 2), v[1], round(v[2], 2), v[3]] for k, v in facts.items()],
-        "fotDist": [[k[0], k[1], k[2], round(v[0], 2), v[1]] for k, v in fot_dist.items()],
+        # one row per day x incoterm x source x province x district x distributor x ekspeditur x ship-to
+        "ship": [[day_idx[k[0]], 0 if k[1] == "FRC" else 1, k[2], k[3], k[4], k[5], k[6], k[7], round(v[0], 2), v[1]]
+                 for k, v in ship.items()],
         "trucks": [[k[0], k[1], 0 if k[2] == "FRC" else 1, k[3], k[4], v[0], round(v[1], 2), round(v[2], 2), v[3],
                     v[4], v[5], len(v[6]), max(v[7], key=v[7].get)] for k, v in trucks.items()],
         "targets": targets,
