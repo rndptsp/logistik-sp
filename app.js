@@ -363,48 +363,58 @@ function doSearch(q){
 }
 
 /* ===================== Map ===================== */
-const MAP = [
-  {id:'aceh', label:'Aceh', x:85, y:5, w:90, h:50},
-  {id:'SUMATERA UTARA', label:'Sum. Utara', x:65, y:60, w:115, h:65},
-  {id:'SUMATERA BARAT', label:'Sum. Barat', x:45, y:130, w:70, h:65},
-  {id:'RIAU DARATAN', label:'Riau', x:120, y:130, w:95, h:55},
-  {id:'kepri', label:'Kep. Riau', x:195, y:140, w:55, h:35},
-  {id:'JAMBI', label:'Jambi', x:80, y:200, w:100, h:50},
-  {id:'SUMATERA SELATAN', label:'Sum. Selatan', x:75, y:255, w:105, h:55},
-  {id:'BENGKULU', label:'Bengkulu', x:25, y:255, w:45, h:80},
-  {id:'babel', label:'Babel', x:185, y:270, w:55, h:45},
-  {id:'lampung', label:'Lampung', x:85, y:315, w:90, h:50}
+/* Real province borders come from assets/sumatra.js (window.SUMATRA: {w,h,p:{PROVINSI:{d,cx,cy}}}). */
+const MAP_LABEL = {
+  'ACEH': ['Aceh'], 'SUMATERA UTARA': ['Sumatera Utara', 0, 10], 'SUMATERA BARAT': ['Sumatera Barat', 4, -22],
+  'RIAU DARATAN': ['Riau', 0, -8], 'KEPULAUAN RIAU': ['Kep. Riau', 0, -22], 'JAMBI': ['Jambi', 4, -6],
+  'SUMATERA SELATAN': ['Sumatera Selatan', 0, -8], 'BENGKULU': ['Bengkulu', -62, 6, 'out'], 'BANGKA BELITUNG': ['Babel', 0, 0],
+  'LAMPUNG': ['Lampung', -8, 0]
+};
+const PLANTS = [  // [label, lon, lat, label side]
+  ['CP Indarung', 100.47, -0.95, 'left'], ['GP Dumai', 101.45, 1.67, 'right'], ['PP Bengkulu', 102.27, -3.80, 'right'], ['PP Belawan', 98.69, 3.78, 'right']
 ];
 function mapHTML(provRows){
+  const G = window.SUMATRA;
   const byName = Object.fromEntries(provRows.map(o => [B.dims.prov[o.key], o]));
   const withPct = provRows.filter(o => o.pct != null);
   const worst = withPct.length ? withPct.reduce((a, b) => a.pct < b.pct ? a : b) : null;
   const defs = '<defs>' +
     '<linearGradient id="gGreen" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#2E9E5C"/><stop offset="100%" stop-color="#1A7A42"/></linearGradient>' +
-    '<linearGradient id="gAmber" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#C08A2A"/><stop offset="100%" stop-color="#8A5A00"/></linearGradient>' +
-    '<linearGradient id="gRed" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FF5A64"/><stop offset="100%" stop-color="#F5333F"/></linearGradient>' +
+    '<linearGradient id="gAmber" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#C9952E"/><stop offset="100%" stop-color="#8A5A00"/></linearGradient>' +
+    '<linearGradient id="gRed" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#FF6B74"/><stop offset="100%" stop-color="#E02A36"/></linearGradient>' +
     '<linearGradient id="gInk" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#5A5A5A"/><stop offset="100%" stop-color="#2B2B2B"/></linearGradient>' +
-    '<filter id="softShadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.22"/></filter></defs>';
-  const island = '<path d="M60,8 C95,-2 135,8 155,30 C178,54 172,88 198,118 C222,144 216,176 202,212 C188,246 192,272 178,302 C168,326 152,348 132,372 C112,392 90,406 68,396 C48,386 54,360 44,334 C28,298 34,258 24,224 C14,188 26,148 20,114 C14,78 30,44 60,8 Z" fill="#E6EBEB" stroke="#D3D8D9" stroke-width="1.5"/>';
-  const regions = MAP.map(p => {
-    const o = byName[p.id];
-    const cx = p.x + p.w / 2, cy = p.y + p.h / 2;
+    '<linearGradient id="gSea" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="#EEF4F7"/><stop offset="100%" stop-color="#E2ECF1"/></linearGradient>' +
+    '<filter id="softShadow" x="-10%" y="-10%" width="120%" height="120%"><feDropShadow dx="0" dy="1.5" stdDeviation="2" flood-color="#000" flood-opacity="0.18"/></filter></defs>';
+  const sea = '<rect width="' + G.w + '" height="' + G.h + '" fill="url(#gSea)"/>' +
+    '<text x="40" y="360" class="sea-lbl">SAMUDRA HINDIA</text><text x="290" y="70" class="sea-lbl">SELAT MALAKA</text><text x="420" y="150" class="sea-lbl">LAUT NATUNA</text>';
+  let shapes = '', labels = '';
+  Object.keys(G.p).forEach(id => {
+    const g = G.p[id], o = byName[id], L = MAP_LABEL[id] || [tc(id)];
+    const lx = g.cx + (L[1] || 0), ly = g.cy + (L[2] || 0);
     if(!o){
-      return '<rect class="map-region" x="' + p.x + '" y="' + p.y + '" width="' + p.w + '" height="' + p.h + '" rx="16" fill="#D7DCDD" data-tip="' + esc(p.label + '|Tidak ada pengiriman darat di data') + '"></rect>' +
-        '<text x="' + cx + '" y="' + (cy + 3) + '" text-anchor="middle" font-size="10" font-weight="700" fill="#8C9293" style="pointer-events:none">' + p.label + '</text>';
+      shapes += '<path class="map-region" d="' + g.d + '" fill="#D9DEDF" stroke="#fff" stroke-width="1" data-tip="' + esc(tc(id) + '|Tidak ada pengiriman darat di data') + '"/>';
+      labels += '<text x="' + lx + '" y="' + ly + '" class="map-lbl dim">' + esc(L[0]) + '</text>';
+      return;
     }
     const fill = o.pct != null ? 'url(#g' + tierName(o.pct) + ')' : 'url(#gInk)';
-    const tip = tc(p.id) + '|Realisasi ' + fmt(o.vol) + ' t' + (o.hasTgt ? ' · Target MTD ' + fmt(o.tgt) + ' t' : '') + '|' + (o.pct != null ? 'Capaian ' + pctTxt(o.pct) : 'Tanpa target SNOP');
-    return '<rect class="map-region live' + (worst && o === worst ? ' is-attn' : '') + '" x="' + p.x + '" y="' + p.y + '" width="' + p.w + '" height="' + p.h + '" rx="16" fill="' + fill + '" filter="url(#softShadow)" data-href="#/provinsi/' + enc(p.id) + '" data-tip="' + esc(tip) + '"></rect>' +
-      '<text x="' + cx + '" y="' + (cy - 3) + '" text-anchor="middle" font-size="' + Math.min(10.5, p.w / 5.6).toFixed(1) + '" font-weight="700" fill="#fff" style="pointer-events:none">' + p.label + '</text>' +
-      '<text x="' + cx + '" y="' + (cy + 11) + '" text-anchor="middle" font-size="11" font-weight="800" fill="#fff" style="pointer-events:none">' + (o.pct != null ? pctTxt(o.pct) : fmt(o.vol) + ' t') + '</text>';
+    const tip = tc(id) + '|Realisasi ' + fmt(o.vol) + ' t' + (o.hasTgt ? ' · Target MTD ' + fmt(o.tgt) + ' t' : '') + '|' + (o.pct != null ? 'Capaian ' + pctTxt(o.pct) + ' · gap ' + signed(o.gap) + ' t' : 'Tanpa target SNOP');
+    shapes += '<path class="map-region live' + (worst && o === worst ? ' is-attn' : '') + '" d="' + g.d + '" fill="' + fill + '" stroke="#fff" stroke-width="1.2" filter="url(#softShadow)" data-href="#/provinsi/' + enc(id) + '" data-tip="' + esc(tip) + '"/>';
+    const out = L[3] === 'out' ? ' out' : '';   // label placed in the sea next to a narrow province
+    labels += '<text x="' + lx + '" y="' + (ly - 4) + '" class="map-lbl' + out + '">' + esc(L[0]) + '</text>' +
+      '<text x="' + lx + '" y="' + (ly + 11) + '" class="map-pct' + out + '" style="' + (out ? 'fill:' + tierColor(o.pct) : '') + '">' + (o.pct != null ? pctTxt(o.pct) : fmt(o.vol) + ' t') + '</text>';
+  });
+  const pins = PLANTS.filter(p => !F.srcOff.has(p[0] === 'PP Belawan' ? 'PP BELAWAN SBA' : p[0].toUpperCase())).map(p => {
+    const x = ((p[1] - 95) * 40).toFixed(1), y = ((6.2 - p[2]) * 40).toFixed(1);
+    return '<g class="map-pin" data-tip="' + esc(p[0] + '|Plant / packing plant asal pengiriman') + '"><circle cx="' + x + '" cy="' + y + '" r="5.5" fill="#fff" stroke="#000" stroke-width="1.6"/><circle cx="' + x + '" cy="' + y + '" r="2.2" fill="var(--red)"/>' +
+      '<text x="' + (p[3] === 'left' ? +x - 8 : +x + 8) + '" y="' + (+y + 3.5) + '" class="pin-lbl" text-anchor="' + (p[3] === 'left' ? 'end' : 'start') + '">' + esc(p[0]) + '</text></g>';
   }).join('');
   const sorted = provRows.slice().sort((a, b) => (b.pct == null ? -1 : b.pct) - (a.pct == null ? -1 : a.pct) || b.vol - a.vol);
   const legend = sorted.map((o, i) => {
     const name = B.dims.prov[o.key];
     return '<a class="map-row" href="#/provinsi/' + enc(name) + '"><span class="dot" style="background:' + tierColor(o.pct) + '"></span><span class="nm">#' + (i + 1) + ' ' + esc(tc(name)) + '</span><span class="tn">' + fmt(o.vol) + ' t</span><span class="pc" style="color:' + tierColor(o.pct) + '">' + pctTxt(o.pct) + '</span></a>';
-  }).join('') + '<div class="map-row muted"><span class="dot" style="background:#D7DCDD"></span><span class="nm">Aceh, Kep. Riau, Babel, Lampung</span><span class="pc">—</span></div>';
-  return '<div class="map-wrap"><svg class="map-svg" viewBox="0 0 260 420" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Peta pencapaian per provinsi">' + defs + island + regions + '</svg><div class="map-legend">' + legend + '</div></div>';
+  }).join('') + '<div class="map-row muted"><span class="dot" style="background:#D9DEDF"></span><span class="nm">Aceh, Kep. Riau, Babel, Lampung</span><span class="pc">—</span></div>' +
+    '<div class="map-key"><span><i style="background:#1A7A42"></i>&ge;100%</span><span><i style="background:#8A5A00"></i>85–99%</span><span><i style="background:#E02A36"></i>&lt;85%</span><span><i class="pin"></i>plant</span></div>';
+  return '<div class="map-wrap"><svg class="map-svg" viewBox="0 0 ' + G.w + ' ' + G.h + '" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Peta pencapaian per provinsi di Sumatera">' + defs + sea + shapes + labels + pins + '</svg><div class="map-legend">' + legend + '</div></div>';
 }
 
 /* ===================== Pages ===================== */
@@ -444,7 +454,7 @@ function pageHome(){
     attn +
     '<div class="section-head"><div class="section-title">Peta Interaktif Sumatera</div><a class="section-link" href="#/provinsi">Lihat semua &rsaquo;</a></div>' +
     mapHTML(provRows) +
-    '<div class="section-sub">Siluet blok skematik per provinsi (bukan batas geografis presisi), diwarnai menurut capaian FRC vs target SNOP. Provinsi yang berkedip merah paling tertinggal. Arahkan kursor untuk angka, klik untuk rincian.</div>' +
+    '<div class="section-sub">Batas provinsi sesuai peta BAKOSURTANAL, diwarnai menurut capaian FRC vs target SNOP. Provinsi yang berkedip paling tertinggal. Arahkan kursor untuk angka, klik provinsi untuk rincian.</div>' +
     '<div class="section-head"><div class="section-title">Pencapaian per provinsi</div><a class="section-link" href="#/provinsi">Lihat tabel &rsaquo;</a></div>' +
     '<div class="card-row">' + cards + '</div>' +
     '<div class="section-head"><div class="section-title">Jelajahi</div></div>' +

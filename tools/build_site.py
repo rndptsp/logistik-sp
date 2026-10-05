@@ -278,7 +278,7 @@ def build(cfg):
     idx = os.path.join(ROOT, "index.html")
     with open(idx, encoding="utf-8") as f:
         html = f.read()
-    html = re.sub(r'(style\.css|app\.js)\?v=[^"]*', lambda mm: mm.group(1) + "?v=" + meta["build"], html)
+    html = re.sub(r'(style\.css|app\.js|sumatra\.js)\?v=[^"]*', lambda mm: mm.group(1) + "?v=" + meta["build"], html)
     with open(idx, "w", encoding="utf-8") as f:
         f.write(html)
     print(f"Done in {time.time()-t0:.0f}s: {len(plain)/1e6:.1f} MB json -> {len(ct)/1e6:.1f} MB encrypted, "
