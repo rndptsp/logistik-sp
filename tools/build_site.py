@@ -2,6 +2,7 @@
 
     python tools/build_site.py            # uses tools/config.json
     python tools/build_site.py --setup    # (re)create tools/config.json
+    python tools/build_site.py --password # ganti password situs, lalu build ulang
 
 Reads MASTER_DATA_OUTBOUND_LOGISTIC.xlsx (one sheet per dataset, append-only), aggregates it,
 gzips + encrypts it (AES-GCM, key = PBKDF2-SHA256(password)) and writes data/site.enc + data/meta.json.
@@ -41,6 +42,32 @@ def setup():
     with open(CFG_PATH, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2)
     return cfg
+
+
+def change_password():
+    """Ask for a new site password (typed twice, not shown on screen), save it, then rebuild."""
+    import getpass
+    cfg = load_cfg()
+    while True:
+        pw = getpass.getpass("Password baru (min. 8 karakter, kosongkan = dibuat acak): ")
+        if not pw:
+            pw = secrets.token_urlsafe(12)
+            print("Password acak dibuat - lihat di tools/config.json.")
+            break
+        if len(pw) < 8:
+            print("Terlalu pendek, minimal 8 karakter.")
+            continue
+        if getpass.getpass("Ulangi password baru: ") != pw:
+            print("Tidak sama, coba lagi.")
+            continue
+        break
+    cfg["password"] = pw
+    cfg.pop("salt", None)   # new password -> new salt
+    with open(CFG_PATH, "w", encoding="utf-8") as f:
+        json.dump(cfg, f, indent=2)
+    print("Password disimpan. Membuat ulang data dengan password baru ...")
+    build(cfg)
+    print("SELESAI. Push lewat GitHub Desktop, lalu bagikan password baru ke tim secara pribadi.")
 
 
 def load_cfg(required=True):
@@ -261,5 +288,7 @@ def build(cfg):
 if __name__ == "__main__":
     if "--setup" in sys.argv:
         setup()
+    elif "--password" in sys.argv:
+        change_password()
     else:
         build(load_cfg())
