@@ -39,7 +39,7 @@ Kebutuhan: Python 3.9+, `pip install openpyxl cryptography`.
 - Target = **SNOP saja**. Target MTD = jumlah target harian (kolom D1..D31) dari tgl 1 s.d. hari data terakhir.
 - Capaian % = realisasi **FRC** ÷ target SNOP MTD. FOT tidak memiliki target.
 - Default filter: FRC, tanpa PP Belawan SBA (bisa diubah di menu Filter).
-- Real/SO = realisasi FRC ÷ **SOCC s.d. H-1**: tonase sheet Sales Order dijumlah per **TGL_KIRIM** (sama dengan SOCC di laporan *Pencapaian Kemarin*). Baris tanpa TGL_KIRIM dihitung per bulan penuh (kolom PERIODE). SO per ekspeditur = atribusi. Real/SO diwarnai netral (bukan target).
+- Real/SO = realisasi FRC ÷ **SO sebulan penuh**: per bulan kirim (kolom TGL_KIRIM) bila ada, selain itu per kolom PERIODE. SO per ekspeditur = atribusi. Real/SO diwarnai netral (bukan target): di awal bulan nilainya wajar rendah.
 - Forecast harian = snapshot Prognosa terakhir di master Excel; mingguan/bulanan = proyeksi laju rata-rata.
 
 Angka September 2026 sudah dicocokkan dengan *Report Pengiriman OL MTD 30 September 2026* (per provinsi, ekspeditur dan minggu).
