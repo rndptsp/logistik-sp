@@ -178,11 +178,18 @@ function summarize(group, per, sc, opt){
       const o = get(TK[group](t));
       o.tgt += targetBetween(t, per.from, per.tgtTo); o.tgtFull += targetBetween(t, per.from, fullTo); o.hasTgt = true;
     });
-    // SO is monthly (PERIODE): every month that the period touches is counted in full
-    if(group !== 'src') B.so.forEach(s => {
-      if(s[0] < m0 || s[0] > per.to.slice(0, 7) || !scopeOkT(s, sc)) return;
-      get(SK[group](s)).so += s[4];
-    });
+    // SO with a delivery date (SOCC, B.sod) counts the same days as the target; older monthly SO (PERIODE)
+    // counts every month the period touches in full, unless that month has dated SO
+    if(group !== 'src'){
+      B.sod.forEach(s => {
+        if(s[0] < per.from || s[0] > per.tgtTo || !scopeOkT(s, sc)) return;
+        get(SK[group](s)).so += s[4];
+      });
+      B.so.forEach(s => {
+        if(s[0] < m0 || s[0] > per.to.slice(0, 7) || B.sodMonths.has(s[0]) || !scopeOkT(s, sc)) return;
+        get(SK[group](s)).so += s[4];
+      });
+    }
   }
   out.forEach(o => {
     o.pct = o.hasTgt && frcOn() ? (o.tgt > 0 ? pctOf(o.frc, o.tgt) : 100) : null;
@@ -913,7 +920,7 @@ function pageHome(){
       kpi('trend', 'var(--black)', 'Trip', fmt(t.trips), {href:'#/armada', hint: incTxt + ' · ' + esc(m.label)}) +
       kpi('truck', 'var(--black)', 'Truk aktif', fmt(trucks.length), {href:'#/armada', hint: fmt1(t.trips / Math.max(1, trucks.length)) + ' trip / truk'}) +
       kpi('clock', 'var(--amber)', 'Rata-rata dwell', t.dwell == null ? '–' : fmt1(t.dwell) + ' <small>jam</small>', {href:'#/armada', hint:'masuk → keluar pabrik'}) +
-      kpi('check', 'var(--green)', 'Realisasi / SO', pctTxt(t.of), {href:'#/ekspeditur', hint: t.so ? 'SO ' + fmt(t.so) + ' t (bulan penuh yang tercakup)' : 'SO tidak tersedia'}) +
+      kpi('check', 'var(--green)', 'Realisasi / SO', pctTxt(t.of), {href:'#/ekspeditur', hint: t.so ? 'SO ' + fmt(t.so) + ' t' + (B.sodMonths.has(m.month) ? ' (SOCC s.d. ' + shortDate(m.tgtTo) + ')' : ' (bulan penuh yang tercakup)') : 'SO tidak tersedia'}) +
     '</div>' +
     noteBasis('Peta: batas provinsi BAKOSURTANAL 1:250.000; provinsi abu-abu tidak dilayani via darat. Provinsi yang berkedip paling tertinggal.') + '</div>', 'home');
 }
@@ -1378,6 +1385,8 @@ async function start(key, meta){
   B = await loadBundle(key, meta);
   B.build = meta.build;
   trimToYesterday(B);
+  B.sod = B.sod || [];   // bundles built before SOCC-by-delivery-date
+  B.sodMonths = new Set(B.sod.map(s => s[0].slice(0, 7)));
   prepare(); restoreFilter();
   try { sessionStorage.setItem('osp_k', toB64(await crypto.subtle.exportKey('raw', key))); } catch(e) {}
   touch();

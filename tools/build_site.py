@@ -249,9 +249,17 @@ def build(cfg):
                         [round(x, 3) for x in daily] if has_daily else None])
     print(f"  SNOP target rows: {len(targets):,}")
 
-    # ---------------- Sales Order (by PERIODE month) ----------------
-    so = defaultdict(float)
+    # ---------------- Sales Order ----------------
+    # With TGL_KIRIM: SO per delivery day = SOCC as in the daily report (sum of tonase by Tgl Kirim).
+    # Without it: the whole PERIODE month (older rows).
+    so, sod = defaultdict(float), defaultdict(float)
     for r in sheet_rows(wb, "Sales Order"):
+        dk = as_date(r.get("TGL_KIRIM"))
+        if dk:
+            p, di = prov(up(r.get("PROPINSI"))), dist(up(r.get("NAMA_DISTRIK")))
+            dist_prov.setdefault(di, p)
+            sod[(dk.isoformat(), p, di, eksp(up(r.get("EXPEDITUR_KODE"))))] += num(r.get("TONASE_KIRIM"))
+            continue
         per = up(r.get("PERIODE"))[:3]
         mno = MONTH_PREFIX.get(per)
         d = as_date(r.get("TGL_SO"))
@@ -261,7 +269,7 @@ def build(cfg):
         p, di = prov(up(r.get("PROPINSI"))), dist(up(r.get("NAMA_DISTRIK")))
         dist_prov.setdefault(di, p)
         so[(f"{year}-{mno:02d}", p, di, eksp(up(r.get("EXPEDITUR_KODE"))))] += num(r.get("TONASE_KIRIM"))
-    print(f"  SO groups: {len(so):,}")
+    print(f"  SO groups: {len(so):,} per bulan, {len(sod):,} per tgl kirim (SOCC)")
 
     # ---------------- Latest Prognosa snapshot + SO H+1..3 ----------------
     snap_rows = list(sheet_rows(wb, "Prognosa Snapshot"))
@@ -311,6 +319,7 @@ def build(cfg):
                    for k, v in trucks.items()],
         "targets": targets,
         "so": [[k[0], k[1], k[2], k[3], round(v, 2)] for k, v in so.items() if v],
+        "sod": [[k[0], k[1], k[2], k[3], round(v, 2)] for k, v in sod.items() if v],
         "prog": {"date": latest[0], "time": latest[1], "fields": fields, "rows": prog},
         "soh": [[k[0], k[1], k[2], k[3], round(v, 2)] for k, v in soh.items()],
     }
