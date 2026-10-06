@@ -181,7 +181,7 @@ function summarize(group, per, sc, opt){
     });
   }
   out.forEach(o => {
-    o.pct = o.hasTgt && frcOn() ? pctOf(o.frc, o.tgt) : null;
+    o.pct = o.hasTgt && frcOn() ? (o.tgt > 0 ? pctOf(o.frc, o.tgt) : 100) : null;
     o.of = frcOn() && o.so > 0 ? pctOf(o.frc, o.so) : null;
     o.gap = o.frc - o.tgt;
     o.dwell = o.dwN ? o.dwS / o.dwN : null;
@@ -241,7 +241,7 @@ function rangeGroup(fromISO, toISO, sc, group){
       if(any){ const o = get(TK[group](t)); o.tgt += add; o.hasTgt = true; }
     });
   }
-  out.forEach(o => { o.pct = o.hasTgt && frcOn() ? pctOf(o.frc, o.tgt) : null; o.gap = o.frc - o.tgt; });
+  out.forEach(o => { o.pct = o.hasTgt && frcOn() ? (o.tgt > 0 ? pctOf(o.frc, o.tgt) : 100) : null; o.gap = o.frc - o.tgt; });
   return out;
 }
 function rangeTotals(fromISO, toISO, sc){
