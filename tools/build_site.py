@@ -164,6 +164,7 @@ def build(cfg):
     n_real = 0
     check = defaultdict(int)          # data-quality counters, printed at the end
     seen_spj = set()
+    today = datetime.date.today()
     for sheet, sheet_inc in (("Realisasi FRC", "FRC"), ("Realisasi H", "FOT")):
         rows = list(sheet_rows(wb, sheet))
         # learn ekspeditur name -> code from rows that have both, to fill rows pasted without the code
@@ -176,6 +177,9 @@ def build(cfg):
             ton = num(r.get("TONASE"))
             if not d or ton <= 0:
                 check["baris tanpa tanggal/tonase (dilewati)"] += 1
+                continue
+            if d >= today:   # the site shows plan vs realisasi up to H-1; today's rows are partial
+                check[f"baris tgl {d.strftime('%d-%m')} (hari ini/ke depan, dilewati: situs s.d. H-1)"] += 1
                 continue
             spj = str(r.get("NO_SPJ") or "").strip().split(".")[0]
             if spj:
