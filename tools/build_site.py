@@ -164,7 +164,7 @@ def build(cfg):
     n_real = 0
     check = defaultdict(int)          # data-quality counters, printed at the end
     seen_spj = set()
-    for sheet, inc in (("Realisasi FRC", "FRC"), ("Realisasi H", "FOT")):
+    for sheet, sheet_inc in (("Realisasi FRC", "FRC"), ("Realisasi H", "FOT")):
         rows = list(sheet_rows(wb, sheet))
         # learn ekspeditur name -> code from rows that have both, to fill rows pasted without the code
         name2code = {}
@@ -183,6 +183,12 @@ def build(cfg):
                     check["SPJ duplikat (dilewati)"] += 1
                     continue
                 seen_spj.add(spj)
+            # the row's own INCOTERM wins over the sheet it was pasted into (FRC rows pasted into the FOT sheet)
+            inc = up(r.get("INCOTERM"))
+            if inc not in ("FRC", "FOT"):
+                inc = sheet_inc
+            elif inc != sheet_inc:
+                check[f"{inc} di sheet {sheet} (dihitung sebagai {inc})"] += 1
             if inc == "FRC" and not r.get("EXPEDITUR_KODE"):
                 code = name2code.get(up(r.get("EXPEDITUR_NAMA")))
                 if code:
