@@ -62,11 +62,15 @@ function kpi(icon, color, label, val, opt){
   const tag = opt.href ? 'a' : 'div';
   return '<' + tag + ' class="kpi"' + (opt.href ? ' href="' + opt.href + '"' : '') + '><div class="kpi-ic" style="color:' + color + '">' + ICONS[icon] + '</div><div><div class="lbl">' + label + '</div><div class="val">' + val + '</div>' + (opt.hint ? '<div class="hint">' + opt.hint + '</div>' : '') + '</div></' + tag + '>';
 }
-function rateRow(label, p, href, sub){
+/** Bar row for achievement vs target; pass `of` (Real/SO %, may be null) to add the Real/SO value next to it. */
+function rateRow(label, p, href, sub, of){
   const w = p == null ? 0 : Math.min(100, p);
   const tag = href ? 'a' : 'div';
-  return '<' + tag + ' class="rate-row"' + (href ? ' href="' + href + '"' : '') + ' title="' + esc(label + (sub ? ' — ' + sub : '')) + '"><div class="rl">' + esc(label) + '</div><div class="rtrack"><div class="rfill" style="width:' + w + '%;background:' + tierColor(p) + '"></div></div><div class="rv" style="color:' + tierColor(p) + '">' + pctTxt(p) + '</div></' + tag + '>';
+  return '<' + tag + ' class="rate-row"' + (href ? ' href="' + href + '"' : '') + ' title="' + esc(label + (sub ? ' — ' + sub : '')) + '"><div class="rl">' + esc(label) + '</div><div class="rtrack"><div class="rfill" style="width:' + w + '%;background:' + tierColor(p) + '"></div></div><div class="rv" style="color:' + tierColor(p) + '">' + pctTxt(p) + '</div>' +
+    (of !== undefined ? '<div class="rso"><small>SO</small> ' + (of == null ? '–' : pctTxt(of)) + '</div>' : '') + '</' + tag + '>';
 }
+/** Tooltip line for Real/SO, or '' when there is no SO. */
+const soTip = o => o.so > 0 ? '|SO ' + fmt(o.so) + ' t · Real/SO ' + pctTxt(o.of) : (frcOn() ? '|SO tidak tersedia' : '');
 
 /* ===================== State ===================== */
 let B = null;            // decrypted bundle
@@ -474,7 +478,7 @@ const C = {
   pct: {h:'Capaian', num:true, cls:'pc', val: r => r.pct, html: r => pctTxt(r.pct), style: r => 'color:' + tierColor(r.pct)},
   gap: {h:'Gap (t)', num:true, val: r => r.hasTgt ? r.gap : null, html: r => r.hasTgt ? '<span style="color:' + (r.gap < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(r.gap) + '</span>' : '–'},
   so: {h:'SO (t)', num:true, val: r => r.so || null, html: r => r.so ? fmt(r.so) : '–'},
-  of: {h:'Real/SO', num:true, val: r => r.of, html: r => pctTxt(r.of), style: r => 'color:' + tierColor(r.of)},
+  of: {h:'Real/SO', num:true, val: r => r.of, html: r => pctTxt(r.of)},   // neutral: SO is a whole month, realisasi is MTD
   trips: {h:'Trip', num:true, val: r => r.trips, html: r => fmt(r.trips)},
   dwell: {h:'Dwell (jam)', num:true, val: r => r.dwell, html: r => r.dwell == null ? '–' : fmt1(r.dwell)},
   note: {h:'Catatan', cls:'note-c', val: r => reviewText(r.pct), sortVal: r => r.pct}
@@ -617,7 +621,7 @@ function mapHTML(provRows, opt){
       return;
     }
     const fill = o.pct != null ? 'url(#g' + tierName(o.pct) + ')' : 'url(#gInk)';
-    const tip = tc(id) + '|Realisasi ' + fmt(o.vol) + ' t' + (o.hasTgt ? ' · Target MTD ' + fmt(o.tgt) + ' t' : '') + '|' + (o.pct != null ? 'Capaian ' + pctTxt(o.pct) + ' · gap ' + signed(o.gap) + ' t' : 'Tanpa target SNOP');
+    const tip = tc(id) + '|Realisasi ' + fmt(o.vol) + ' t' + (o.hasTgt ? ' · Target MTD ' + fmt(o.tgt) + ' t' : '') + '|' + (o.pct != null ? 'Capaian ' + pctTxt(o.pct) + ' · gap ' + signed(o.gap) + ' t' : 'Tanpa target SNOP') + soTip(o);
     shapes += '<path class="map-region live' + (worst && o === worst ? ' is-attn' : '') + '" d="' + g.d + '" fill="' + fill + '" stroke="' + (hero ? '#0F1A21' : '#fff') + '" stroke-width="1.2" filter="url(#softShadow)" data-href="#/provinsi/' + enc(id) + '" data-tip="' + esc(tip) + '"/>';
     const out = L[3] === 'out' ? ' out' : '';   // label placed in the sea next to a narrow province
     labels += '<text x="' + lx + '" y="' + (ly - 4) + '" class="map-lbl' + out + '">' + esc(L[0]) + '</text>' +
@@ -629,10 +633,10 @@ function mapHTML(provRows, opt){
       '<text x="' + (p[3] === 'left' ? +x - 8 : +x + 8) + '" y="' + (+y + 3.5) + '" class="pin-lbl" text-anchor="' + (p[3] === 'left' ? 'end' : 'start') + '">' + esc(p[0]) + '</text></g>';
   }).join('');
   const sorted = provRows.slice().sort((a, b) => (b.pct == null ? -1 : b.pct) - (a.pct == null ? -1 : a.pct) || b.vol - a.vol);
-  const legend = sorted.map((o, i) => {
+  const legend = '<div class="map-row map-head"><span class="dot"></span><span class="nm"></span><span class="tn">Realisasi</span><span class="pc">vs target</span><span class="so">Real/SO</span></div>' + sorted.map((o, i) => {
     const name = B.dims.prov[o.key];
-    return '<a class="map-row" href="#/provinsi/' + enc(name) + '"><span class="dot" style="background:' + tierColor(o.pct) + '"></span><span class="nm">#' + (i + 1) + ' ' + esc(tc(name)) + '</span><span class="tn">' + fmt(o.vol) + ' t</span><span class="pc" style="color:' + tierColor(o.pct) + '">' + pctTxt(o.pct) + '</span></a>';
-  }).join('') + '<div class="map-row muted"><span class="dot" style="background:#D9DEDF"></span><span class="nm">Aceh, Kep. Riau, Babel, Lampung</span><span class="pc">—</span></div>' +
+    return '<a class="map-row" href="#/provinsi/' + enc(name) + '"><span class="dot" style="background:' + tierColor(o.pct) + '"></span><span class="nm">#' + (i + 1) + ' ' + esc(tc(name)) + '</span><span class="tn">' + fmt(o.vol) + ' t</span><span class="pc" style="color:' + tierColor(o.pct) + '">' + pctTxt(o.pct) + '</span><span class="so">' + (o.of == null ? '–' : pctTxt(o.of)) + '</span></a>';
+  }).join('') + '<div class="map-row muted"><span class="dot" style="background:#D9DEDF"></span><span class="nm">Aceh, Kep. Riau, Babel, Lampung</span><span class="pc">—</span><span class="so"></span></div>' +
     '<div class="map-key"><span><i style="background:#1A7A42"></i>&ge;100%</span><span><i style="background:#8A5A00"></i>85–99%</span><span><i style="background:#E02A36"></i>&lt;85%</span><span><i class="pin"></i>plant</span></div>';
   const svg = '<svg class="map-svg" viewBox="0 0 ' + G.w + ' ' + G.h + '" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Peta pencapaian per provinsi di Sumatera">' + defs + sea + shapes + labels + pins + '</svg>';
   if(hero) return svg;
@@ -704,10 +708,10 @@ function distMapHTML(pname, m, opt){
     const name = B.dims.dist[o.key], i = matchDistrict(name, G.d);
     if(i < 0){ missing.push(o); return; }
     let a = agg.get(i);
-    if(!a){ a = {vol:0, frc:0, tgt:0, trips:0, hasTgt:false, keys:[]}; agg.set(i, a); }
-    a.vol += o.vol; a.frc += o.frc; a.tgt += o.tgt; a.trips += o.trips; a.hasTgt = a.hasTgt || o.hasTgt; a.keys.push(o.key);
+    if(!a){ a = {vol:0, frc:0, tgt:0, so:0, trips:0, hasTgt:false, keys:[]}; agg.set(i, a); }
+    a.vol += o.vol; a.frc += o.frc; a.tgt += o.tgt; a.so += o.so; a.trips += o.trips; a.hasTgt = a.hasTgt || o.hasTgt; a.keys.push(o.key);
   });
-  agg.forEach(a => { a.pct = a.hasTgt && frcOn() ? (a.tgt > 0 ? pctOf(a.frc, a.tgt) : 100) : null; a.gap = a.frc - a.tgt; });   // same rule as summarize()
+  agg.forEach(a => { a.pct = a.hasTgt && frcOn() ? (a.tgt > 0 ? pctOf(a.frc, a.tgt) : 100) : null; a.gap = a.frc - a.tgt; a.of = frcOn() && a.so > 0 ? pctOf(a.frc, a.so) : null; });   // same rules as summarize()
   const [vx, vy, vw, vh] = G.vb, fs = Math.max(vw, vh) / 52;
   const defs = '<defs>' + [['Green', '#2E9E5C', '#1A7A42'], ['Amber', '#C9952E', '#8A5A00'], ['Red', '#FF6B74', '#E02A36'], ['Ink', '#5A5A5A', '#2B2B2B']].map(c =>
     '<linearGradient id="d' + c[0] + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="' + c[1] + '"/><stop offset="100%" stop-color="' + c[2] + '"/></linearGradient>').join('') + '</defs>';
@@ -719,7 +723,7 @@ function distMapHTML(pname, m, opt){
       return;
     }
     const fill = a.pct != null ? 'url(#d' + tierName(a.pct) + ')' : 'url(#dInk)';
-    const tip = g.n + '|Realisasi ' + fmt(a.vol) + ' t · ' + fmt(a.trips) + ' trip' + (a.hasTgt ? ' · Target MTD ' + fmt(a.tgt) + ' t' : '') + '|' + (a.pct != null ? 'Capaian ' + pctTxt(a.pct) + ' · gap ' + signed(a.gap) + ' t' : 'Tanpa target SNOP');
+    const tip = g.n + '|Realisasi ' + fmt(a.vol) + ' t · ' + fmt(a.trips) + ' trip' + (a.hasTgt ? ' · Target MTD ' + fmt(a.tgt) + ' t' : '') + '|' + (a.pct != null ? 'Capaian ' + pctTxt(a.pct) + ' · gap ' + signed(a.gap) + ' t' : 'Tanpa target SNOP') + soTip(a);
     const path = '<path class="map-region live' + (sel ? ' is-sel' : '') + '" d="' + g.d + '" fill="' + fill + '" stroke="' + (sel ? '#000' : '#fff') + '" stroke-width="' + (sel ? 3 : 1.2) + '" vector-effect="non-scaling-stroke" data-href="#/distrik/' + enc(B.dims.dist[a.keys[0]]) + '" data-tip="' + esc(tip) + '"/>';
     if(sel) selShape = path; else shapes += path;
     if(Math.min(g.w, g.h) >= Math.max(vw, vh) * 0.09){
@@ -737,7 +741,7 @@ function distMapHTML(pname, m, opt){
     defs + '<rect x="' + vx + '" y="' + vy + '" width="' + vw + '" height="' + vh + '" fill="#EEF4F7"/>' + shapes + selShape + labels + pins + '</svg>';
   const list = [...agg.entries()].map(([i, a]) => Object.assign({n: G.d[i].n}, a))
     .sort((a, b) => (b.pct == null ? -1 : b.pct) - (a.pct == null ? -1 : a.pct) || b.vol - a.vol);
-  const legend = list.map((a, r) => '<a class="map-row' + (opt.sel != null && a.keys.includes(opt.sel) ? ' is-sel' : '') + '" href="#/distrik/' + enc(B.dims.dist[a.keys[0]]) + '"><span class="dot" style="background:' + tierColor(a.pct) + '"></span><span class="nm">#' + (r + 1) + ' ' + esc(a.n) + '</span><span class="tn">' + fmt(a.vol) + ' t</span><span class="pc" style="color:' + tierColor(a.pct) + '">' + pctTxt(a.pct) + '</span></a>').join('') +
+  const legend = '<div class="map-row map-head"><span class="dot"></span><span class="nm"></span><span class="tn">Realisasi</span><span class="pc">vs target</span><span class="so">Real/SO</span></div>' + list.map((a, r) => '<a class="map-row' + (opt.sel != null && a.keys.includes(opt.sel) ? ' is-sel' : '') + '" href="#/distrik/' + enc(B.dims.dist[a.keys[0]]) + '"><span class="dot" style="background:' + tierColor(a.pct) + '"></span><span class="nm">#' + (r + 1) + ' ' + esc(a.n) + '</span><span class="tn">' + fmt(a.vol) + ' t</span><span class="pc" style="color:' + tierColor(a.pct) + '">' + pctTxt(a.pct) + '</span><span class="so">' + (a.of == null ? '–' : pctTxt(a.of)) + '</span></a>').join('') +
     (missing.length ? '<div class="map-row muted"><span class="dot" style="background:transparent"></span><span class="nm">Tidak ada di peta: ' + missing.map(o => esc(tc(B.dims.dist[o.key]))).join(', ') + '</span></div>' : '') +
     '<div class="map-key"><span><i style="background:#1A7A42"></i>&ge;100%</span><span><i style="background:#8A5A00"></i>85–99%</span><span><i style="background:#E02A36"></i>&lt;85%</span><span><i style="background:#D9DEDF"></i>tanpa kiriman</span></div>';
   return '<div class="map-wrap dmap">' + svg + '<div class="map-legend">' + legend + '</div></div>';
@@ -785,7 +789,7 @@ function treeHTML(nodes, levels, opt){
   const id = 'tr' + Math.random().toString(36).slice(2, 8);
   const hasT = !!opt.tgt && frcOn();
   let html = '<div class="tree-tools"><span>' + levels.map(l => LV_LBL[l]).join(' &rsaquo; ') + '</span><span><a data-tree-all="' + id + ':1">Buka semua</a> · <a data-tree-all="' + id + ':0">Tutup semua</a></span></div>' +
-    '<div class="tbl-wrap"><table class="tbl tree" id="' + id + '"><thead><tr><th>Tujuan</th><th class="num">Realisasi (t)</th>' + (hasT ? '<th class="num">Target MTD (t)</th><th class="num">Capaian</th>' : '') + '<th class="num">Trip</th><th class="num">Kirim terakhir</th><th></th></tr></thead><tbody>';
+    '<div class="tbl-wrap"><table class="tbl tree" id="' + id + '"><thead><tr><th>Tujuan</th><th class="num">Realisasi (t)</th>' + (hasT ? '<th class="num">Target MTD (t)</th><th class="num">Capaian</th><th class="num">SO (t)</th><th class="num">Real/SO</th>' : '') + '<th class="num">Trip</th><th class="num">Kirim terakhir</th><th></th></tr></thead><tbody>';
   const walk = (list, depth, parent) => list.forEach((n, i) => {
     const path = parent ? parent + '-' + i : String(i), kids = n.children && n.children.length;
     const t = hasT && opt.tgt[n.lv] ? opt.tgt[n.lv].get(n.key) : null;
@@ -793,7 +797,8 @@ function treeHTML(nodes, levels, opt){
     html += '<tr class="lv' + depth + (depth ? ' tr-hide' : '') + (kids ? ' has-kids' : '') + '" data-path="' + path + '" data-parent="' + (parent || '') + '">' +
       '<td class="name" style="padding-left:' + (12 + depth * 22) + 'px"><span class="caret-t">' + (kids ? '▸' : '') + '</span><span class="t-lbl">' + nodeLabel(n) + '</span>' + (kids ? '<span class="t-cnt">' + n.children.length + ' ' + LV_LBL[levels[depth + 1]].toLowerCase() + '</span>' : '') + '</td>' +
       '<td class="num">' + fmt(n.vol) + '</td>' +
-      (hasT ? (t && t.hasTgt ? '<td class="num">' + fmt(t.tgt) + '</td><td class="num pc" style="color:' + tierColor(t.pct) + '">' + pctTxt(t.pct) + '</td>' : '<td class="num">–</td><td class="num">–</td>') : '') +
+      (hasT ? (t && t.hasTgt ? '<td class="num">' + fmt(t.tgt) + '</td><td class="num pc" style="color:' + tierColor(t.pct) + '">' + pctTxt(t.pct) + '</td>' : '<td class="num">–</td><td class="num">–</td>') +
+        (t && t.so ? '<td class="num">' + fmt(t.so) + '</td><td class="num pc">' + pctTxt(t.of) + '</td>' : '<td class="num">–</td><td class="num">–</td>') : '') +
       '<td class="num">' + fmt(n.trips) + '</td><td class="num">' + (n.last >= 0 ? dayLabel(B.days[n.last]) : '–') + '</td>' +
       '<td class="num">' + (href ? '<a class="t-go" href="' + href + '" title="Buka halaman">&rsaquo;</a>' : '') + '</td></tr>';
     if(kids) walk(n.children, depth + 1, path);
@@ -920,7 +925,7 @@ function mapHero(provRows, t, head, chg, isLatest){
   const maxV = Math.max(1, ...rank.map(o => o.vol));
   const list = rank.map((o, i) => {
     const name = B.dims.prov[o.key];
-    return '<a class="mh-row" href="#/provinsi/' + enc(name) + '" data-prov="' + esc(name) + '"><span class="mh-rk">' + (i + 1) + '</span><span class="mh-nm">' + esc(tc(name)) + '<i style="width:' + (o.vol / maxV * 100) + '%;background:' + tierColor(o.pct) + '"></i></span><span class="mh-tn">' + fmt(o.vol) + ' t</span><span class="mh-pc" style="color:' + tierColor(o.pct) + '">' + pctTxt(o.pct) + '</span></a>';
+    return '<a class="mh-row" href="#/provinsi/' + enc(name) + '" data-prov="' + esc(name) + '"><span class="mh-rk">' + (i + 1) + '</span><span class="mh-nm">' + esc(tc(name)) + '<i style="width:' + (o.vol / maxV * 100) + '%;background:' + tierColor(o.pct) + '"></i></span><span class="mh-tn">' + fmt(o.vol) + ' t</span><span class="mh-pc" style="color:' + tierColor(o.pct) + '">' + pctTxt(o.pct) + '</span><span class="mh-so">' + (o.of == null ? '–' : pctTxt(o.of)) + '</span></a>';
   }).join('');
   const chip = (l, v, sub, color) => '<div class="mh-chip"><div class="l">' + l + '</div><div class="v"' + (color ? ' style="color:' + color + '"' : '') + '>' + v + '</div>' + (sub ? '<div class="s">' + sub + '</div>' : '') + '</div>';
   return '<section class="map-hero"><div class="mh-bg"></div><div class="mh-inner">' +
@@ -932,7 +937,7 @@ function mapHero(provRows, t, head, chg, isLatest){
         chip('Capaian', pctTxt(t.pct), 'FRC vs SNOP', t.pct == null ? null : t.pct >= 100 ? '#5FD08F' : t.pct >= 85 ? '#E8B04A' : '#FF6B74') +
         chip(m.kind === 'month' ? 'vs bulan lalu' : 'vs periode lalu', chg == null ? '–' : (chg >= 0 ? '▲ ' : '▼ ') + Math.abs(Math.round(chg)) + '%', 'periode sama', chg == null ? null : chg >= 0 ? '#5FD08F' : '#FF6B74') +
       '</div>' +
-      '<div class="mh-list"><div class="mh-lh"><span>Rank provinsi</span><a href="#/provinsi">Lihat tabel &rsaquo;</a></div>' + list + '</div>' +
+      '<div class="mh-list"><div class="mh-lh"><span>Rank provinsi</span><a href="#/provinsi">Lihat tabel &rsaquo;</a></div><div class="mh-row mh-head"><span></span><span></span><span class="mh-tn">Realisasi</span><span class="mh-pc">Target</span><span class="mh-so">Real/SO</span></div>' + list + '</div>' +
       '<div class="mh-key"><span><i style="background:#2E9E5C"></i>&ge;100%</span><span><i style="background:#C9952E"></i>85–99%</span><span><i style="background:#FF6B74"></i>&lt;85%</span><span><i style="background:#34424B"></i>tidak dilayani darat</span><span><i class="pin"></i>plant</span></div>' +
     '</div>' +
     '<div class="mh-map">' + mapHTML(provRows, {hero: true}) + '<div class="mh-hint">Arahkan kursor untuk angka · klik / ketuk provinsi untuk rincian</div></div>' +
@@ -994,7 +999,7 @@ function pageProv(name){
     '</div>' +
     distMapSection(name, m) +
     '<div class="dp-cols">' + trendPanel(sc, 'mingguan') +
-      '<div class="dp-panel"><div class="pt">Ekspeditur di provinsi ini</div>' + (eks.length ? eks.map(o => rateRow(B.dims.eksp[o.key] + ' · ' + fmt(o.vol) + ' t', o.pct, '#/ekspeditur/' + enc(B.dims.eksp[o.key]), o.hasTgt ? 'target ' + fmt(o.tgt) + ' t' : 'tanpa target')).join('') : '<div class="empty">' + (F.inc === 'FOT' ? 'FOT diambil langsung oleh distributor — lihat halaman FOT.' : 'Tidak ada data.') + '</div>') + '</div>' +
+      '<div class="dp-panel"><div class="pt">Ekspeditur di provinsi ini<span class="pt-sub">capaian target · Real/SO</span></div>' + (eks.length ? eks.map(o => rateRow(B.dims.eksp[o.key] + ' · ' + fmt(o.vol) + ' t', o.pct, '#/ekspeditur/' + enc(B.dims.eksp[o.key]), o.hasTgt ? 'target ' + fmt(o.tgt) + ' t' : 'tanpa target', o.of)).join('') : '<div class="empty">' + (F.inc === 'FOT' ? 'FOT diambil langsung oleh distributor — lihat halaman FOT.' : 'Tidak ada data.') + '</div>') + '</div>' +
     '</div>' +
     (pr.length ? '<div class="section-head"><div class="section-title">Prognose hari ini (FRC)</div><a class="section-link" href="#/prognosa/hari-ini">Prognosa &rsaquo;</a></div>' + progCells(pr, 'snapshot ' + dayLabel(B.prog.date) + ' ' + B.prog.time) : '') +
     '<div class="section-head"><div class="section-title">Kinerja &amp; tujuan pengiriman per distrik</div></div>' +
@@ -1047,7 +1052,7 @@ function pageEkspList(){
     (F.inc === 'FOT' ? '<div class="dp-review">FOT diambil langsung oleh distributor (tanpa ekspeditur). Ganti filter ke FRC, atau buka <a href="#/distributor" style="color:var(--red);font-weight:700">Distributor FOT</a>.</div>' : '') +
     '<div class="dp-cols even"><div class="dp-panel"><div class="pt">Scorecard keseluruhan</div>' +
       rateRow('Capaian target SNOP', t.pct) + rateRow('Realisasi / SO', t.of) + rateRow('Truk aktif > 1 trip', multi) +
-    '</div><div class="dp-panel"><div class="pt">Capaian per ekspeditur</div>' + (list.filter(r => r.pct != null).map(r => rateRow(B.dims.eksp[r.key], r.pct, '#/ekspeditur/' + enc(B.dims.eksp[r.key]))).join('') || '<div class="empty">Tidak ada target untuk filter ini.</div>') + '</div></div>' +
+    '</div><div class="dp-panel"><div class="pt">Capaian per ekspeditur<span class="pt-sub">capaian target · Real/SO</span></div>' + (list.filter(r => r.pct != null).map(r => rateRow(B.dims.eksp[r.key], r.pct, '#/ekspeditur/' + enc(B.dims.eksp[r.key]), '', r.of)).join('') || '<div class="empty">Tidak ada target untuk filter ini.</div>') + '</div></div>' +
     table(cols, list, {go: r => '#/ekspeditur/' + enc(B.dims.eksp[r.key])}) +
     noteBasis('Real/SO = realisasi FRC ÷ SO pada periode yang sama (SO per ekspeditur = atribusi). SBA hanya memuat dari PP Belawan SBA, sehingga ikut tersembunyi saat source tersebut tidak dicentang.') + '</div>', 'ekspeditur');
 }
@@ -1078,7 +1083,7 @@ function pageEksp(code){
       kpi('clock', 'var(--amber)', 'Rata-rata dwell', me.dwell == null ? '–' : fmt1(me.dwell) + ' <small>jam</small>', {hint: me.so ? 'Real/SO ' + pctTxt(me.of) : ''}) +
     '</div>' +
     '<div class="dp-cols">' + trendPanel(sc, 'mingguan') +
-      '<div class="dp-panel"><div class="pt">Capaian per provinsi</div>' + (provs.length ? provs.map(o => rateRow(tc(B.dims.prov[o.key]) + ' · ' + fmt(o.vol) + ' t', o.pct, '#/provinsi/' + enc(B.dims.prov[o.key]), o.hasTgt ? 'target ' + fmt(o.tgt) + ' t' : '')).join('') : '<div class="empty">Tidak ada data untuk filter ini.</div>') + '</div>' +
+      '<div class="dp-panel"><div class="pt">Capaian per provinsi<span class="pt-sub">capaian target · Real/SO</span></div>' + (provs.length ? provs.map(o => rateRow(tc(B.dims.prov[o.key]) + ' · ' + fmt(o.vol) + ' t', o.pct, '#/provinsi/' + enc(B.dims.prov[o.key]), o.hasTgt ? 'target ' + fmt(o.tgt) + ' t' : '', o.of)).join('') : '<div class="empty">Tidak ada data untuk filter ini.</div>') + '</div>' +
     '</div>' +
     '<div class="section-head"><div class="section-title">SO menunggu kirim di distrik layanan</div><a class="section-link" href="#/prognosa/hari-ini">Prognosa &rsaquo;</a></div>' +
     '<div class="prog-row">' + ['H+1', 'H+2', 'H+3'].map((h, i) => '<div class="prog-cell"><div class="pl">' + h + '</div><div class="pv">' + fmt(soh[i]) + ' t</div><div class="pd">SO FRC di ' + served.size + ' distrik ber-target ' + esc(code) + '</div></div>').join('') + '</div>' +
@@ -1325,8 +1330,8 @@ function bindEvents(){
   document.addEventListener('mousemove', e => {
     const t = e.target.closest && e.target.closest('[data-tip]');
     if(!t){ tip.style.display = 'none'; return; }
-    const [a, b2, c] = t.dataset.tip.split('|');
-    tip.innerHTML = '<b>' + esc(a) + '</b><br>' + esc(b2) + (c ? '<br>' + esc(c) : '');
+    const [a, ...rest] = t.dataset.tip.split('|');
+    tip.innerHTML = '<b>' + esc(a) + '</b>' + rest.map(x => '<br>' + esc(x)).join('');
     tip.style.display = 'block'; tip.style.left = (e.clientX + 14) + 'px'; tip.style.top = (e.clientY + 14) + 'px';
   });
   window.addEventListener('hashchange', route);
