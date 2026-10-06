@@ -11,6 +11,7 @@ seluruh data terenkripsi (AES-GCM) di `data/site.enc` dan hanya terbuka dengan k
 | `assets/` | Logo & foto |
 | `data/site.enc`, `data/meta.json` | Data terenkripsi + parameter dekripsi (dibuat oleh build) |
 | `tools/build_site.py` | Membaca master Excel → membuat `data/` |
+| `assets/districts.js`, `tools/make_districts.py` | Batas kabupaten/kota (geoBoundaries, CC BY 4.0) untuk peta distrik di halaman provinsi/distrik. Dibuat sekali; jalankan ulang skrip hanya bila batas wilayah berubah. |
 | `tools/config.json` | **Tidak di-commit.** Lokasi master Excel + kata sandi |
 
 ## Update data (rutin)

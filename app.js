@@ -639,6 +639,110 @@ function mapHTML(provRows, opt){
   return '<div class="map-wrap">' + svg + '<div class="map-legend">' + legend + '</div></div>';
 }
 
+/* ===================== District map (province & district pages) ===================== */
+/* Kabupaten/kota borders come from assets/districts.js (window.DISTRICTS: {PROVINSI:{vb,d:[{n,d,cx,cy,w,h}]}}),
+   loaded on first use. SAP district names are cut at 20 characters and spelled differently from the map
+   ("KAB. KUANTAN SINGING", "KOTA PADANG SIDEMPUA"), so names are matched per province by prefix, then loosely. */
+let distMapLoading = false, distMapPending = null;
+function loadDistricts(){
+  if(distMapLoading) return;
+  distMapLoading = true;
+  const own = document.querySelector('script[src*="app.js"]'), v = own && own.src.split('?v=')[1];
+  const s = document.createElement('script');
+  s.src = 'assets/districts.js' + (v ? '?v=' + v : '');
+  s.onload = () => { const slot = $('#dmapSlot'); if(slot && distMapPending) slot.outerHTML = distMapPending(); distMapPending = null; };
+  s.onerror = () => { const slot = $('#dmapSlot'); if(slot) slot.innerHTML = '<div class="empty">Peta distrik tidak bisa dimuat.</div>'; distMapLoading = false; };
+  document.head.appendChild(s);
+}
+function distKey(s){
+  s = String(s || '').toUpperCase().trim().replace(/^KAB(UPATEN)?\b\.?\s*/, '');
+  let kota = /^KOTA\b/.test(s) ? true : null;
+  if(kota) s = s.replace(/^KOTA\b\.?\s*/, '');
+  return {kota, k: s.replace(/[^A-Z]/g, '')};
+}
+function lev(a, b){
+  const row = Array.from({length: b.length + 1}, (_, j) => j);
+  for(let i = 1; i <= a.length; i++){
+    let prev = row[0]; row[0] = i;
+    for(let j = 1; j <= b.length; j++){ const t = row[j]; row[j] = Math.min(row[j] + 1, row[j - 1] + 1, prev + (a[i - 1] === b[j - 1] ? 0 : 1)); prev = t; }
+  }
+  return row[b.length];
+}
+/** Index of the map shape for a data district name, or -1. */
+function matchDistrict(name, shapes){
+  const q = distKey(name), isKab = /^KAB/i.test(String(name).trim());
+  let best = -1, bestScore = Infinity;
+  shapes.forEach((g, i) => {
+    const t = distKey(g.n);
+    t.kota = /^Kota /.test(g.n);
+    if((q.kota && !t.kota) || (isKab && t.kota)) return;
+    const score = q.k === t.k ? 0 : t.k.startsWith(q.k) && q.k.length >= 5 ? 1 : q.k.length >= 6 && lev(q.k, t.k.slice(0, q.k.length)) <= Math.max(1, q.k.length >> 3) ? 2 : Infinity;
+    if(score < bestScore || (score === bestScore && best >= 0 && t.k.length < distKey(shapes[best].n).k.length)){ best = i; bestScore = score; }
+  });
+  return bestScore === Infinity ? -1 : best;
+}
+const PLANT_PROV = {'CP Indarung': 'SUMATERA BARAT', 'GP Dumai': 'RIAU DARATAN', 'PP Bengkulu': 'BENGKULU', 'PP Belawan': 'SUMATERA UTARA'};
+function distMapSection(pname, m, sel){
+  const map = distMapHTML(pname, m, {sel});
+  return map ? '<div class="section-head"><div class="section-title">Peta capaian per distrik' + (sel != null ? ' — ' + esc(tc(pname)) : '') + '</div>' +
+    (sel != null ? '<a class="section-link" href="#/provinsi/' + enc(pname) + '">Halaman provinsi &rsaquo;</a>' : '') + '</div>' + map : '';
+}
+/** Province map coloured by district achievement. opt.sel = data district index to highlight. */
+function distMapHTML(pname, m, opt){
+  opt = opt || {};
+  if(!window.DISTRICTS){
+    distMapPending = () => distMapHTML(pname, m, opt);
+    loadDistricts();
+    return '<div id="dmapSlot" class="map-wrap dmap"><div class="empty">Memuat peta distrik…</div></div>';
+  }
+  const G = window.DISTRICTS[pname];
+  if(!G) return '';
+  const pi = D.provIdx[pname], rows = [...summarize('dist', m, {prov: pi}).values()].filter(o => o.vol > 0 || o.tgt > 0);
+  // data districts -> map shapes (several SAP spellings can land on one shape)
+  const agg = new Map(), missing = [];
+  rows.forEach(o => {
+    const name = B.dims.dist[o.key], i = matchDistrict(name, G.d);
+    if(i < 0){ missing.push(o); return; }
+    let a = agg.get(i);
+    if(!a){ a = {vol:0, frc:0, tgt:0, trips:0, hasTgt:false, keys:[]}; agg.set(i, a); }
+    a.vol += o.vol; a.frc += o.frc; a.tgt += o.tgt; a.trips += o.trips; a.hasTgt = a.hasTgt || o.hasTgt; a.keys.push(o.key);
+  });
+  agg.forEach(a => { a.pct = a.hasTgt && frcOn() ? (a.tgt > 0 ? pctOf(a.frc, a.tgt) : 100) : null; a.gap = a.frc - a.tgt; });   // same rule as summarize()
+  const [vx, vy, vw, vh] = G.vb, fs = Math.max(vw, vh) / 52;
+  const defs = '<defs>' + [['Green', '#2E9E5C', '#1A7A42'], ['Amber', '#C9952E', '#8A5A00'], ['Red', '#FF6B74', '#E02A36'], ['Ink', '#5A5A5A', '#2B2B2B']].map(c =>
+    '<linearGradient id="d' + c[0] + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="' + c[1] + '"/><stop offset="100%" stop-color="' + c[2] + '"/></linearGradient>').join('') + '</defs>';
+  let shapes = '', labels = '', selShape = '';
+  G.d.forEach((g, i) => {
+    const a = agg.get(i), sel = a && opt.sel != null && a.keys.includes(opt.sel);
+    if(!a){
+      shapes += '<path class="map-region" d="' + g.d + '" fill="#D9DEDF" stroke="#fff" stroke-width="1" vector-effect="non-scaling-stroke" data-tip="' + esc(g.n + '|Tidak ada pengiriman di periode ini') + '"/>';
+      return;
+    }
+    const fill = a.pct != null ? 'url(#d' + tierName(a.pct) + ')' : 'url(#dInk)';
+    const tip = g.n + '|Realisasi ' + fmt(a.vol) + ' t · ' + fmt(a.trips) + ' trip' + (a.hasTgt ? ' · Target MTD ' + fmt(a.tgt) + ' t' : '') + '|' + (a.pct != null ? 'Capaian ' + pctTxt(a.pct) + ' · gap ' + signed(a.gap) + ' t' : 'Tanpa target SNOP');
+    const path = '<path class="map-region live' + (sel ? ' is-sel' : '') + '" d="' + g.d + '" fill="' + fill + '" stroke="' + (sel ? '#000' : '#fff') + '" stroke-width="' + (sel ? 3 : 1.2) + '" vector-effect="non-scaling-stroke" data-href="#/distrik/' + enc(B.dims.dist[a.keys[0]]) + '" data-tip="' + esc(tip) + '"/>';
+    if(sel) selShape = path; else shapes += path;
+    if(Math.min(g.w, g.h) >= Math.max(vw, vh) * 0.09){
+      const short = g.n.replace(/^Kota /, 'Kt. ');
+      labels += '<text x="' + g.cx + '" y="' + (g.cy - fs * 0.3) + '" class="map-lbl" style="font-size:' + fs.toFixed(1) + 'px">' + esc(short) + '</text>' +
+        '<text x="' + g.cx + '" y="' + (g.cy + fs * 1.05) + '" class="map-pct" style="font-size:' + (fs * 1.15).toFixed(1) + 'px">' + (a.pct != null ? pctTxt(a.pct) : fmt(a.vol) + ' t') + '</text>';
+    }
+  });
+  const pins = PLANTS.filter(p => PLANT_PROV[p[0]] === pname && !F.srcOff.has(p[0] === 'PP Belawan' ? 'PP BELAWAN SBA' : p[0].toUpperCase())).map(p => {
+    const x = (p[1] - 95) * 200, y = (6.2 - p[2]) * 200;
+    return '<g class="map-pin" data-tip="' + esc(p[0] + '|Plant / packing plant asal pengiriman') + '"><circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + (fs * 0.55).toFixed(1) + '" fill="#fff" stroke="#000" stroke-width="1.6" vector-effect="non-scaling-stroke"/><circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + (fs * 0.22).toFixed(1) + '" fill="var(--red)"/>' +
+      '<text x="' + (x + fs * 0.9).toFixed(1) + '" y="' + (y + fs * 0.35).toFixed(1) + '" class="pin-lbl" style="font-size:' + (fs * 0.95).toFixed(1) + 'px">' + esc(p[0]) + '</text></g>';
+  }).join('');
+  const svg = '<svg class="map-svg" viewBox="' + G.vb.join(' ') + '" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Peta capaian per distrik di ' + esc(tc(pname)) + '">' +
+    defs + '<rect x="' + vx + '" y="' + vy + '" width="' + vw + '" height="' + vh + '" fill="#EEF4F7"/>' + shapes + selShape + labels + pins + '</svg>';
+  const list = [...agg.entries()].map(([i, a]) => Object.assign({n: G.d[i].n}, a))
+    .sort((a, b) => (b.pct == null ? -1 : b.pct) - (a.pct == null ? -1 : a.pct) || b.vol - a.vol);
+  const legend = list.map((a, r) => '<a class="map-row' + (opt.sel != null && a.keys.includes(opt.sel) ? ' is-sel' : '') + '" href="#/distrik/' + enc(B.dims.dist[a.keys[0]]) + '"><span class="dot" style="background:' + tierColor(a.pct) + '"></span><span class="nm">#' + (r + 1) + ' ' + esc(a.n) + '</span><span class="tn">' + fmt(a.vol) + ' t</span><span class="pc" style="color:' + tierColor(a.pct) + '">' + pctTxt(a.pct) + '</span></a>').join('') +
+    (missing.length ? '<div class="map-row muted"><span class="dot" style="background:transparent"></span><span class="nm">Tidak ada di peta: ' + missing.map(o => esc(tc(B.dims.dist[o.key]))).join(', ') + '</span></div>' : '') +
+    '<div class="map-key"><span><i style="background:#1A7A42"></i>&ge;100%</span><span><i style="background:#8A5A00"></i>85–99%</span><span><i style="background:#E02A36"></i>&lt;85%</span><span><i style="background:#D9DEDF"></i>tanpa kiriman</span></div>';
+  return '<div class="map-wrap dmap">' + svg + '<div class="map-legend">' + legend + '</div></div>';
+}
+
 /* ===================== Shipping destinations: distributor & ship-to (toko/gudang) ===================== */
 /* B.ship rows: [day, inc, src, prov, dist, distributor, eksp, toko, ton, trips] */
 const SHK = {prov: r => r[3], dist: r => r[4], distr: r => r[5], eksp: r => r[6], toko: r => r[7]};
@@ -888,6 +992,7 @@ function pageProv(name){
       kpi('gap', me.gap < 0 ? 'var(--red)' : 'var(--green)', me.gap < 0 ? 'Sisa ke target' : 'Lebih dari target', me.hasTgt ? fmt(Math.abs(me.gap)) + ' <small>ton</small>' : '–') +
       kpi('box', 'var(--amber)', 'SO / Real÷SO', me.so ? fmt(me.so) + ' <small>t · ' + pctTxt(me.of) + '</small>' : '–') +
     '</div>' +
+    distMapSection(name, m) +
     '<div class="dp-cols">' + trendPanel(sc, 'mingguan') +
       '<div class="dp-panel"><div class="pt">Ekspeditur di provinsi ini</div>' + (eks.length ? eks.map(o => rateRow(B.dims.eksp[o.key] + ' · ' + fmt(o.vol) + ' t', o.pct, '#/ekspeditur/' + enc(B.dims.eksp[o.key]), o.hasTgt ? 'target ' + fmt(o.tgt) + ' t' : 'tanpa target')).join('') : '<div class="empty">' + (F.inc === 'FOT' ? 'FOT diambil langsung oleh distributor — lihat halaman FOT.' : 'Tidak ada data.') + '</div>') + '</div>' +
     '</div>' +
@@ -916,6 +1021,7 @@ function pageDist(name){
       kpi('gap', me.gap < 0 ? 'var(--red)' : 'var(--green)', 'Gap', me.hasTgt ? signed(me.gap) + ' <small>ton</small>' : '–') +
       kpi('box', 'var(--amber)', 'SO / Real÷SO', me.so ? fmt(me.so) + ' <small>t · ' + pctTxt(me.of) + '</small>' : '–') +
     '</div>' +
+    distMapSection(pname, m, di) +
     '<div class="dp-cols">' + trendPanel(sc, 'harian') + '<div class="dp-panel"><div class="pt">SO menunggu kirim (snapshot ' + esc(B.prog.date ? dayLabel(B.prog.date) + ' ' + B.prog.time : '–') + ')</div>' +
       ['H+1', 'H+2', 'H+3'].map((h, i) => '<div class="rate-row"><div class="rl">' + h + '</div><div class="rtrack"><div class="rfill" style="width:' + Math.min(100, soh[i] / Math.max(1, ...soh) * 100) + '%;background:var(--black)"></div></div><div class="rv">' + fmt(soh[i]) + ' t</div></div>').join('') + '</div></div>' +
     '<div class="section-head"><div class="section-title">Tujuan pengiriman: distributor &rsaquo; toko / gudang</div></div>' +
