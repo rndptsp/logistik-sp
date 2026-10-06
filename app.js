@@ -1355,11 +1355,24 @@ async function loadBundle(key, meta){
   const stream = new Blob([gz]).stream().pipeThrough(new DecompressionStream('gzip'));
   return JSON.parse(await new Response(stream).text());
 }
+/** The site shows plan vs realisasi up to H-1: drop days from today on (a build can carry a partial day H),
+    so Target MTD never counts a full day against half a day's realisasi. B.days is sorted. */
+function trimToYesterday(b){
+  const now = new Date(), today = now.getFullYear() + '-' + pad2(now.getMonth() + 1) + '-' + pad2(now.getDate());
+  const n = b.days.findIndex(d => d >= today);
+  if(n <= 0) return;   // nothing from today, or nothing before today (keep the data rather than show an empty site)
+  b.days = b.days.slice(0, n);
+  ['facts', 'ship', 'trucks'].forEach(k => { b[k] = b[k].filter(r => r[0] < n); });
+  b.asOf = b.days[n - 1];
+  b.lastDay = {};
+  b.days.forEach(d => { const m = d.slice(0, 7); b.lastDay[m] = Math.max(b.lastDay[m] || 0, +d.slice(8)); });
+}
 function touch(){ try { sessionStorage.setItem('osp_t', String(Date.now())); } catch(e) {} }
 function logout(){ try { sessionStorage.removeItem('osp_k'); sessionStorage.removeItem('osp_t'); } catch(e) {} location.reload(); }
 async function start(key, meta){
   B = await loadBundle(key, meta);
   B.build = meta.build;
+  trimToYesterday(B);
   prepare(); restoreFilter();
   try { sessionStorage.setItem('osp_k', toB64(await crypto.subtle.exportKey('raw', key))); } catch(e) {}
   touch();
