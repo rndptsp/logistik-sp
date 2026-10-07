@@ -13,6 +13,7 @@ seluruh data terenkripsi (AES-GCM) di `data/site.enc` dan hanya terbuka dengan k
 | `tools/build_site.py` | Membaca master Excel → membuat `data/` |
 | `assets/districts.js`, `tools/make_districts.py` | Batas kabupaten/kota (geoBoundaries, CC BY 4.0) untuk peta distrik di halaman provinsi/distrik. Dibuat sekali; jalankan ulang skrip hanya bila batas wilayah berubah. |
 | `tools/config.json` | **Tidak di-commit.** Lokasi master Excel + kata sandi |
+| `tools/lock.json` | Kunci publik + kunci privat yang terkunci kata sandi (dibuat sekali dengan `--lock`). **Tidak rahasia**, di-commit. Dengan file ini build tidak butuh kata sandi. |
 
 ## Update data (rutin)
 
@@ -25,6 +26,13 @@ seluruh data terenkripsi (AES-GCM) di `data/site.enc` dan hanya terbuka dengan k
    - Mac: `python3 tools/build_site.py`
 4. Baca baris `cek:` di hasil build (SPJ duplikat otomatis diabaikan; dwell dihitung otomatis bila kosong; kode ekspeditur diisi dari nama bila kosong).
 5. GitHub Desktop › **Push origin**. Situs ter-update ±1–2 menit.
+
+### Kunci publik (sekali saja, di Mac)
+
+`python3 tools/build_site.py --lock` membuat `tools/lock.json` dan membangun ulang data. Kata sandi tim **tidak berubah** dan sesi yang terbuka tetap jalan. Commit `tools/lock.json` + `data/`, lalu push.
+Sesudahnya setiap build mengunci data dengan kunci publik, jadi build juga bisa jalan di server tanpa kata sandi: `python3 tools/build_site.py --master FILE.xlsx`.
+
+Halaman **Kualitas data** (`#/kualitas`, link di footer): tanggal tanpa realisasi FRC/FOT, baris tanpa toko, hasil `cek:` build, distrik yang tidak cocok dengan peta.
 
 Ganti kata sandi: `tools\ganti_password.bat` (Windows) atau `python3 tools/build_site.py --password`, lalu push dan bagikan password baru secara pribadi.
 

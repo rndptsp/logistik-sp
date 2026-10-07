@@ -580,7 +580,7 @@ function buildSearch(){
   B.ship.forEach(r => { seenD.add(r[5]); if(B.dims.toko[r[7]] && B.dims.toko[r[7]][0] && !tokoDistr.has(r[7])) tokoDistr.set(r[7], r[5]); });
   seenD.forEach(i => { if(B.dims.distr[i]) searchIndex.push({t: tc(B.dims.distr[i]), k: 'Distributor', h: '#/distributor/' + enc(B.dims.distr[i])}); });
   tokoDistr.forEach((d, i) => { const t = B.dims.toko[i]; searchIndex.push({t: (t[1] || t[0]) + (t[2] ? ' — ' + t[2] : ''), k: 'Toko · ' + tc(B.dims.distr[d]).slice(0, 22), h: '#/distributor/' + enc(B.dims.distr[d])}); });
-  [['Ringkasan','#/'],['Semua provinsi','#/provinsi'],['Peringkat ekspeditur & scorecard','#/ekspeditur'],['Distributor & toko tujuan','#/distributor'],['Armada / truk / dwell','#/armada'],['Prognosa hari ini','#/prognosa/hari-ini'],['Prognosa minggu ini','#/prognosa/minggu-ini'],['Prognosa akhir bulan (proyeksi)','#/prognosa/akhir-bulan']]
+  [['Ringkasan','#/'],['Semua provinsi','#/provinsi'],['Peringkat ekspeditur & scorecard','#/ekspeditur'],['Distributor & toko tujuan','#/distributor'],['Armada / truk / dwell','#/armada'],['Kualitas data (cek master)','#/kualitas'],['Prognosa hari ini','#/prognosa/hari-ini'],['Prognosa minggu ini','#/prognosa/minggu-ini'],['Prognosa akhir bulan (proyeksi)','#/prognosa/akhir-bulan']]
     .forEach(x => searchIndex.push({t: x[0], k: 'Halaman', h: x[1]}));
 }
 function doSearch(q){
@@ -1220,6 +1220,52 @@ function pageArmada(){
     noteBasis('Dwell = jam masuk s.d. jam keluar pabrik; baris yang ditandai CHECK (negatif / &gt;48 jam) di sumber tidak dihitung.') + '</div>', 'armada');
 }
 
+/* ===================== Data quality (for whoever maintains the master Excel) ===================== */
+function qTable(head, rows){
+  return '<div class="tbl-wrap"><table class="tbl"><thead><tr>' + head.map((h, i) => '<th' + (i ? ' class="num"' : '') + '>' + h + '</th>').join('') + '</tr></thead><tbody>' +
+    (rows.length ? rows.map(r => '<tr>' + r.map((c, i) => '<td' + (i ? ' class="num"' : '') + '>' + c + '</td>').join('') + '</tr>').join('') : '<tr><td colspan="' + head.length + '">Tidak ada.</td></tr>') + '</tbody></table></div>';
+}
+/** Data districts per province that do not match a kabupaten/kota on the map (needs assets/districts.js). */
+function unmatchedHTML(){
+  const rows = [];
+  B.dims.dist.forEach((name, di) => {
+    const pn = B.dims.prov[B.dims.distProv[di]], G = window.DISTRICTS[pn];
+    if(name && G && matchDistrict(name, G.d) < 0) rows.push([esc(tc(pn)), esc(name)]);
+  });
+  return '<div id="qDist">' + qTable(['Provinsi', 'Nama distrik di data'], rows) + '</div>';
+}
+function pageQuality(){
+  const Q = B.quality || {checks: [], toko: []};
+  // days per month with FRC / FOT realisasi
+  const seen = {};
+  B.facts.forEach(f => { const d = B.days[f[0]], m = d.slice(0, 7); (seen[m] = seen[m] || [new Set(), new Set()])[f[1]].add(+d.slice(8)); });
+  const months = Object.keys(seen).sort().reverse().slice(0, 6);
+  const gaps = months.map(m => {
+    const last = m === B.asOf.slice(0, 7) ? +B.asOf.slice(8) : dim(m);
+    const miss = k => { const out = []; for(let d = 1; d <= last; d++) if(!seen[m][k].has(d)) out.push(d); return out; };
+    const fmtDays = a => a.length ? (a.length > 12 ? a.length + ' hari' : a.join(', ')) : '<span style="color:var(--green)">lengkap</span>';
+    return [esc(monthLabel(m)) + (last < dim(m) ? ' <small>(s.d. ' + last + ')</small>' : ''), fmtDays(miss(0)), fmtDays(miss(1))];
+  });
+  const toko = {};
+  Q.toko.forEach(([m, inc, blank, n]) => { (toko[m] = toko[m] || {})[inc] = [blank, n]; });
+  const tokoCell = x => !x ? '–' : x[0] ? '<b style="color:var(--red)">' + fmt(x[0]) + '</b> / ' + fmt(x[1]) + ' (' + pctTxt(x[0] / x[1] * 100) + ')' : '<span style="color:var(--green)">0</span> / ' + fmt(x[1]);
+  const tokoRows = Object.keys(toko).sort().reverse().slice(0, 6).map(m => [esc(monthLabel(m)), tokoCell(toko[m].FRC), tokoCell(toko[m].FOT)]);
+  let dist;
+  if(window.DISTRICTS) dist = unmatchedHTML();
+  else { distMapPending = unmatchedHTML; loadDistricts(); dist = '<div id="dmapSlot"><div class="empty">Memuat peta distrik…</div></div>'; }
+  page('<div class="wrap">' + crumb([['Kualitas data']]) +
+    '<div class="dp-head"><div><div class="nm">Kualitas data</div><div class="sub">Cek master Excel · build ' + esc(B.build || '') + ' · data s.d. ' + dayLabel(B.asOf) + '</div></div></div>' +
+    '<div class="dp-review">Halaman ini untuk pengelola master Excel: apa yang kosong, ganda atau tidak terbaca pada build terakhir. Angka dashboard hanya sebaik data di sini.</div>' +
+    '<div class="section-head"><div class="section-title">Tanggal tanpa realisasi</div></div>' +
+    qTable(['Bulan', 'FRC: tanggal kosong', 'FOT: tanggal kosong'], gaps) +
+    '<div class="section-head"><div class="section-title">Baris tanpa toko tujuan (ship-to)</div></div>' +
+    qTable(['Bulan', 'FRC: kosong / baris', 'FOT: kosong / baris'], tokoRows) +
+    '<div class="section-head"><div class="section-title">Hasil cek build</div></div>' +
+    qTable(['Cek', 'Jumlah'], Q.checks.map(([k, n]) => [esc(k), fmt(n)])) +
+    '<div class="section-head"><div class="section-title">Distrik yang tidak cocok dengan peta</div></div>' + dist +
+    noteBasis('Tanggal kosong = tidak ada satu pun baris realisasi pada tanggal itu (hari libur juga muncul di sini).') + '</div>', '');
+}
+
 function notFound(what){ page('<div class="wrap">' + crumb([['Tidak ditemukan']]) + '<div class="dp-head"><div><div class="nm">Tidak ditemukan</div><div class="sub">' + esc(what) + ' tidak ada di data.</div></div></div><a class="section-link" href="#/">Kembali ke Home &rsaquo;</a></div>', ''); }
 
 /* ===================== Router ===================== */
@@ -1241,6 +1287,7 @@ function route(){
     else if(a === 'distributor') b ? pageDistr(b) : pageDistrList();
     else if(a === 'fot') location.replace('#/distributor');
     else if(a === 'armada') pageArmada();
+    else if(a === 'kualitas') pageQuality();
     else if(a === 'prognosa') pageForecast(PROG_GRAN[b] || 'harian');
     // old addresses -> their single new home
     else if(a === 'forecast') location.replace('#/prognosa/' + PROG_SLUG[b in PROG_SLUG ? b : 'harian']);
@@ -1360,11 +1407,21 @@ async function deriveKey(pw, meta){
   const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']);
   return crypto.subtle.deriveKey({name: 'PBKDF2', salt: b64(meta.salt), iterations: meta.iterations, hash: 'SHA-256'}, base, {name: 'AES-GCM', length: 256}, true, ['decrypt']);
 }
+/** v2 (public-key lock): password key -> RSA private key (meta.kpriv) -> this build's data key (meta.dk).
+    v1: the password key decrypts the data directly. */
+async function dataKey(key, meta){
+  if(meta.v !== 2) return key;
+  const der = await crypto.subtle.decrypt({name: 'AES-GCM', iv: b64(meta.kiv)}, key, b64(meta.kpriv));   // throws on wrong password
+  const priv = await crypto.subtle.importKey('pkcs8', der, {name: 'RSA-OAEP', hash: 'SHA-256'}, false, ['decrypt']);
+  const raw = await crypto.subtle.decrypt({name: 'RSA-OAEP'}, priv, b64(meta.dk));
+  return crypto.subtle.importKey('raw', raw, {name: 'AES-GCM'}, false, ['decrypt']);
+}
 async function loadBundle(key, meta){
+  const dk = await dataKey(key, meta);
   const r = await fetch('data/site.enc?b=' + enc(meta.build), {cache: 'no-cache'});
   if(!r.ok) throw new Error('data/site.enc tidak ditemukan');
   const ct = await r.arrayBuffer();
-  const gz = await crypto.subtle.decrypt({name: 'AES-GCM', iv: b64(meta.iv)}, key, ct);   // throws on wrong key
+  const gz = await crypto.subtle.decrypt({name: 'AES-GCM', iv: b64(meta.iv)}, dk, ct);   // throws on wrong key
   const stream = new Blob([gz]).stream().pipeThrough(new DecompressionStream('gzip'));
   return JSON.parse(await new Response(stream).text());
 }
@@ -1393,7 +1450,7 @@ async function start(key, meta){
   touch();
   $('#gate').hidden = true; $('#app').hidden = false;
   buildNav(); buildSearch(); filterStrip();
-  $('#foot').innerHTML = '<span>PT Semen Padang · Outbound Logistics · ' + esc(meta.build) + ' · data s.d. ' + dayLabel(B.asOf) + '</span><span>Sesi otomatis keluar setelah 15 menit tanpa aktivitas · <a data-act="logout">Keluar</a></span>';
+  $('#foot').innerHTML = '<span>PT Semen Padang · Outbound Logistics · ' + esc(meta.build) + ' · data s.d. ' + dayLabel(B.asOf) + '</span><span><a href="#/kualitas">Kualitas data</a> · Sesi otomatis keluar setelah 15 menit tanpa aktivitas · <a data-act="logout">Keluar</a></span>';
   bindEvents(); route();
   ['click', 'keydown', 'scroll', 'mousemove', 'touchstart'].forEach(ev => window.addEventListener(ev, throttleTouch, {passive: true}));
   setInterval(() => { const t = +(sessionStorage.getItem('osp_t') || 0); if(Date.now() - t > IDLE_MS) logout(); }, 30000);

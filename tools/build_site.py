@@ -3,10 +3,18 @@
     python tools/build_site.py            # uses tools/config.json
     python tools/build_site.py --setup    # (re)create tools/config.json
     python tools/build_site.py --password # ganti password situs, lalu build ulang
+    python tools/build_site.py --lock     # sekali: pasang kunci publik (build tanpa password)
+    python tools/build_site.py --master X.xlsx   # build dari file lain (mis. di server), tanpa config.json
 
 Reads MASTER_DATA_OUTBOUND_LOGISTIC.xlsx (one sheet per dataset, append-only), aggregates it,
-gzips + encrypts it (AES-GCM, key = PBKDF2-SHA256(password)) and writes data/site.enc + data/meta.json.
-Never touches git: review, commit and push yourself.
+gzips + encrypts it with AES-GCM and writes data/site.enc + data/meta.json. Never touches git.
+
+Encryption, two modes:
+  - Public-key lock (tools/lock.json present, the normal mode after --lock): each build makes a random data key,
+    encrypts the data with it and locks the data key with an RSA public key. The matching private key is stored
+    locked with the viewer password (AES-GCM, key = PBKDF2-SHA256(password)). The build needs no password, so it
+    can run on a server; lock.json holds nothing secret and is committed.
+  - Legacy (no lock.json): data encrypted directly with the password-derived key from config.json.
 
 Business rules (same as the old logistik-sp dashboard):
   - Realisasi date = TGL_SPJ; only rows with tonnage are counted.
@@ -18,13 +26,64 @@ import base64, datetime, gzip, json, os, re, secrets, sys, time
 from collections import defaultdict
 
 import openpyxl
-from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CFG_PATH = os.path.join(ROOT, "tools", "config.json")
+LOCK_PATH = os.path.join(ROOT, "tools", "lock.json")
 ITERATIONS = 200_000
+OAEP = padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None)
+
+
+def pw_key(password, salt_b64, iterations=ITERATIONS):
+    return PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=base64.b64decode(salt_b64),
+                      iterations=iterations).derive(password.encode("utf-8"))
+
+
+def load_lock():
+    if not os.path.exists(LOCK_PATH):
+        return None
+    with open(LOCK_PATH, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def write_lock(private_key, password, salt_b64):
+    """Store the public key and the private key locked with the viewer password (nothing secret in the file)."""
+    der = private_key.private_bytes(serialization.Encoding.DER, serialization.PrivateFormat.PKCS8,
+                                    serialization.NoEncryption())
+    kiv = os.urandom(12)
+    lock = {"v": 2, "salt": salt_b64, "iterations": ITERATIONS,
+            "pub": private_key.public_key().public_bytes(serialization.Encoding.PEM,
+                                                         serialization.PublicFormat.SubjectPublicKeyInfo).decode(),
+            "kiv": base64.b64encode(kiv).decode(),
+            "kpriv": base64.b64encode(AESGCM(pw_key(password, salt_b64)).encrypt(kiv, der, None)).decode()}
+    with open(LOCK_PATH, "w", encoding="utf-8") as f:
+        json.dump(lock, f, indent=1)
+
+
+def unlock_private(lock, password):
+    der = AESGCM(pw_key(password, lock["salt"], lock["iterations"])).decrypt(
+        base64.b64decode(lock["kiv"]), base64.b64decode(lock["kpriv"]), None)   # raises InvalidTag on a wrong password
+    return serialization.load_der_private_key(der, password=None)
+
+
+def make_lock():
+    """One-time: create the key pair, lock the private key with the current password (same salt, so open
+    sessions stay valid), write tools/lock.json, then rebuild."""
+    cfg = load_cfg()
+    if load_lock() and input("tools/lock.json sudah ada. Buat kunci BARU? [y/N]: ").lower() != "y":
+        return
+    if not cfg.get("salt"):
+        cfg["salt"] = base64.b64encode(os.urandom(16)).decode()
+        with open(CFG_PATH, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2)
+    write_lock(rsa.generate_private_key(public_exponent=65537, key_size=3072), cfg["password"], cfg["salt"])
+    print("tools/lock.json dibuat (kunci publik + kunci privat terkunci password). Membangun ulang data ...")
+    build(cfg)
+    print("SELESAI. Commit tools/lock.json + data/ lalu push. Password tim TIDAK berubah.")
 
 MONTH_PREFIX = {"JAN": 1, "FEB": 2, "MAR": 3, "APR": 4, "MEI": 5, "JUN": 6, "JUL": 7,
                 "AGU": 8, "AUG": 8, "SEP": 9, "OKT": 10, "OCT": 10, "NOV": 11, "DES": 12, "DEC": 12}
@@ -61,8 +120,12 @@ def change_password():
             print("Tidak sama, coba lagi.")
             continue
         break
+    old_pw, lock = cfg.get("password"), load_lock()
     cfg["password"] = pw
     cfg.pop("salt", None)   # new password -> new salt
+    if lock:   # same key pair, private key re-locked with the new password
+        cfg["salt"] = base64.b64encode(os.urandom(16)).decode()
+        write_lock(unlock_private(lock, old_pw), pw, cfg["salt"])
     with open(CFG_PATH, "w", encoding="utf-8") as f:
         json.dump(cfg, f, indent=2)
     print("Password disimpan. Membuat ulang data dengan password baru ...")
@@ -162,7 +225,8 @@ def build(cfg):
     trucks = defaultdict(lambda: [0, 0.0, 0.0, 0])   # (day, truck, inc, eksp, src, prov) -> trips, ton, dwellSum, dwellN
     last_day = {}
     n_real = 0
-    check = defaultdict(int)          # data-quality counters, printed at the end
+    check = defaultdict(int)          # data-quality counters, printed at the end and shown on the site
+    toko_q = defaultdict(lambda: [0, 0])   # (month, inc) -> [rows without ship-to, rows]
     seen_spj = set()
     today = datetime.date.today()
     for sheet, sheet_inc in (("Realisasi FRC", "FRC"), ("Realisasi H", "FOT")):
@@ -207,6 +271,10 @@ def build(cfg):
                 check[inc + " tanpa toko tujuan"] += 1
             n_real += 1
             month = d.strftime("%Y-%m")
+            tq = toko_q[(month, inc)]
+            tq[1] += 1
+            if not str(r.get("KODE_TOKO") or "").strip():
+                tq[0] += 1
             last_day[month] = max(last_day.get(month, 0), d.day)
             p, di = prov(up(r.get("NAMA_PROPINSI"))), dist(up(r.get("NAMA_AREA_DISTRIK")))
             dist_prov.setdefault(di, p)
@@ -322,26 +390,35 @@ def build(cfg):
         "sod": [[k[0], k[1], k[2], k[3], round(v, 2)] for k, v in sod.items() if v],
         "prog": {"date": latest[0], "time": latest[1], "fields": fields, "rows": prog},
         "soh": [[k[0], k[1], k[2], k[3], round(v, 2)] for k, v in soh.items()],
+        "quality": {"checks": sorted(check.items()), "toko": [[k[0], k[1], v[0], v[1]] for k, v in sorted(toko_q.items())]},
     }
     plain = json.dumps(bundle, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
     packed = gzip.compress(plain, 9)
 
-    # salt is fixed per password (kept in config.json) so open sessions survive data rebuilds; IV is new every build
-    if not cfg.get("salt"):
-        cfg["salt"] = base64.b64encode(os.urandom(16)).decode()
-        with open(CFG_PATH, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, indent=2)
-    salt = base64.b64decode(cfg["salt"])
-    key = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=ITERATIONS).derive(
-        cfg["password"].encode("utf-8"))
     iv = os.urandom(12)
-    ct = AESGCM(key).encrypt(iv, packed, None)
+    meta = {"build": "build." + datetime.datetime.now().strftime("%Y.%m.%d.%H"), "asOf": bundle["asOf"],
+            "iv": base64.b64encode(iv).decode()}
+    lock = load_lock()
+    if lock:
+        # public-key lock: fresh data key per build, locked with the public key; no password needed here
+        data_key = AESGCM.generate_key(bit_length=256)
+        ct = AESGCM(data_key).encrypt(iv, packed, None)
+        pub = serialization.load_pem_public_key(lock["pub"].encode())
+        meta.update({"v": 2, "salt": lock["salt"], "iterations": lock["iterations"], "kiv": lock["kiv"],
+                     "kpriv": lock["kpriv"], "dk": base64.b64encode(pub.encrypt(data_key, OAEP)).decode()})
+    else:
+        # legacy: salt is fixed per password (kept in config.json) so open sessions survive data rebuilds
+        if not cfg.get("password"):
+            sys.exit("Tidak ada tools/lock.json dan tidak ada password di config.json: tidak bisa mengenkripsi.")
+        if not cfg.get("salt"):
+            cfg["salt"] = base64.b64encode(os.urandom(16)).decode()
+            with open(CFG_PATH, "w", encoding="utf-8") as f:
+                json.dump(cfg, f, indent=2)
+        ct = AESGCM(pw_key(cfg["password"], cfg["salt"])).encrypt(iv, packed, None)
+        meta.update({"salt": cfg["salt"], "iterations": ITERATIONS})
     os.makedirs(os.path.join(ROOT, "data"), exist_ok=True)
     with open(os.path.join(ROOT, "data", "site.enc"), "wb") as f:
         f.write(ct)
-    meta = {"build": "build." + datetime.datetime.now().strftime("%Y.%m.%d.%H"),
-            "asOf": bundle["asOf"], "salt": base64.b64encode(salt).decode(),
-            "iv": base64.b64encode(iv).decode(), "iterations": ITERATIONS}
     with open(os.path.join(ROOT, "data", "meta.json"), "w", encoding="utf-8") as f:
         json.dump(meta, f, indent=1)
     # cache-bust the page's own css/js so browsers pick up a new build immediately
@@ -360,5 +437,11 @@ if __name__ == "__main__":
         setup()
     elif "--password" in sys.argv:
         change_password()
+    elif "--lock" in sys.argv:
+        make_lock()
+    elif "--master" in sys.argv:   # e.g. on a build server: no config.json, encryption via tools/lock.json
+        cfg = load_cfg(required=False) or {}
+        cfg["master_excel"] = sys.argv[sys.argv.index("--master") + 1]
+        build(cfg)
     else:
         build(load_cfg())
