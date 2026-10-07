@@ -666,8 +666,11 @@ function loadDistricts(){
   s.onerror = () => { const slot = $('#dmapSlot'); if(slot) slot.innerHTML = '<div class="empty">Peta distrik tidak bisa dimuat.</div>'; distMapLoading = false; };
   document.head.appendChild(s);
 }
+const DIST_ABBR = {TANJ: 'TANJUNG', TJ: 'TANJUNG', BRT: 'BARAT', TIM: 'TIMUR', TMR: 'TIMUR', SEL: 'SELATAN', SLT: 'SELATAN',
+  UTR: 'UTARA', TGH: 'TENGAH', TNG: 'TENGAH', KEP: 'KEPULAUAN'};   // SAP shortenings, e.g. "KAB. TANJ JABUNG BRT"
 function distKey(s){
   s = String(s || '').toUpperCase().trim().replace(/^KAB(UPATEN)?\b\.?\s*/, '');
+  s = s.replace(/[A-Z]+/g, w => DIST_ABBR[w] || w);
   let kota = /^KOTA\b/.test(s) ? true : null;
   if(kota) s = s.replace(/^KOTA\b\.?\s*/, '');
   return {kota, k: s.replace(/[^A-Z]/g, '')};
