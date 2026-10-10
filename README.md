@@ -42,7 +42,7 @@ Ganti kata sandi: `tools\ganti_password.bat` (Windows) atau `python3 tools/build
 
 Kebutuhan: Python 3.9+, `pip install openpyxl cryptography`.
 
-`AUTO_UPDATE/update_dashboard.py` hanya untuk situs lama (logistik-sp) dan tidak dipakai di sini.
+Dashboard lama diarsipkan sebagai repo `logistik-sp-lama`; skrip `AUTO_UPDATE/update_dashboard.py` miliknya tidak dipakai lagi.
 
 ## Aturan perhitungan
 

@@ -16,7 +16,7 @@ Encryption, two modes:
     can run on a server; lock.json holds nothing secret and is committed.
   - Legacy (no lock.json): data encrypted directly with the password-derived key from config.json.
 
-Business rules (same as the old logistik-sp dashboard):
+Business rules (same as the previous logistik-sp dashboard, now logistik-sp-lama):
   - Realisasi date = TGL_SPJ; only rows with tonnage are counted.
   - Target = SNOP only (no RKAP/CONTRACT fallback). Target MTD = sum of daily D1..D<last data day>.
   - FOT has no target; achievement % is FRC-only. The site's filters decide incoterm/source;

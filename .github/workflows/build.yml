@@ -39,7 +39,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/out" && cp data/site.enc data/meta.json "$RUNNER_TEMP/out/"
           BUILD=$(python3 -c "import json;print(json.load(open('data/meta.json'))['build'])")
           ASOF=$(python3 -c "import json;print(json.load(open('data/meta.json'))['asOf'])")
-          git config user.name "outbound-sp admin build"
+          git config user.name "logistik-sp admin build"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           for i in 1 2 3; do
             git fetch -q origin main && git checkout -q -B main origin/main

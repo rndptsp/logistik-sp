@@ -1,6 +1,6 @@
 /* Outbound Logistics — Semen Padang.
    Data: data/site.enc (AES-GCM, gzip'd JSON) built by tools/build_site.py from the master Excel.
-   Rules (same as the old logistik-sp dashboard): target = SNOP only; Target MTD = daily D1..D<last data
+   Rules (same as the previous logistik-sp dashboard, now logistik-sp-lama): target = SNOP only; Target MTD = daily D1..D<last data
    day>; achievement % = FRC realisasi / SNOP; FOT has no target; PP BELAWAN SBA excluded by default. */
 'use strict';
 

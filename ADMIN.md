@@ -1,6 +1,6 @@
 # Halaman admin: upload master Excel dari web
 
-Admin membuka `https://outbound-sp.pages.dev/admin`, masuk dengan Google, lalu meng-upload
+Admin membuka `https://logistik-sp.pages.dev/admin`, masuk dengan Google, lalu meng-upload
 `MASTER_DATA_OUTBOUND_LOGISTIC.xlsx`. Dashboard ter-update otomatis dalam ±3–5 menit.
 
 ```
@@ -19,12 +19,12 @@ Admin (HP/laptop) ─ Google login (Cloudflare Access + cek di kode) ─► /adm
 
 ### 1. Cloudflare Pages
 1. Buat akun di dash.cloudflare.com.
-2. **Workers & Pages → Create → Pages → Connect to Git** → pilih `rndptsp/outbound-sp`, branch `main`.
+2. **Workers & Pages → Create → Pages → Connect to Git** → pilih `rndptsp/logistik-sp`, branch `main`.
    Framework: *None*, build command: kosong, output: `.` (dibaca dari `wrangler.toml`).
-3. Nama proyek `outbound-sp` → alamat `https://outbound-sp.pages.dev`. Kalau nama terpakai, catat alamat yang diberikan dan pakai alamat itu di langkah berikut.
+3. Nama proyek `logistik-sp` → alamat `https://logistik-sp.pages.dev`. Kalau nama terpakai, catat alamat yang diberikan dan pakai alamat itu di langkah berikut.
 
 ### 2. R2 (penyimpanan master)
-**R2 → Create bucket** → nama `outbound-sp-master` (lokasi: Asia-Pacific). Cloudflare bisa meminta metode pembayaran untuk mengaktifkan R2, walau pemakaian sekecil ini masuk kuota gratis.
+**R2 → Create bucket** → nama `logistik-sp-master` (lokasi: Asia-Pacific). Cloudflare bisa meminta metode pembayaran untuk mengaktifkan R2, walau pemakaian sekecil ini masuk kuota gratis.
 
 ### 3. Google login (Cloudflare Zero Trust / Access)
 1. **Zero Trust** → pilih nama tim (mis. `semenpadang-ol`) → alamat tim `https://<tim>.cloudflareaccess.com`.
@@ -33,13 +33,13 @@ Admin (HP/laptop) ─ Google login (Cloudflare Access + cek di kode) ─► /adm
 3. Zero Trust → **Settings → Authentication → Login methods → Add → Google** → tempel Client ID + Secret.
    (Opsional: tambah juga *One-time PIN* sebagai cadangan.)
 4. Zero Trust → **Access → Applications → Add → Self-hosted**:
-   - Domain: `outbound-sp.pages.dev`, path `admin`; tambah domain kedua yang sama dengan path `api/admin`.
-   - Tambah juga `*.outbound-sp.pages.dev` dengan dua path yang sama (alamat preview).
+   - Domain: `logistik-sp.pages.dev`, path `admin`; tambah domain kedua yang sama dengan path `api/admin`.
+   - Tambah juga `*.logistik-sp.pages.dev` dengan dua path yang sama (alamat preview).
    - Policy: **Allow**, *Emails*: email Google para admin.
    - Simpan, lalu salin **Application Audience (AUD) Tag**.
 
 ### 4. Variabel di Cloudflare Pages
-Proyek `outbound-sp` → **Settings → Variables and Secrets** (Production):
+Proyek `logistik-sp` → **Settings → Variables and Secrets** (Production):
 
 | Nama | Isi | Jenis |
 |---|---|---|
@@ -53,13 +53,13 @@ Lalu **Deployments → Retry deployment** supaya variabel terpakai.
 
 ### 5. GitHub
 1. github.com → **Settings → Developer settings → Fine-grained tokens → Generate**:
-   repository `rndptsp/outbound-sp` saja, permission **Contents: Read and write**. Masa berlaku 1 tahun (catat tanggalnya).
-2. Repo `outbound-sp` → **Settings → Secrets and variables → Actions → New repository secret**:
-   - `ADMIN_URL` = `https://outbound-sp.pages.dev`
+   repository `rndptsp/logistik-sp` saja, permission **Contents: Read and write**. Masa berlaku 1 tahun (catat tanggalnya).
+2. Repo `logistik-sp` → **Settings → Secrets and variables → Actions → New repository secret**:
+   - `ADMIN_URL` = `https://logistik-sp.pages.dev`
    - `BUILD_TOKEN` = string yang sama dengan langkah 4
 
 ### 6. Uji
-Buka `https://outbound-sp.pages.dev/admin` → login Google → upload master → status berubah
+Buka `https://logistik-sp.pages.dev/admin` → login Google → upload master → status berubah
 *Menunggu build → Sedang dibangun → Berhasil* dengan "Data s.d." = kemarin.
 
 ## Menambah / mencabut admin
