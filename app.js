@@ -604,9 +604,11 @@ const MAP_LABEL = {
 const PLANTS = [  // [label, lon, lat, label side]
   ['CP Indarung', 100.47, -0.95, 'left'], ['GP Dumai', 101.45, 1.67, 'right'], ['PP Bengkulu', 102.27, -3.80, 'right'], ['PP Belawan', 98.69, 3.78, 'right']
 ];
+const PROV_ALIAS = {'RIAU KEPULAUAN': 'KEPULAUAN RIAU'};   // master spelling -> map name
+const mapProv = name => PROV_ALIAS[name] || name;
 function mapHTML(provRows, opt){
   const G = window.SUMATRA, hero = !!(opt && opt.hero);
-  const byName = Object.fromEntries(provRows.map(o => [B.dims.prov[o.key], o]));
+  const byName = Object.fromEntries(provRows.map(o => [mapProv(B.dims.prov[o.key]), o]));
   const withPct = provRows.filter(o => o.pct != null);
   const worst = withPct.length ? withPct.reduce((a, b) => a.pct < b.pct ? a : b) : null;
   const defs = '<defs>' +
@@ -630,7 +632,7 @@ function mapHTML(provRows, opt){
     }
     const fill = o.pct != null ? 'url(#g' + tierName(o.pct) + ')' : 'url(#gInk)';
     const tip = tc(id) + '|Realisasi ' + fmt(o.vol) + ' t' + (o.hasTgt ? ' · Target MTD ' + fmt(o.tgt) + ' t' : '') + '|' + (o.pct != null ? 'Capaian ' + pctTxt(o.pct) + ' · gap ' + signed(o.gap) + ' t' : 'Tanpa target SNOP') + soTip(o);
-    shapes += '<path class="map-region live' + (worst && o === worst ? ' is-attn' : '') + '" d="' + g.d + '" fill="' + fill + '" stroke="' + (hero ? '#0F1A21' : '#fff') + '" stroke-width="1.2" filter="url(#softShadow)" data-href="#/provinsi/' + enc(id) + '" data-tip="' + esc(tip) + '"/>';
+    shapes += '<path class="map-region live' + (worst && o === worst ? ' is-attn' : '') + '" d="' + g.d + '" fill="' + fill + '" stroke="' + (hero ? '#0F1A21' : '#fff') + '" stroke-width="1.2" filter="url(#softShadow)" data-href="#/provinsi/' + enc(B.dims.prov[o.key]) + '" data-tip="' + esc(tip) + '"/>';
     const out = L[3] === 'out' ? ' out' : '';   // label placed in the sea next to a narrow province
     labels += '<text x="' + lx + '" y="' + (ly - 4) + '" class="map-lbl' + out + '">' + esc(L[0]) + '</text>' +
       '<text x="' + lx + '" y="' + (ly + 11) + '" class="map-pct' + out + '" style="' + (out ? 'fill:' + tierColor(o.pct) : '') + '">' + (o.pct != null ? pctTxt(o.pct) : fmt(o.vol) + ' t') + '</text>';
@@ -710,7 +712,7 @@ function distMapHTML(pname, m, opt){
     loadDistricts();
     return '<div id="dmapSlot" class="map-wrap dmap"><div class="empty">Memuat peta distrik…</div></div>';
   }
-  const G = window.DISTRICTS[pname];
+  const G = window.DISTRICTS[mapProv(pname)];
   if(!G) return '';
   const pi = D.provIdx[pname], rows = [...summarize('dist', m, {prov: pi}).values()].filter(o => o.vol > 0 || o.tgt > 0);
   // data districts -> map shapes (several SAP spellings can land on one shape)
@@ -1232,7 +1234,7 @@ function qTable(head, rows){
 function unmatchedHTML(){
   const rows = [];
   B.dims.dist.forEach((name, di) => {
-    const pn = B.dims.prov[B.dims.distProv[di]], G = window.DISTRICTS[pn];
+    const pn = B.dims.prov[B.dims.distProv[di]], G = window.DISTRICTS[mapProv(pn)];
     if(name && G && matchDistrict(name, G.d) < 0) rows.push([esc(tc(pn)), esc(name)]);
   });
   return '<div id="qDist">' + qTable(['Provinsi', 'Nama distrik di data'], rows) + '</div>';
