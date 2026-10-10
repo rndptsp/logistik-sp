@@ -1,0 +1,60 @@
+# Builds data/ from the master Excel uploaded on the admin page (Cloudflare), then pushes it.
+# The master is downloaded into the runner's temp folder only: never committed, never an artifact.
+# The build log stays out of this (public) log and goes to the admin page instead.
+name: Build data from admin upload
+on:
+  repository_dispatch:
+    types: [build-site]
+  workflow_dispatch:
+permissions:
+  contents: write
+concurrency:
+  group: build-site
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      TZ: Asia/Jakarta            # H-1 rule: "today" must be Indonesian today, not UTC
+      ADMIN_URL: ${{ secrets.ADMIN_URL }}
+      BUILD_TOKEN: ${{ secrets.BUILD_TOKEN }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -q -r tools/requirements.txt
+      - name: Report running
+        run: python3 tools/ci_report.py running
+      - name: Download master
+        run: |
+          mkdir -p "$RUNNER_TEMP/m"
+          curl -fsS -H "Authorization: Bearer $BUILD_TOKEN" "$ADMIN_URL/api/build/master" -o "$RUNNER_TEMP/m/master.xlsx"
+      - name: Build (log goes to the admin page)
+        run: python3 tools/build_site.py --master "$RUNNER_TEMP/m/master.xlsx" > "$RUNNER_TEMP/build.log" 2>&1
+      - name: Commit and push data
+        run: |
+          mkdir -p "$RUNNER_TEMP/out" && cp data/site.enc data/meta.json "$RUNNER_TEMP/out/"
+          BUILD=$(python3 -c "import json;print(json.load(open('data/meta.json'))['build'])")
+          ASOF=$(python3 -c "import json;print(json.load(open('data/meta.json'))['asOf'])")
+          git config user.name "outbound-sp admin build"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          for i in 1 2 3; do
+            git fetch -q origin main && git checkout -q -B main origin/main
+            cp "$RUNNER_TEMP/out/site.enc" "$RUNNER_TEMP/out/meta.json" data/
+            sed -E -i "s/(style\.css|app\.js|sumatra\.js)\?v=[^\"]*/\1?v=$BUILD/g" index.html
+            git add data/site.enc data/meta.json index.html
+            if git diff --cached --quiet; then echo "Data tidak berubah."; exit 0; fi
+            git commit -q -m "Update data dari upload admin: data s.d. $ASOF ($BUILD)"
+            git push -q origin main && exit 0
+            sleep 5
+          done
+          exit 1
+      - name: Report result
+        if: always()
+        run: python3 tools/ci_report.py ${{ job.status == 'success' && 'ok' || 'failed' }}
+      - name: Remove master
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/m" "$RUNNER_TEMP/build.log"

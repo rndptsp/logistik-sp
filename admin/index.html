@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin · Outbound Logistics</title>
+<link rel="icon" href="/assets/icon-192.png">
+<style>
+  :root{--ink:#000;--sub:#6E6E6E;--line:#E3E3E3;--bg:#fff;--soft:#F5F5F5;--red:#E02A36;--green:#1A7A42;--amber:#8A5A00;}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;}
+  header{display:flex;align-items:center;gap:12px;padding:14px 16px;border-bottom:1px solid var(--line);}
+  header img{width:36px;height:36px}
+  header .t{font-weight:800;line-height:1.2}
+  header .t small{display:block;font-weight:500;color:var(--sub)}
+  header .who{margin-left:auto;font-size:12px;color:var(--sub);text-align:right}
+  header .who a{color:var(--red);font-weight:700;text-decoration:none}
+  main{max-width:880px;margin:0 auto;padding:20px 16px 48px}
+  h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;margin:28px 0 10px}
+  .card{border:1px solid var(--line);border-radius:3px;padding:18px}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  input[type=file]{flex:1;min-width:0;font-size:13px}
+  input[type=password]{width:100%;padding:10px;border:1px solid var(--line);border-radius:2px;font-size:14px;margin-bottom:8px}
+  button{background:var(--ink);color:#fff;border:0;border-radius:2px;padding:10px 16px;font-weight:700;font-size:13px;cursor:pointer}
+  button:disabled{opacity:.4;cursor:default}
+  .bar{height:6px;background:var(--soft);border-radius:3px;overflow:hidden;margin-top:12px;display:none}
+  .bar i{display:block;height:100%;width:0;background:var(--ink);transition:width .2s}
+  .msg{font-size:13px;margin-top:10px;min-height:1.5em}
+  .st{display:inline-block;padding:2px 8px;border-radius:2px;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.04em}
+  .st.ok{background:#E3F3E9;color:var(--green)} .st.failed{background:#FDE5E7;color:var(--red)} .st.queued,.st.running{background:#FFF3DC;color:var(--amber)}
+  dl{display:grid;grid-template-columns:140px 1fr;gap:4px 12px;margin:12px 0 0;font-size:13px} dt{color:var(--sub)} dd{margin:0;word-break:break-word}
+  pre{background:var(--soft);padding:12px;font-size:12px;overflow:auto;max-height:260px;margin:12px 0 0;white-space:pre-wrap}
+  table{width:100%;border-collapse:collapse;font-size:13px} th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line)} th{font-size:11px;color:var(--sub);text-transform:uppercase;letter-spacing:.04em}
+  td.n{text-align:right;white-space:nowrap}
+  .note{font-size:12px;color:var(--sub);margin-top:8px}
+  .links a{color:var(--red);font-weight:700;text-decoration:none;margin-right:16px}
+  @media (max-width:560px){dl{grid-template-columns:1fr} dt{margin-top:6px} table .hide{display:none}}
+</style>
+</head>
+<body>
+<header>
+  <img src="/assets/semenpadang-logo.png" alt="">
+  <div class="t">Admin · Outbound Logistics<small>Update data dashboard</small></div>
+  <div class="who"><span id="who">…</span><br><a href="/cdn-cgi/access/logout">Keluar</a></div>
+</header>
+<main>
+  <div class="links"><a href="/">Buka dashboard ›</a><a href="/#/kualitas">Kualitas data ›</a></div>
+
+  <h2>1 · Upload master Excel</h2>
+  <div class="card">
+    <div class="row">
+      <input type="file" id="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
+      <button id="up" disabled>Upload &amp; update</button>
+    </div>
+    <div class="bar" id="bar"><i></i></div>
+    <div class="msg" id="upMsg"></div>
+    <div class="note">File: <b>MASTER_DATA_OUTBOUND_LOGISTIC.xlsx</b> (struktur sheet sesuai tab PANDUAN). Setelah upload, dashboard ter-update otomatis ±3–5 menit. Data hari ini disembunyikan (situs s.d. H-1).</div>
+  </div>
+
+  <h2>2 · Status update terakhir</h2>
+  <div class="card" id="build"><div class="msg">Memuat…</div></div>
+
+  <h2>3 · Riwayat upload</h2>
+  <div class="card" style="padding:6px 12px"><table><thead><tr><th>Waktu</th><th>Oleh</th><th class="hide">File</th><th class="n">Ukuran</th></tr></thead><tbody id="hist"></tbody></table></div>
+
+  <h2>4 · Ganti kata sandi penonton</h2>
+  <div class="card">
+    <input type="password" id="pwOld" placeholder="Kata sandi sekarang" autocomplete="current-password">
+    <input type="password" id="pwNew" placeholder="Kata sandi baru (min. 8 karakter)" autocomplete="new-password">
+    <input type="password" id="pwNew2" placeholder="Ulangi kata sandi baru" autocomplete="new-password">
+    <button id="pwBtn">Ganti kata sandi</button>
+    <div class="msg" id="pwMsg"></div>
+    <div class="note">Kunci dikunci ulang di browser ini; kata sandi tidak pernah dikirim ke server. Sesudahnya data dibangun ulang (±3–5 menit) dan kata sandi lama tidak berlaku lagi. Bagikan kata sandi baru ke tim secara pribadi.</div>
+  </div>
+</main>
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const when = iso => iso ? new Date(iso).toLocaleString('id-ID', {day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'}) : '–';
+const mb = n => (n / 1e6).toFixed(1) + ' MB';
+const STATE = {queued: 'Menunggu build', running: 'Sedang dibangun', ok: 'Berhasil', failed: 'Gagal'};
+let poll = null;
+
+async function load(){
+  const r = await fetch('/api/admin/status', {cache: 'no-store'});
+  if(!r.ok){ $('#build').innerHTML = '<div class="msg" style="color:var(--red)">Tidak bisa memuat status (' + r.status + ').</div>'; return; }
+  const s = await r.json();
+  $('#who').textContent = s.email;
+  const b = s.build;
+  $('#build').innerHTML = !b ? '<div class="msg">Belum ada update lewat halaman ini.</div>' :
+    '<span class="st ' + esc(b.state) + '">' + esc(STATE[b.state] || b.state) + '</span>' +
+    '<dl><dt>Dimulai</dt><dd>' + when(b.at) + ' oleh ' + esc(b.by) + '</dd><dt>Sumber</dt><dd>' + esc(b.name) + '</dd>' +
+    (b.updated ? '<dt>Terakhir diperbarui</dt><dd>' + when(b.updated) + '</dd>' : '') +
+    (b.asOf ? '<dt>Data s.d.</dt><dd>' + esc(b.asOf) + '</dd>' : '') +
+    (b.run_url ? '<dt>Detail teknis</dt><dd><a href="' + esc(b.run_url) + '" target="_blank" rel="noopener">GitHub Action ›</a></dd>' : '') +
+    (b.error ? '<dt>Error</dt><dd style="color:var(--red)">' + esc(b.error) + '</dd>' : '') + '</dl>' +
+    (b.log ? '<pre>' + esc(b.log) + '</pre>' : '');
+  $('#hist').innerHTML = s.history.length ? s.history.map(h => '<tr><td>' + when(h.at) + '</td><td>' + esc(h.by) + '</td><td class="hide">' + esc(h.name) + '</td><td class="n">' + mb(h.size) + '</td></tr>').join('') : '<tr><td colspan="4">Belum ada.</td></tr>';
+  const busy = b && (b.state === 'queued' || b.state === 'running');
+  clearTimeout(poll);
+  if(busy) poll = setTimeout(load, 10000);
+}
+
+$('#file').addEventListener('change', () => { $('#up').disabled = !$('#file').files.length; $('#upMsg').textContent = ''; });
+$('#up').addEventListener('click', () => {
+  const f = $('#file').files[0]; if(!f) return;
+  if(!/\.xlsx$/i.test(f.name)){ $('#upMsg').textContent = 'Pilih file .xlsx.'; return; }
+  $('#up').disabled = true; $('#bar').style.display = 'block'; $('#upMsg').style.color = 'var(--sub)'; $('#upMsg').textContent = 'Mengunggah ' + f.name + ' (' + mb(f.size) + ')…';
+  const x = new XMLHttpRequest();
+  x.open('POST', '/api/admin/upload');
+  x.setRequestHeader('x-filename', encodeURIComponent(f.name));
+  x.upload.onprogress = e => { if(e.lengthComputable) $('#bar i').style.width = (e.loaded / e.total * 100) + '%'; };
+  x.onload = () => {
+    let r = {}; try { r = JSON.parse(x.responseText); } catch(e) {}
+    $('#bar').style.display = 'none'; $('#bar i').style.width = 0;
+    if(x.status === 200){ $('#upMsg').style.color = 'var(--green)'; $('#upMsg').textContent = 'Terunggah. Build dimulai — status di bawah diperbarui otomatis.'; $('#file').value = ''; }
+    else { $('#upMsg').style.color = 'var(--red)'; $('#upMsg').textContent = 'Gagal: ' + (r.error || x.status); $('#up').disabled = false; }
+    load();
+  };
+  x.onerror = () => { $('#upMsg').style.color = 'var(--red)'; $('#upMsg').textContent = 'Koneksi terputus. Coba lagi.'; $('#up').disabled = false; };
+  x.send(f);
+});
+
+/* Viewer password change: same scheme as tools/build_site.py write_lock(). */
+const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
+const toB64 = buf => { let s = ''; new Uint8Array(buf).forEach(b => s += String.fromCharCode(b)); return btoa(s); };
+async function pwKey(pw, salt, iterations){
+  const base = await crypto.subtle.importKey('raw', new TextEncoder().encode(pw), 'PBKDF2', false, ['deriveKey']);
+  return crypto.subtle.deriveKey({name: 'PBKDF2', salt, iterations, hash: 'SHA-256'}, base, {name: 'AES-GCM', length: 256}, false, ['encrypt', 'decrypt']);
+}
+$('#pwBtn').addEventListener('click', async () => {
+  const msg = $('#pwMsg'), o = $('#pwOld').value, n = $('#pwNew').value;
+  msg.style.color = 'var(--red)';
+  if(n.length < 8){ msg.textContent = 'Kata sandi baru minimal 8 karakter.'; return; }
+  if(n !== $('#pwNew2').value){ msg.textContent = 'Kata sandi baru tidak sama.'; return; }
+  if(n === o){ msg.textContent = 'Kata sandi baru sama dengan yang lama.'; return; }
+  $('#pwBtn').disabled = true; msg.style.color = 'var(--sub)'; msg.textContent = 'Mengunci ulang…';
+  try {
+    const cur = await (await fetch('/api/admin/lock', {cache: 'no-store'})).json();
+    let der;
+    try { der = await crypto.subtle.decrypt({name: 'AES-GCM', iv: b64(cur.kiv)}, await pwKey(o, b64(cur.salt), cur.iterations), b64(cur.kpriv)); }
+    catch(e) { throw new Error('Kata sandi sekarang salah.'); }
+    const salt = crypto.getRandomValues(new Uint8Array(16)), kiv = crypto.getRandomValues(new Uint8Array(12));
+    const kpriv = await crypto.subtle.encrypt({name: 'AES-GCM', iv: kiv}, await pwKey(n, salt, cur.iterations), der);
+    const r = await fetch('/api/admin/lock', {method: 'POST', headers: {'content-type': 'application/json'},
+      body: JSON.stringify({lock: {v: cur.v, iterations: cur.iterations, pub: cur.pub, salt: toB64(salt), kiv: toB64(kiv), kpriv: toB64(kpriv)}})});
+    const j = await r.json();
+    if(!r.ok) throw new Error(j.error || r.status);
+    msg.style.color = 'var(--green)'; msg.textContent = j.note || 'Kata sandi diganti. Data sedang dibangun ulang; kata sandi lama berhenti berlaku setelah build selesai.';
+    ['#pwOld', '#pwNew', '#pwNew2'].forEach(s => $(s).value = '');
+    load();
+  } catch(e) { msg.style.color = 'var(--red)'; msg.textContent = e.message; }
+  $('#pwBtn').disabled = false;
+});
+load();
+</script>
+</body>
+</html>

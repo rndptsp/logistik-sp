@@ -1,0 +1,12 @@
+# Cloudflare Pages project for the dashboard + admin page (see ADMIN.md).
+# Secrets and the admin email list are set in the Cloudflare dashboard, never here (this repo is public).
+name = "outbound-sp"
+pages_build_output_dir = "."
+compatibility_date = "2025-09-01"
+
+[[r2_buckets]]
+binding = "MASTER"
+bucket_name = "outbound-sp-master"
+
+[vars]
+GITHUB_REPO = "rndptsp/outbound-sp"

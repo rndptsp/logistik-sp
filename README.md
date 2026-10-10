@@ -15,6 +15,10 @@ seluruh data terenkripsi (AES-GCM) di `data/site.enc` dan hanya terbuka dengan k
 | `tools/config.json` | **Tidak di-commit.** Lokasi master Excel + kata sandi |
 | `tools/lock.json` | Kunci publik + kunci privat yang terkunci kata sandi (dibuat sekali dengan `--lock`). **Tidak rahasia**, di-commit. Dengan file ini build tidak butuh kata sandi. |
 
+## Update data lewat web (admin)
+
+Lihat **ADMIN.md**: admin login Google di `/admin`, upload master Excel, dashboard ter-update otomatis. Cara lewat Mac di bawah tetap berlaku.
+
 ## Update data (rutin)
 
 **Satu-satunya sumber: `02. DASHBOARD/MASTER_DATA_OUTBOUND_LOGISTIC.xlsx`.** Tab *PANDUAN* di file itu berisi daftar sheet, sumber dan kolom wajib.
