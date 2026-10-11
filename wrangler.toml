@@ -1,5 +1,6 @@
 # Cloudflare Pages project for the dashboard + admin page (see ADMIN.md).
-# Secrets and the admin email list are set in the Cloudflare dashboard, never here (this repo is public).
+# Secrets (GITHUB_TOKEN, BUILD_TOKEN) and the admin email list (ADMIN_EMAILS) are set in the Cloudflare
+# dashboard as encrypted secrets, never here (this repo is public).
 name = "logistik-sp"
 pages_build_output_dir = "."
 compatibility_date = "2025-09-01"
@@ -10,3 +11,5 @@ bucket_name = "logistik-sp-master"
 
 [vars]
 GITHUB_REPO = "rndptsp/logistik-sp"
+ACCESS_TEAM_DOMAIN = "https://logistik-distribusi-sp.cloudflareaccess.com"
+ACCESS_AUD = "561d4a1fae880f9907dfd618aa224a5a9be380fcc5baf2c0dcea2135e788cb69"   # Access application "Logistik SP Admin"
