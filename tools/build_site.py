@@ -19,9 +19,10 @@ Encryption, two modes:
 Business rules (same as the previous logistik-sp dashboard, now logistik-sp-lama):
   - Realisasi date = TGL_SPJ; only rows with tonnage are counted.
   - Target = SNOP only (no RKAP/CONTRACT fallback). Target MTD = sum of daily D1..D<last data day>.
-  - Sheet "SNOP" (the SNOP export pasted as-is) is the target source for every month it covers: zak, FRC + FOT,
-    all plants. FRC is split to ekspeditur x day like the "Target Ekspeditur" rows of the same month
-    (allocate_snop); FOT is a distributor target, split by the distributors' FOT realisasi. Months not in the
+  - Sheet "SNOP" (the SNOP export pasted as-is) is the target source for every month it covers: zak, every
+    plant and incoterm (FRC/FOT/FOB/FAS), realisasi or not. FRC is split to ekspeditur x day like the "Target
+    Ekspeditur" rows of the same month (allocate_snop); FOT/FOB/FAS are distributor targets, split by the
+    distributors' realisasi of that incoterm. Realisasi INCOTERM may be FRC/FOT/FOB/FAS. Months not in the
     SNOP sheet keep the "Target Ekspeditur" rows (FRC). The site's filters decide incoterm/source
     (default: FRC, CP INDARUNG); all data is shipped.
 """
@@ -199,6 +200,7 @@ def sheet_rows(wb, name):
         yield dict(zip(header, row))
 
 
+INCOTERMS = ["FRC", "FOT", "FOB", "FAS"]   # index = incoterm code in the bundle (facts/ship/trucks/targets)
 PLANT_ALIAS = {"CP BATURAJA SMBR": "SMBR"}   # SNOP plant name -> SOURCE_PLANT name in the realisasi sheets
 
 
@@ -208,7 +210,8 @@ def plant_name(v):
 
 
 def snop_rows(wb, check):
-    """Rows of sheet SNOP that become targets: (month, 'FRC'|'FOT', provinsi, distrik, plant, ton). Zak only."""
+    """Rows of sheet SNOP that become targets: (month, incoterm, provinsi, distrik, plant, ton). Zak only, every
+    plant, incoterm and handling (container/polysling included), with or without realisasi yet."""
     if "SNOP" not in wb.sheetnames:
         return []
     out = []
@@ -221,8 +224,8 @@ def snop_rows(wb, check):
         if up(g.get("KEMASAN")) != "ZAK":
             check["SNOP curah/jumbo (bukan zak, tidak dipakai)"] += 1
             continue
-        if term not in ("FRC", "FOT"):
-            check[f"SNOP {term} (belum ada realisasinya, tidak dipakai)"] += 1
+        if term not in INCOTERMS:
+            check[f"SNOP incoterm {term or '(kosong)'} (tidak dikenal, tidak dipakai)"] += 1
             continue
         out.append((f"{int(num(g['TAHUN']))}-{mno:02d}", term, up(g.get("PROVINSI")), up(g.get("SALES DISTRIK")),
                     plant_name(g.get("DELIV. PLANT")), ton))
@@ -236,7 +239,7 @@ def allocate_snop(rows, base, ship, prov, dist, eksp, src, distr, dist_prov, che
       else ekspeditur shares from FRC realisasi (same month/distrik/plant, then any month, then the distrik's
       Target Ekspeditur rows, then any plant), with the daily shape of the distrik (or province) target that month;
       else one row without ekspeditur.
-    FOT (inc 1): distributor shares from FOT realisasi (month/distrik/plant, month/distrik, distrik/plant, distrik),
+    FOT/FOB/FAS (inc 1-3): distributor shares from realisasi of the same incoterm (month/distrik/plant, month/distrik, distrik/plant, distrik),
       no ekspeditur; else one row without distributor.
     base = Target Ekspeditur rows [month, prov, dist, eksp, src, ton, daily|None]; months covered by SNOP replace them."""
     dkey = lambda s: re.sub("[^A-Z]", "", s)
@@ -245,7 +248,7 @@ def allocate_snop(rows, base, ship, prov, dist, eksp, src, distr, dist_prov, che
     for m, term, p, d, s, ton in rows:
         pi, di = prov(p), dist(known.get(dkey(d), d))
         dist_prov.setdefault(di, pi)
-        vol[(m, 0 if term == "FRC" else 1, pi, di, src(s))] += ton
+        vol[(m, INCOTERMS.index(term), pi, di, src(s))] += ton
     months = {k[0] for k in vol}
     ndays = lambda m: (datetime.date(int(m[:4]) + int(m[5:]) // 12, int(m[5:]) % 12 + 1, 1) - datetime.timedelta(days=1)).day
 
@@ -272,9 +275,9 @@ def allocate_snop(rows, base, ship, prov, dist, eksp, src, distr, dist_prov, che
         if inc == "FRC" and e != no_e:
             for k in ((m, di, s), (di, s), (m, di)):
                 r_eksp[k][e] += v[0]
-        elif inc == "FOT" and dr != no_d:
+        elif inc != "FRC" and dr != no_d:
             for k in ((m, di, s), (m, di), (di, s), (di,)):
-                r_distr[k][dr] += v[0]
+                r_distr[(INCOTERMS.index(inc),) + k][dr] += v[0]
 
     def pick(*cands):
         for c in cands:
@@ -308,13 +311,13 @@ def allocate_snop(rows, base, ship, prov, dist, eksp, src, distr, dist_prov, che
             for e, w in shares.items():
                 out.append([m, p, di, e, s, round(V * w / tot, 3), daily_of(m, p, di, s, V * w / tot), 0, -1])
         else:
-            shares = pick(r_distr.get((m, di, s)), r_distr.get((m, di)), r_distr.get((di, s)), r_distr.get((di,)))
+            shares = pick(*(r_distr.get((inc,) + k) for k in ((m, di, s), (m, di), (di, s), (di,))))
             if not shares:
-                check["target FOT tanpa realisasi distributor (baris tanpa distributor)"] += 1
+                check[f"target {INCOTERMS[inc]} tanpa realisasi distributor (baris tanpa distributor)"] += 1
                 shares = {no_d: 1.0}
             tot = sum(shares.values())
             for dr, w in shares.items():
-                out.append([m, p, di, no_e, s, round(V * w / tot, 3), daily_of(m, p, di, s, V * w / tot), 1, dr])
+                out.append([m, p, di, no_e, s, round(V * w / tot, 3), daily_of(m, p, di, s, V * w / tot), inc, dr])
     return out
 
 
@@ -375,9 +378,9 @@ def build(cfg):
                 seen_spj.add(spj)
             # the row's own INCOTERM wins over the sheet it was pasted into (FRC rows pasted into the FOT sheet)
             inc = up(r.get("INCOTERM"))
-            if inc not in ("FRC", "FOT"):
+            if inc not in INCOTERMS:
                 inc = sheet_inc
-            elif inc != sheet_inc:
+            elif (inc == "FRC") != (sheet_inc == "FRC"):   # FOB/FAS rows in Realisasi H are expected
                 check[f"{inc} di sheet {sheet} (dihitung sebagai {inc})"] += 1
             if inc == "FRC" and not r.get("EXPEDITUR_KODE"):
                 code = name2code.get(up(r.get("EXPEDITUR_NAMA")))
@@ -497,18 +500,18 @@ def build(cfg):
         "built": datetime.datetime.now().strftime("%Y-%m-%d %H:%M"),
         "asOf": days[-1] if days else None,
         "lastDay": last_day,
-        "dims": {"prov": prov.items, "dist": dist.items, "eksp": eksp.items, "src": src.items,
+        "dims": {"inc": INCOTERMS, "prov": prov.items, "dist": dist.items, "eksp": eksp.items, "src": src.items,
                  "distr": distr.items, "truck": truck.items,
                  "toko": [toko_meta.get(i, ["", "", ""]) for i in range(len(toko.items))],
                  "distProv": [dist_prov.get(i, -1) for i in range(len(dist.items))]},
         "days": days,
-        "facts": [[day_idx[k[0]], 0 if k[1] == "FRC" else 1, k[2], k[3], k[4], k[5],
+        "facts": [[day_idx[k[0]], INCOTERMS.index(k[1]), k[2], k[3], k[4], k[5],
                    round(v[0], 2), v[1], round(v[2], 2), v[3]] for k, v in facts.items()],
         # one row per day x incoterm x source x province x district x distributor x ekspeditur x ship-to
-        "ship": [[day_idx[k[0]], 0 if k[1] == "FRC" else 1, k[2], k[3], k[4], k[5], k[6], k[7], round(v[0], 2), v[1]]
+        "ship": [[day_idx[k[0]], INCOTERMS.index(k[1]), k[2], k[3], k[4], k[5], k[6], k[7], round(v[0], 2), v[1]]
                  for k, v in ship.items()],
         # per day, so any date range can be cut exactly: [day, truck, inc, eksp, src, prov, trips, ton, dwellSum, dwellN]
-        "trucks": [[day_idx[k[0]], k[1], 0 if k[2] == "FRC" else 1, k[3], k[4], k[5], v[0], round(v[1], 2), round(v[2], 2), v[3]]
+        "trucks": [[day_idx[k[0]], k[1], INCOTERMS.index(k[2]), k[3], k[4], k[5], v[0], round(v[1], 2), round(v[2], 2), v[3]]
                    for k, v in trucks.items()],
         "targets": targets,
         "so": [[k[0], k[1], k[2], k[3], round(v, 2)] for k, v in so.items() if v],
