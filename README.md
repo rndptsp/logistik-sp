@@ -48,7 +48,7 @@ Dashboard lama diarsipkan sebagai repo `logistik-sp-lama`; skrip `AUTO_UPDATE/up
 
 - Tanggal realisasi = `TGL_SPJ`.
 - Situs menampilkan plan vs realisasi **s.d. H-1**: baris realisasi bertanggal hari build atau sesudahnya otomatis dilewati (lihat baris `cek:`), jadi data hari H boleh ikut tertempel di master.
-- Target = **SNOP saja**. Target MTD = jumlah target harian (kolom D1..D31) dari tgl 1 s.d. hari data terakhir.
+- Target = **SNOP** (default). Filter *Target → Internal* menampilkan **115% × SNOP**; master hanya menyimpan SNOP. Target MTD = jumlah target harian (kolom D1..D31) dari tgl 1 s.d. hari data terakhir.
 - Capaian % = realisasi **FRC** ÷ target SNOP MTD. FOT tidak memiliki target.
 - Default filter: FRC, tanpa PP Belawan SBA (bisa diubah di menu Filter).
 - Real/SO = realisasi FRC ÷ **SO sebulan penuh**: per bulan kirim (kolom TGL_KIRIM) bila ada, selain itu per kolom PERIODE. SO per ekspeditur = atribusi. Real/SO diwarnai netral (bukan target): di awal bulan nilainya wajar rendah.
