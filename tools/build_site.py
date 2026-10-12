@@ -391,7 +391,7 @@ def build(cfg):
             if r.get("DWELL_TIME_JAM") in (None, ""):
                 dw = dwell_hours(r)
                 if dw is not None:
-                    r["DWELL_TIME_JAM"] = dw; check["dwell dihitung dari jam masuk/keluar"] += 1
+                    r["DWELL_TIME_JAM"] = dw; check["SLA dihitung dari jam masuk/keluar"] += 1
             if not str(r.get("KODE_TOKO") or "").strip():
                 check[inc + " tanpa toko tujuan"] += 1
             n_real += 1

@@ -28,7 +28,7 @@ Lihat **ADMIN.md**: admin login Google di `/admin`, upload master Excel, dashboa
 3. Jalankan build:
    - Windows: double-click `tools\run_build.bat`
    - Mac: `python3 tools/build_site.py`
-4. Baca baris `cek:` di hasil build (SPJ duplikat otomatis diabaikan; dwell dihitung otomatis bila kosong; kode ekspeditur diisi dari nama bila kosong).
+4. Baca baris `cek:` di hasil build (SPJ duplikat otomatis diabaikan; SLA (dwell time) dihitung otomatis bila kosong; kode ekspeditur diisi dari nama bila kosong).
 5. GitHub Desktop › **Push origin**. Situs ter-update ±1–2 menit.
 
 ### Kunci publik (sekali saja, di Mac)

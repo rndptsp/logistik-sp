@@ -505,7 +505,7 @@ const C = {
   so: {h:'SO (t)', num:true, val: r => r.so || null, html: r => r.so ? fmt(r.so) : '–'},
   of: {h:'Real/SO', num:true, val: r => r.of, html: r => pctTxt(r.of)},   // neutral: SO is a whole month, realisasi is MTD
   trips: {h:'Trip', num:true, val: r => r.trips, html: r => fmt(r.trips)},
-  dwell: {h:'Dwell (jam)', num:true, val: r => r.dwell, html: r => r.dwell == null ? '–' : fmt1(r.dwell)},
+  dwell: {h:'SLA (jam)', num:true, val: r => r.dwell, html: r => r.dwell == null ? '–' : fmt1(r.dwell)},
   note: {h:'Catatan', cls:'note-c', val: r => reviewText(r.pct), sortVal: r => r.pct}
 };
 
@@ -604,7 +604,7 @@ function buildSearch(){
   B.ship.forEach(r => { seenD.add(r[5]); if(B.dims.toko[r[7]] && B.dims.toko[r[7]][0] && !tokoDistr.has(r[7])) tokoDistr.set(r[7], r[5]); });
   seenD.forEach(i => { if(B.dims.distr[i]) searchIndex.push({t: tc(B.dims.distr[i]), k: 'Distributor', h: '#/distributor/' + enc(B.dims.distr[i])}); });
   tokoDistr.forEach((d, i) => { const t = B.dims.toko[i]; searchIndex.push({t: (t[1] || t[0]) + (t[2] ? ' — ' + t[2] : ''), k: 'Toko · ' + tc(B.dims.distr[d]).slice(0, 22), h: '#/distributor/' + enc(B.dims.distr[d])}); });
-  [['Ringkasan','#/'],['Semua provinsi','#/provinsi'],['Peringkat ekspeditur & scorecard','#/ekspeditur'],['Distributor & toko tujuan','#/distributor'],['Armada / truk / dwell','#/armada'],['Kualitas data (cek master)','#/kualitas'],['Prognosa hari ini','#/prognosa/hari-ini'],['Prognosa minggu ini','#/prognosa/minggu-ini'],['Prognosa akhir bulan (proyeksi)','#/prognosa/akhir-bulan']]
+  [['Ringkasan','#/'],['Semua provinsi','#/provinsi'],['Peringkat ekspeditur & scorecard','#/ekspeditur'],['Distributor & toko tujuan','#/distributor'],['Armada / truk / SLA','#/armada'],['Kualitas data (cek master)','#/kualitas'],['Prognosa hari ini','#/prognosa/hari-ini'],['Prognosa minggu ini','#/prognosa/minggu-ini'],['Prognosa akhir bulan (proyeksi)','#/prognosa/akhir-bulan']]
     .forEach(x => searchIndex.push({t: x[0], k: 'Halaman', h: x[1]}));
 }
 function doSearch(q){
@@ -963,7 +963,7 @@ function pageHome(){
     '<div class="kpi-row">' +
       kpi('trend', 'var(--black)', 'Trip', fmt(t.trips), {href:'#/armada', hint: incTxt + ' · ' + esc(m.label)}) +
       kpi('truck', 'var(--black)', 'Truk aktif', fmt(trucks.length), {href:'#/armada', hint: fmt1(t.trips / Math.max(1, trucks.length)) + ' trip / truk'}) +
-      kpi('clock', 'var(--amber)', 'Rata-rata dwell', t.dwell == null ? '–' : fmt1(t.dwell) + ' <small>jam</small>', {href:'#/armada', hint:'masuk → keluar pabrik'}) +
+      kpi('clock', 'var(--amber)', 'Rata-rata SLA', t.dwell == null ? '–' : fmt1(t.dwell) + ' <small>jam</small>', {href:'#/armada', hint:'masuk → keluar pabrik'}) +
       kpi('check', 'var(--green)', 'Realisasi / SO', pctTxt(t.of), {href:'#/ekspeditur', hint: t.so ? 'SO ' + fmt(t.so) + ' t' + ' (bulan penuh yang tercakup)' : 'SO tidak tersedia'}) +
     '</div>' +
     '</div>', 'home');
@@ -1122,7 +1122,7 @@ function pageEksp(code){
   const one = trucks.filter(t => t.trips === 1).length;
   const distCols = [C.rank, {h:'Distrik', cls:'name', val: r => tc(B.dims.dist[r.key]), html: r => esc(tc(B.dims.dist[r.key])) + '<small>' + esc(tc(B.dims.prov[B.dims.distProv[r.key]])) + '</small>'}, C.vol(), C.tgt, C.pct, C.gap, C.trips, C.note];
   const truckCols = [{h:'Nopol', cls:'name', val: r => B.dims.truck[r.truck]}, {h:'Trip', num:true, val: r => r.trips}, {h:'Tonase', num:true, val: r => r.ton, html: r => fmt(r.ton)},
-    {h:'Hari aktif', num:true, val: r => r.days}, {h:'Dwell (jam)', num:true, val: r => r.dwN ? r.dwS / r.dwN : null, html: r => r.dwN ? fmt1(r.dwS / r.dwN) : '–'},
+    {h:'Hari aktif', num:true, val: r => r.days}, {h:'SLA (jam)', num:true, val: r => r.dwN ? r.dwS / r.dwN : null, html: r => r.dwN ? fmt1(r.dwS / r.dwN) : '–'},
     {h:'Aktif', val: r => r.first, html: r => activeTxt(r)}, {h:'Provinsi utama', val: r => tc(B.dims.prov[r.prov])}];
   page('<div class="wrap">' + crumb([['Ekspeditur', '#/ekspeditur'], [code]]) +
     '<div class="dp-head"><div><div class="nm">' + esc(code) + '</div><div class="sub">Mitra ekspeditur FRC · ' + periodSub() + '</div></div><div class="badges">' + (me.rank ? '<div class="dp-badge">Rank ' + me.rank + ' / ' + all.filter(o => o.key !== D.eksEmpty && o.rank).length + '</div>' : '') + '<div class="dp-badge ' + tierClass(me.pct) + '">' + pctTxt(me.pct) + ' dari target</div></div></div>' +
@@ -1131,7 +1131,7 @@ function pageEksp(code){
       kpi('check', 'var(--green)', 'Realisasi', fmt(me.vol) + ' <small>ton</small>', {hint: fmt(me.trips) + ' trip'}) +
       kpi('target', 'var(--black)', 'Target MTD', me.hasTgt ? fmt(me.tgt) + ' <small>ton</small>' : '–', {hint: me.hasTgt ? 'bulan penuh ' + fmt(me.tgtFull) + ' t' : ''}) +
       kpi('truck', 'var(--black)', 'Truk aktif', fmt(trucks.length), {hint: fmt1(me.trips / Math.max(1, trucks.length)) + ' trip / truk'}) +
-      kpi('clock', 'var(--amber)', 'Rata-rata dwell', me.dwell == null ? '–' : fmt1(me.dwell) + ' <small>jam</small>', {hint: me.so ? 'Real/SO ' + pctTxt(me.of) : ''}) +
+      kpi('clock', 'var(--amber)', 'Rata-rata SLA', me.dwell == null ? '–' : fmt1(me.dwell) + ' <small>jam</small>', {hint: me.so ? 'Real/SO ' + pctTxt(me.of) : ''}) +
     '</div>' +
     '<div class="dp-cols">' + trendPanel(sc, 'mingguan') +
       '<div class="dp-panel"><div class="pt">Capaian per provinsi<span class="pt-sub">capaian target · Real/SO</span></div>' + (provs.length ? provs.map(o => rateRow(tc(B.dims.prov[o.key]) + ' · ' + fmt(o.vol) + ' t', o.pct, '#/provinsi/' + enc(B.dims.prov[o.key]), o.hasTgt ? 'target ' + fmt(o.tgt) + ' t' : '', o.of)).join('') : '<div class="empty">Tidak ada data untuk filter ini.</div>') + '</div>' +
@@ -1237,25 +1237,25 @@ function pageArmada(){
     const wd = dowNum[i], per = new Map();
     B.facts.forEach(f => { if(inPer(f[0], m) && D.dayDow[f[0]] === wd && incOk(f[1]) && srcOk(f[2])){ const o = per.get(f[5]) || {key: f[5], s: 0, n: 0, trips: 0, vol: 0}; o.s += f[8]; o.n += f[9]; o.trips += f[7]; o.vol += f[6]; per.set(f[5], o); } });
     const rows = [...per.values()].filter(o => o.n).map(o => Object.assign(o, {dw: o.s / o.n}));
-    openModal('Dwell hari ' + DAYS[wd], esc(periodSub()) + ' · per ekspeditur',
-      table([{h:'Ekspeditur', cls:'name', val: o => B.dims.eksp[o.key] || 'FOT (distributor)'}, {h:'Rata-rata dwell (jam)', num:true, cls:'pc', val: o => o.dw, html: o => fmt1(o.dw), style: o => 'color:' + (o.dw <= 3.5 ? 'var(--green)' : o.dw <= 4.5 ? 'var(--amber)' : 'var(--red)')}, {h:'Trip', num:true, val: o => o.trips}, {h:'Tonase', num:true, val: o => o.vol, html: o => fmt(o.vol)}], rows, {go: o => B.dims.eksp[o.key] ? '#/ekspeditur/' + enc(B.dims.eksp[o.key]) : null, sort: 1}));
+    openModal('SLA hari ' + DAYS[wd], esc(periodSub()) + ' · per ekspeditur',
+      table([{h:'Ekspeditur', cls:'name', val: o => B.dims.eksp[o.key] || 'FOT (distributor)'}, {h:'Rata-rata SLA (jam)', num:true, cls:'pc', val: o => o.dw, html: o => fmt1(o.dw), style: o => 'color:' + (o.dw <= 3.5 ? 'var(--green)' : o.dw <= 4.5 ? 'var(--amber)' : 'var(--red)')}, {h:'Trip', num:true, val: o => o.trips}, {h:'Tonase', num:true, val: o => o.vol, html: o => fmt(o.vol)}], rows, {go: o => B.dims.eksp[o.key] ? '#/ekspeditur/' + enc(B.dims.eksp[o.key]) : null, sort: 1}));
   }};
   const dwellBars = barsHTML('ad', dow);
   const one = trucks.filter(x => x.trips === 1).length;
   const cols = [{h:'#', cls:'rank', val: r => r.trips, html: (r, i) => '#' + (i + 1)}, {h:'Nopol', cls:'name', val: r => B.dims.truck[r.truck]},
     {h:'Ekspeditur', val: r => [...r.eksp.keys()].map(e => B.dims.eksp[e] || 'FOT').join(', ')}, {h:'Trip', num:true, val: r => r.trips}, {h:'Tonase', num:true, val: r => r.ton, html: r => fmt(r.ton)},
-    {h:'Hari aktif', num:true, val: r => r.days}, {h:'Dwell (jam)', num:true, val: r => r.dwN ? r.dwS / r.dwN : null, html: r => r.dwN ? fmt1(r.dwS / r.dwN) : '–'},
+    {h:'Hari aktif', num:true, val: r => r.days}, {h:'SLA (jam)', num:true, val: r => r.dwN ? r.dwS / r.dwN : null, html: r => r.dwN ? fmt1(r.dwS / r.dwN) : '–'},
     {h:'Aktif', val: r => r.first, html: r => activeTxt(r)}, {h:'Provinsi utama', val: r => tc(B.dims.prov[r.prov])}];
   page('<div class="wrap">' + crumb([['Armada']]) +
-    '<div class="dp-head"><div><div class="nm">Armada</div><div class="sub">Truk aktif, trip dan dwell time · ' + incName() + ' · ' + periodSub() + '</div></div><div class="badges"><div class="dp-badge">' + fmt(trucks.length) + ' truk aktif</div></div></div>' +
+    '<div class="dp-head"><div><div class="nm">Armada</div><div class="sub">Truk aktif, trip dan SLA · ' + incName() + ' · ' + periodSub() + '</div></div><div class="badges"><div class="dp-badge">' + fmt(trucks.length) + ' truk aktif</div></div></div>' +
     '<div class="dp-grid4">' +
       kpi('truck', 'var(--black)', 'Truk aktif', fmt(trucks.length), {hint: one + ' truk baru 1 trip'}) +
       kpi('trend', 'var(--black)', 'Trip', fmt(t.trips), {hint: fmt1(t.trips / Math.max(1, trucks.length)) + ' trip / truk'}) +
-      kpi('clock', 'var(--amber)', 'Rata-rata dwell', t.dwell == null ? '–' : fmt1(t.dwell) + ' <small>jam</small>', {hint: 'masuk → keluar pabrik'}) +
+      kpi('clock', 'var(--amber)', 'Rata-rata SLA', t.dwell == null ? '–' : fmt1(t.dwell) + ' <small>jam</small>', {hint: 'masuk → keluar pabrik'}) +
       kpi('box', 'var(--black)', 'Ton / trip', fmt1(t.vol / Math.max(1, t.trips))) +
     '</div>' +
     '<div class="dp-cols even"><div class="dp-panel"><div class="pt">Sebaran trip per truk</div>' + barsHTML('ab', bdata) + '<div class="trend-detail" id="ab-d">Banyak truk 1 trip = armada tidak kontinu. Klik batang untuk daftar truknya.</div></div>' +
-    '<div class="dp-panel"><div class="pt">Rata-rata dwell per hari (jam) — makin rendah makin baik</div>' + dwellBars + '<div class="trend-legend"><span><i style="background:var(--green)"></i>&le;3,5 jam</span><span><i style="background:var(--amber)"></i>3,5–4,5</span><span><i style="background:var(--red)"></i>&gt;4,5</span><span>klik batang = dwell per ekspeditur</span></div></div></div>' +
+    '<div class="dp-panel"><div class="pt">Rata-rata SLA per hari (jam) — makin rendah makin baik</div>' + dwellBars + '<div class="trend-legend"><span><i style="background:var(--green)"></i>&le;3,5 jam</span><span><i style="background:var(--amber)"></i>3,5–4,5</span><span><i style="background:var(--red)"></i>&gt;4,5</span><span>klik batang = SLA per ekspeditur</span></div></div></div>' +
     '<div class="section-head"><div class="section-title">Daftar truk</div></div>' + table(cols, trucks, {limit: 400}) +
     '</div>', 'armada');
 }
