@@ -449,8 +449,7 @@ function modalBody(){
       C.pct, C.gap, C.trips,
       {h: 'Periode lalu (t)', num: true, val: o => o.prev, html: o => fmt(o.prev)},
       {h: 'Δ', num: true, val: o => o.prev ? o.vol / o.prev - 1 : null, html: o => o.prev ? '<span style="color:' + (o.vol >= o.prev ? 'var(--green)' : 'var(--red)') + '">' + (o.vol >= o.prev ? '+' : '') + Math.round((o.vol / o.prev - 1) * 100) + '%</span>' : (o.vol ? 'baru' : '–')}];
-    return head + tabs + (rows.length ? table(cols, rows, {go: o => dimHref(dim, o.key)}) : '<div class="dp-review">Tidak ada data untuk periode ini.</div>') +
-      '<div class="note" style="margin-top:8px">“Periode lalu” = ' + esc(PREV_LBL[T.gran]) + '. Klik baris untuk membuka halamannya, klik judul kolom untuk mengurutkan.</div>';
+    return head + tabs + (rows.length ? table(cols, rows, {go: o => dimHref(dim, o.key)}) : '<div class="dp-review">Tidak ada data untuk periode ini.</div>');
   });
 }
 
@@ -856,7 +855,7 @@ function pageDistrList(){
     '<div class="dp-head"><div><div class="nm">Distributor &amp; Tujuan Kirim</div><div class="sub">' + fmt(list.length) + ' distributor · ' + (F.inc === 'ALL' ? 'FRC + FOT' : F.inc) + ' · ' + periodSub() + '</div></div></div>' +
     (unk > 0 ? '<div class="dp-review">' + pctTxt(pctOf(unk, tot)) + ' tonase periode ini belum punya data toko/gudang tujuan (' + fmt(unk) + ' t). Distributor tetap tercatat; toko tujuan akan muncul begitu kolom KODE_TOKO/NAMA_TOKO diisi di master Excel.</div>' : '') +
     table(cols, list, {go: o => '#/distributor/' + enc(B.dims.distr[o.key]), limit: 400}) +
-    noteBasis('FOT diangkut sendiri oleh distributor (transportir = distributor). Klik distributor untuk melihat tujuan kirim per provinsi › distrik › toko.') + '</div>', 'wilayah');
+    '</div>', 'wilayah');
 }
 
 function pageDistr(name){
@@ -885,7 +884,7 @@ function pageDistr(name){
     '<div class="dp-panel"><div class="pt">Diangkut oleh</div>' + (ekspTree.length ? ekspTree.map(n => '<a class="rate-row" ' + (nodeHref(n) ? 'href="' + nodeHref(n) + '"' : '') + '><div class="rl">' + esc(B.dims.eksp[n.key] || 'FOT (angkut sendiri)') + '</div><div class="rtrack"><div class="rfill" style="width:' + (n.vol / ekspTree[0].vol * 100) + '%;background:var(--black)"></div></div><div class="rv">' + fmt(n.vol) + '</div></a>').join('') : '<div class="empty">Tidak ada pengiriman untuk filter ini.</div>') + '</div></div>' +
     '<div class="section-head"><div class="section-title">Tujuan pengiriman</div></div>' +
     (rows.length ? treeHTML(buildTree(rows, ['prov', 'dist', 'toko']), ['prov', 'dist', 'toko']) : '<div class="dp-review">Tidak ada pengiriman untuk filter ini.</div>') +
-    noteBasis('Klik baris untuk membuka level berikutnya; tanda › membuka halaman provinsi/distrik.') + '</div>', 'wilayah');
+    '</div>', 'wilayah');
 }
 
 /* ===================== Pages ===================== */
@@ -893,11 +892,6 @@ const view = () => $('#view');
 function page(html, nav){ view().innerHTML = '<div class="page-fade">' + html + '</div>'; setActiveNav(nav); window.scrollTo(0, 0); }
 function crumb(parts){ return '<div class="crumb"><a href="#/">Home</a>' + parts.map(p => '<span class="sep">/</span>' + (p[1] ? '<a href="' + p[1] + '">' + esc(p[0]) + '</a>' : esc(p[0]))).join('') + '</div>'; }
 function periodSub(){ return PER().sub; }
-function noteBasis(extra){
-  return '<div class="note"><b>Sumber:</b> MASTER_DATA_OUTBOUND_LOGISTIC.xlsx, dibangun ' + esc(B.built) + ', data realisasi s.d. ' + dayLabel(B.asOf) + '. ' +
-    '<b>Capaian</b> = realisasi FRC ÷ target SNOP MTD (jumlah target harian tgl 1 s.d. hari data terakhir). ' + (extra || '') + '</div>';
-}
-
 function pageHome(){
   const m = PER(), t = total(m);
   const pm = summarize('prov', m);
@@ -928,7 +922,7 @@ function pageHome(){
       kpi('clock', 'var(--amber)', 'Rata-rata dwell', t.dwell == null ? '–' : fmt1(t.dwell) + ' <small>jam</small>', {href:'#/armada', hint:'masuk → keluar pabrik'}) +
       kpi('check', 'var(--green)', 'Realisasi / SO', pctTxt(t.of), {href:'#/ekspeditur', hint: t.so ? 'SO ' + fmt(t.so) + ' t' + ' (bulan penuh yang tercakup)' : 'SO tidak tersedia'}) +
     '</div>' +
-    noteBasis('Peta: batas provinsi BAKOSURTANAL 1:250.000; provinsi abu-abu tidak dilayani via darat. Provinsi yang berkedip paling tertinggal.') + '</div>', 'home');
+    '</div>', 'home');
 }
 
 /* Home hero: the interactive Sumatra map is the centerpiece, headline + ranking beside it. */
@@ -966,7 +960,7 @@ function pageProvList(){
     '<div class="dp-head"><div><div class="nm">Semua Provinsi</div><div class="sub">Capaian tonase &amp; rank · ' + periodSub() + '</div></div><div class="badges"><div class="dp-badge ' + tierClass(t.pct) + '">Total ' + pctTxt(t.pct) + ' dari target</div></div></div>' +
     table(cols, rows, {go: r => '#/provinsi/' + enc(B.dims.prov[r.key]), total: true}) +
     '<div class="dp-cols even">' + trendPanel({}, 'mingguan', 'Tren seluruh provinsi') + sourcePanel({}) + '</div>' +
-    noteBasis() + '</div>', 'wilayah');
+    '</div>', 'wilayah');
 }
 function sourcePanel(sc){
   const rows = [...summarize('src', PER(), sc).values()].filter(o => o.vol > 0 || o.tgt > 0).sort((a, b) => b.vol - a.vol);
@@ -1019,7 +1013,7 @@ function pageProv(name){
     treeHTML(buildTree(shipRows(m, sc), ['dist', 'distr', 'toko']), ['dist', 'distr', 'toko'], {tgt: {dist: summarize('dist', m, sc)}}) +
     '<div class="dp-cols even">' + sourcePanel(sc) + '<div class="dp-panel"><div class="pt">Bulan penuh</div>' +
       '<div class="tgt-panel" style="margin:0;border:0;padding:0"><div class="tgt-item"><div class="tl">Target bulan</div><div class="tv">' + (me.hasTgt ? fmt(me.tgtFull) : '–') + ' t</div></div><div class="tgt-item"><div class="tl">Realisasi FRC</div><div class="tv">' + fmt(me.frc) + ' t</div></div><div class="tgt-item"><div class="tl">Sisa bulan</div><div class="tv ' + (me.tgtFull - me.frc > 0 ? 'bad' : 'good') + '">' + (me.hasTgt ? fmt(Math.max(0, me.tgtFull - me.frc)) : '–') + ' t</div></div></div></div></div>' +
-    noteBasis('Distrik dengan target 0 dan realisasi 0 tidak ditampilkan.') + '</div>', 'wilayah');
+    '</div>', 'wilayah');
 }
 
 function pageDist(name){
@@ -1046,7 +1040,7 @@ function pageDist(name){
     treeHTML(buildTree(shipRows(m, sc), ['distr', 'toko']), ['distr', 'toko']) +
     '<div class="section-head"><div class="section-title">Ekspeditur di distrik ini</div></div>' +
     (eks.length ? table(ekCols, eks, {go: r => '#/ekspeditur/' + enc(B.dims.eksp[r.key]), sort: 1}) : '<div class="dp-review">Tidak ada ekspeditur FRC untuk filter ini.</div>') +
-    noteBasis() + '</div>', 'wilayah');
+    '</div>', 'wilayah');
 }
 
 function pageEkspList(){
@@ -1067,7 +1061,7 @@ function pageEkspList(){
       rateRow('Capaian target SNOP', t.pct) + rateRow('Realisasi / SO', t.of) + rateRow('Truk aktif > 1 trip', multi) +
     '</div><div class="dp-panel"><div class="pt">Capaian per ekspeditur<span class="pt-sub">capaian target · Real/SO</span></div>' + (list.filter(r => r.pct != null).map(r => rateRow(B.dims.eksp[r.key], r.pct, '#/ekspeditur/' + enc(B.dims.eksp[r.key]), '', r.of)).join('') || '<div class="empty">Tidak ada target untuk filter ini.</div>') + '</div></div>' +
     table(cols, list, {go: r => '#/ekspeditur/' + enc(B.dims.eksp[r.key])}) +
-    noteBasis('Real/SO = realisasi FRC ÷ SO pada periode yang sama (SO per ekspeditur = atribusi). SBA hanya memuat dari PP Belawan SBA, sehingga ikut tersembunyi saat source tersebut tidak dicentang.') + '</div>', 'ekspeditur');
+    '</div>', 'ekspeditur');
 }
 
 function pageEksp(code){
@@ -1106,7 +1100,7 @@ function pageEksp(code){
     treeHTML(buildTree(shipRows(m, sc), ['prov', 'dist', 'distr', 'toko']), ['prov', 'dist', 'distr', 'toko'], {tgt: {prov: summarize('prov', m, sc), dist: summarize('dist', m, sc)}}) +
     '<div class="section-head"><div class="section-title">Truk ' + esc(code) + ' (' + fmt(trucks.length) + ')</div><a class="section-link" href="#/armada">Semua armada &rsaquo;</a></div>' +
     table(truckCols, trucks, {limit: 300}) +
-    noteBasis('SO H+n tidak tercatat per ekspeditur di sumber; angka di atas adalah SO di distrik tempat ' + esc(code) + ' punya target SNOP.') + '</div>', 'ekspeditur');
+    '</div>', 'ekspeditur');
 }
 
 function pageForecast(gran){
@@ -1136,7 +1130,6 @@ function pageForecast(gran){
         table(cols, list, {go: r => D.provIdx[r.prov] != null ? '#/provinsi/' + enc(r.prov) : null, sort: 6}) +
         (hCols && hasH ? '<div class="section-head"><div class="section-title">Target SNOP vs SO, H+1 s.d. H+3</div></div>' + table(hCols, list, {sort: 1}) : '');
     }).join('');
-    body += noteBasis('Rilis = sudah keluar pabrik; Potensi = rilis + antri + timbang; Prognose = potensi + booking (dari file monitoring, snapshot terakhir). Angka dalam kurung = jumlah truk.');
   } else if(gran === 'mingguan'){
     const end = parseISO(PER().to);
     const mon = new Date(end); mon.setDate(end.getDate() - ((end.getDay() + 6) % 7));
@@ -1155,8 +1148,7 @@ function pageForecast(gran){
       '<div class="prog-cell"><div class="pl">Proyeksi minggu</div><div class="pv" style="color:' + tierColor(pctOf(proj, wTgt)) + '">' + fmt(proj) + ' t</div><div class="pd">laju ' + fmt(runrate) + ' t/hari</div></div>' +
       '<div class="prog-cell"><div class="pl">Target minggu penuh</div><div class="pv">' + fmt(wTgt) + ' t</div><div class="pd">proyeksi ' + pctTxt(pctOf(proj, wTgt)) + '</div></div></div>' +
       '<div class="dp-panel" style="margin-bottom:34px"><div class="pt">Realisasi FRC per hari vs target SNOP, ' + days[0].getDate() + ' ' + MON3[days[0].getMonth()] + ' – ' + days[6].getDate() + ' ' + MON3[days[6].getMonth()] + '</div>' + barsHTML(id, data) +
-      '<div class="trend-legend"><span><i style="background:var(--green)"></i>&ge;100%</span><span><i style="background:var(--amber)"></i>85–99%</span><span><i style="background:var(--red)"></i>&lt;85%</span><span><i class="dash"></i>target SNOP</span></div><div class="trend-detail" id="tw-d">Klik batang untuk rincian hari itu per provinsi, distrik, ekspeditur &amp; source.</div></div>' +
-      noteBasis('Proyeksi = realisasi minggu berjalan + rata-rata harian minggu ini × sisa hari. Bukan prognosa sistem.');
+      '<div class="trend-legend"><span><i style="background:var(--green)"></i>&ge;100%</span><span><i style="background:var(--amber)"></i>85–99%</span><span><i style="background:var(--red)"></i>&lt;85%</span><span><i class="dash"></i>target SNOP</span></div><div class="trend-detail" id="tw-d">Klik batang untuk rincian hari itu per provinsi, distrik, ekspeditur &amp; source.</div></div>';
   } else {
     const m = PER().month, ld = lastDayOf(m), n = dim(m);
     const rows = [...summarize('prov', m).values()].filter(o => o.hasTgt || o.vol > 0).map(o => {
@@ -1174,8 +1166,7 @@ function pageForecast(gran){
       '<div class="prog-cell"><div class="pl">Proyeksi akhir bulan</div><div class="pv" style="color:' + tierColor(pctOf(proj, t.tgtFull)) + '">' + fmt(proj) + ' t</div><div class="pd">laju ' + fmt(rr) + ' t/hari</div></div>' +
       '<div class="prog-cell"><div class="pl">Target bulan</div><div class="pv">' + fmt(t.tgtFull) + ' t</div><div class="pd">proyeksi ' + pctTxt(pctOf(proj, t.tgtFull)) + '</div></div>' +
       '<div class="prog-cell"><div class="pl">Perlu per hari</div><div class="pv">' + (n > ld ? fmt(Math.max(0, (t.tgtFull - t.frc) / (n - ld))) : '–') + ' t</div><div class="pd">sisa ' + (n - ld) + ' hari</div></div></div>' +
-      table(cols, rows, {go: r => '#/provinsi/' + enc(B.dims.prov[r.key])}) +
-      noteBasis('Proyeksi = realisasi MTD ÷ hari berjalan × jumlah hari bulan ini (laju rata-rata). Untuk bulan yang sudah selesai, proyeksi = realisasi aktual.');
+      table(cols, rows, {go: r => '#/provinsi/' + enc(B.dims.prov[r.key])});
   }
   const pname = {harian: 'Hari ini', mingguan: 'Minggu ini', bulanan: 'Akhir bulan'}[gran];
   page('<div class="wrap">' + crumb([['Prognosa'], [pname]]) +
@@ -1222,7 +1213,7 @@ function pageArmada(){
     '<div class="dp-cols even"><div class="dp-panel"><div class="pt">Sebaran trip per truk</div>' + barsHTML('ab', bdata) + '<div class="trend-detail" id="ab-d">Banyak truk 1 trip = armada tidak kontinu. Klik batang untuk daftar truknya.</div></div>' +
     '<div class="dp-panel"><div class="pt">Rata-rata dwell per hari (jam) — makin rendah makin baik</div>' + dwellBars + '<div class="trend-legend"><span><i style="background:var(--green)"></i>&le;3,5 jam</span><span><i style="background:var(--amber)"></i>3,5–4,5</span><span><i style="background:var(--red)"></i>&gt;4,5</span><span>klik batang = dwell per ekspeditur</span></div></div></div>' +
     '<div class="section-head"><div class="section-title">Daftar truk</div></div>' + table(cols, trucks, {limit: 400}) +
-    noteBasis('Dwell = jam masuk s.d. jam keluar pabrik; baris yang ditandai CHECK (negatif / &gt;48 jam) di sumber tidak dihitung.') + '</div>', 'armada');
+    '</div>', 'armada');
 }
 
 /* ===================== Data quality (for whoever maintains the master Excel) ===================== */
@@ -1268,7 +1259,7 @@ function pageQuality(){
     '<div class="section-head"><div class="section-title">Hasil cek build</div></div>' +
     qTable(['Cek', 'Jumlah'], Q.checks.map(([k, n]) => [esc(k), fmt(n)])) +
     '<div class="section-head"><div class="section-title">Distrik yang tidak cocok dengan peta</div></div>' + dist +
-    noteBasis('Tanggal kosong = tidak ada satu pun baris realisasi pada tanggal itu (hari libur juga muncul di sini).') + '</div>', '');
+    '</div>', '');
 }
 
 function notFound(what){ page('<div class="wrap">' + crumb([['Tidak ditemukan']]) + '<div class="dp-head"><div><div class="nm">Tidak ditemukan</div><div class="sub">' + esc(what) + ' tidak ada di data.</div></div></div><a class="section-link" href="#/">Kembali ke Home &rsaquo;</a></div>', ''); }
