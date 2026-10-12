@@ -70,13 +70,14 @@ function rateRow(label, p, href, sub, of){
     (of !== undefined ? '<div class="rso"><small>SO</small> ' + (of == null ? '–' : pctTxt(of)) + '</div>' : '') + '</' + tag + '>';
 }
 /** Tooltip line for Real/SO, or '' when there is no SO. */
-const soTip = o => o.so > 0 ? '|SO ' + fmt(o.so) + ' t · Real/SO ' + pctTxt(o.of) : (frcOn() ? '|SO tidak tersedia' : '');
+const soTip = o => o.so > 0 ? '|SO ' + fmt(o.so) + ' t · Real/SO ' + pctTxt(o.of) : (soOn() ? '|SO tidak tersedia' : '');
 
 /* ===================== State ===================== */
 let B = null;            // decrypted bundle
 let D = null;            // derived indexes
-const F = { per: null, inc: 'FRC', srcOff: new Set(['PP BELAWAN SBA']), tgt: 'SNOP' };   // per: {kind:'month',month} | {kind:'ytd'} | {kind:'range',from,to}
-const DEFAULT_SRC_OFF = ['PP BELAWAN SBA'];
+const F = { per: null, inc: 'FRC', srcOff: new Set(), tgt: 'SNOP' };   // per: {kind:'month',month} | {kind:'ytd'} | {kind:'range',from,to}
+const DEFAULT_SRC = 'CP INDARUNG';   // default view: Franco from CP Indarung; other plants are switched on in the filter
+let DEFAULT_SRC_OFF = [];
 
 function prepare(){
   const dims = B.dims;
@@ -91,10 +92,13 @@ function prepare(){
   const eksEmpty = dims.eksp.indexOf('');
   const frcEksp = new Set(), liveProv = new Set(), liveDist = new Set();
   B.facts.forEach(f => { if(f[1] === 0 && f[5] !== eksEmpty) frcEksp.add(f[5]); liveProv.add(f[3]); liveDist.add(f[4]); });
-  const sources = [...new Set(B.facts.map(f => f[2]))].filter(i => i !== srcEmpty).map(i => dims.src[i]).sort();
+  const sources = [...new Set(B.facts.map(f => f[2]).concat(B.targets.map(t => t[4])))].filter(i => i !== srcEmpty).map(i => dims.src[i]).sort();
   D = { dayMonth, dayNum, dayDow, months, provIdx, ekspIdx, distIdx, srcEmpty, eksEmpty,
         ekspList: [...frcEksp].map(i => dims.eksp[i]).sort(), liveProv, liveDist, sources };
   F.per = {kind: 'month', month: months[months.length - 1]};
+  D.fotTgt = B.targets.some(t => t[7] === 1);   // builds without sheet SNOP: FRC targets only
+  DEFAULT_SRC_OFF = sources.includes(DEFAULT_SRC) ? sources.filter(s => s !== DEFAULT_SRC) : [];
+  F.srcOff = new Set(DEFAULT_SRC_OFF);
 }
 const srcOk = i => i === D.srcEmpty || !F.srcOff.has(B.dims.src[i]);
 /* Target basis: master holds SNOP only; Internal = 115% of SNOP. Applied wherever a target is summed. */
@@ -103,7 +107,12 @@ const tgtK = () => F.tgt === 'INTERNAL' ? TGT_INTERNAL : 1;
 const tgtLbl = () => F.tgt === 'INTERNAL' ? 'Internal' : 'SNOP';
 const incOk = inc => F.inc === 'ALL' || (F.inc === 'FRC' ? inc === 0 : inc === 1);
 const lastDayOf = m => Math.min(B.lastDay[m] || dim(m), dim(m));
-const frcOn = () => F.inc !== 'FOT';
+/* Targets: FRC rows (ekspeditur) and FOT rows (distributor, t[8]); t[7] = incoterm, absent on older builds = FRC.
+   Achievement = realisasi of the selected incoterm(s) vs their targets; Real/SO stays FRC-only (SO is FRC). */
+const tInc = t => t[7] || 0;
+const achOk = inc => incOk(inc) && (inc === 0 || D.fotTgt);   // realisasi counted against target
+const soOn = () => F.inc !== 'FOT';
+const incName = () => F.inc === 'ALL' ? 'FRC + FOT' : F.inc;
 
 /* ===================== Periods ===================== */
 /* Every page works on a period {from, to} (ISO dates). A "month" is just one kind of period.
@@ -159,9 +168,9 @@ function targetBetween(t, from, to){
   if(t[6]){ let s = 0; for(let d = d0; d <= d1; d++) s += t[6][d - 1] || 0; return s * tgtK(); }
   return t[5] * (d1 - d0 + 1) / n * tgtK();
 }
-function blank(){ return {vol:0, frc:0, trips:0, dwS:0, dwN:0, tgt:0, tgtFull:0, so:0, hasTgt:false}; }
+function blank(){ return {vol:0, frc:0, frc0:0, trips:0, dwS:0, dwN:0, tgt:0, tgtFull:0, so:0, hasTgt:false}; }
 
-/** Summary per group for a period (or a 'YYYY-MM' month). vol = selected incoterm(s); frc = FRC-only realisasi (achievement basis).
+/** Summary per group for a period (or a 'YYYY-MM' month). vol = selected incoterm(s); frc = realisasi of the selected incoterm(s) vs their targets (achievement basis); frc0 = FRC only (Real/SO).
     tgt = target up to the last data day; tgtFull = target for the whole period (whole month for a month period). */
 function summarize(group, per, sc, opt){
   sc = sc || {}; opt = opt || {};
@@ -172,16 +181,17 @@ function summarize(group, per, sc, opt){
   B.facts.forEach(f => {
     if(!inPer(f[0], per) || !srcOk(f[2]) || !scopeOkF(f, sc)) return;
     const o = get(FK[group](f));
-    if(f[1] === 0) o.frc += f[6];
+    if(f[1] === 0) o.frc0 += f[6];
+    if(achOk(f[1])) o.frc += f[6];
     if(incOk(f[1])){ o.vol += f[6]; o.trips += f[7]; o.dwS += f[8]; o.dwN += f[9]; }
   });
-  if(frcOn()){
-    const m0 = per.from.slice(0, 7), m1 = fullTo.slice(0, 7);
-    B.targets.forEach(t => {
-      if(t[0] < m0 || t[0] > m1 || !srcOk(t[4]) || !scopeOkT(t, sc)) return;
-      const o = get(TK[group](t));
-      o.tgt += targetBetween(t, per.from, per.tgtTo); o.tgtFull += targetBetween(t, per.from, fullTo); o.hasTgt = true;
-    });
+  const m0 = per.from.slice(0, 7), m1 = fullTo.slice(0, 7);
+  B.targets.forEach(t => {
+    if(t[0] < m0 || t[0] > m1 || !incOk(tInc(t)) || !srcOk(t[4]) || !scopeOkT(t, sc)) return;
+    const o = get(TK[group](t));
+    o.tgt += targetBetween(t, per.from, per.tgtTo); o.tgtFull += targetBetween(t, per.from, fullTo); o.hasTgt = true;
+  });
+  if(soOn()){
     // SO counts every month the period touches in full: by delivery month (TGL_KIRIM, B.sod) when the build has it,
     // otherwise by PERIODE (B.so)
     if(group !== 'src'){
@@ -197,8 +207,8 @@ function summarize(group, per, sc, opt){
     }
   }
   out.forEach(o => {
-    o.pct = o.hasTgt && frcOn() ? (o.tgt > 0 ? pctOf(o.frc, o.tgt) : 100) : null;
-    o.of = frcOn() && o.so > 0 ? pctOf(o.frc, o.so) : null;
+    o.pct = o.hasTgt ? (o.tgt > 0 ? pctOf(o.frc, o.tgt) : 100) : null;
+    o.of = soOn() && o.so > 0 ? pctOf(o.frc0, o.so) : null;
     o.gap = o.frc - o.tgt;
     o.dwell = o.dwN ? o.dwS / o.dwN : null;
   });
@@ -239,14 +249,14 @@ function rangeGroup(fromISO, toISO, sc, group){
     const ds = B.days[f[0]];
     if(ds < fromISO || ds > toISO || !srcOk(f[2]) || !scopeOkF(f, sc)) return;
     const o = get(FK[group](f));
-    if(f[1] === 0) o.frc += f[6];
+    if(achOk(f[1])) o.frc += f[6];
     if(incOk(f[1])){ o.vol += f[6]; o.trips += f[7]; }
   });
-  if(frcOn()){
+  {
     const from = parseISO(fromISO), to = parseISO(toISO);
     B.targets.forEach(t => {
       const m = t[0];
-      if(m + '-31' < fromISO || m + '-01' > toISO || !srcOk(t[4]) || !scopeOkT(t, sc)) return;
+      if(m + '-31' < fromISO || m + '-01' > toISO || !incOk(tInc(t)) || !srcOk(t[4]) || !scopeOkT(t, sc)) return;
       const y = +m.slice(0, 4), mo = +m.slice(5) - 1, n = dim(m);
       let add = 0, any = false;
       for(let d = 1; d <= n; d++){
@@ -257,7 +267,7 @@ function rangeGroup(fromISO, toISO, sc, group){
       if(any){ const o = get(TK[group](t)); o.tgt += add * tgtK(); o.hasTgt = true; }
     });
   }
-  out.forEach(o => { o.pct = o.hasTgt && frcOn() ? (o.tgt > 0 ? pctOf(o.frc, o.tgt) : 100) : null; o.gap = o.frc - o.tgt; });
+  out.forEach(o => { o.pct = o.hasTgt ? (o.tgt > 0 ? pctOf(o.frc, o.tgt) : 100) : null; o.gap = o.frc - o.tgt; });
   return out;
 }
 function rangeTotals(fromISO, toISO, sc){
@@ -386,7 +396,7 @@ function trendInner(id){
   T.data = data;
   const chips = [['mtd','MTD'],['harian','Harian'],['mingguan','Mingguan'],['bulanan','Bulanan']].filter(g => !T.grans || T.grans.includes(g[0])).map(g => '<span class="' + (g[0] === T.gran ? 'on' : '') + '" data-gran="' + id + ':' + g[0] + '">' + g[1] + '</span>').join('');
   const inc = T.incFix || F.inc;
-  const legend = (inc !== 'FOT' ? '<span><i style="background:var(--green)"></i>&ge;100% target</span><span><i style="background:var(--amber)"></i>85–99%</span><span><i style="background:var(--red)"></i>&lt;85%</span><span><i class="dash"></i>target ' + tgtLbl() + '</span>' : '<span><i style="background:var(--black)"></i>volume FOT (tanpa target)</span>') +
+  const legend = '<span><i style="background:var(--green)"></i>&ge;100% target</span><span><i style="background:var(--amber)"></i>85–99%</span><span><i style="background:var(--red)"></i>&lt;85%</span><span><i class="dash"></i>target ' + tgtLbl() + (inc === 'FOT' ? ' FOT (distributor)' : '') + '</span>' +
     (T.cmp ? '<span><i style="background:#BCC3C5"></i>' + esc(cmpLabel(T)) + '</span><span>▲▼ = selisih vs pembanding</span>' : '');
   return '<div class="pt"><span>' + esc(T.title) + ' (ton)</span><div class="pt-tools">' + (T.noCmp ? '' : cmpOptions(T)) + '<div class="gran-chips">' + chips + '</div></div></div>' + barsHTML(id, data) +
     '<div class="trend-legend">' + legend + '</div>' +
@@ -442,7 +452,7 @@ function modalBody(){
     const head = '<div class="prog-row" style="margin-bottom:18px">' +
       '<div class="prog-cell"><div class="pl">Realisasi</div><div class="pv">' + fmt(tot.vol) + ' t</div><div class="pd">' + fmt(tot.trips) + ' trip</div></div>' +
       '<div class="prog-cell"><div class="pl">Target ' + tgtLbl() + '</div><div class="pv">' + (tot.hasTgt ? fmt(tot.tgt) + ' t' : '–') + '</div><div class="pd">gap ' + (tot.hasTgt ? signed(tot.gap) + ' t' : '–') + '</div></div>' +
-      '<div class="prog-cell"><div class="pl">Capaian</div><div class="pv" style="color:' + tierColor(tot.pct) + '">' + pctTxt(tot.pct) + '</div><div class="pd">FRC vs ' + tgtLbl() + '</div></div>' +
+      '<div class="prog-cell"><div class="pl">Capaian</div><div class="pv" style="color:' + tierColor(tot.pct) + '">' + pctTxt(tot.pct) + '</div><div class="pd">' + (T.incFix || incName()) + ' vs ' + tgtLbl() + '</div></div>' +
       '<div class="prog-cell"><div class="pl">vs ' + esc(PREV_LBL[T.gran]) + '</div><div class="pv" style="color:' + (chg == null ? 'inherit' : chg >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (chg == null ? '–' : (chg >= 0 ? '+' : '') + Math.round(chg) + '%') + '</div><div class="pd">' + fmt(tp.vol) + ' t (' + esc(pb.from === pb.to ? dayLabel(pb.from) : dayLabel(pb.from) + ' – ' + dayLabel(pb.to)) + ')</div></div>' +
       cmpCell + '</div>';
     const tabs = '<div class="gran-chips" style="margin-bottom:14px">' + dims.map(k => '<span class="' + (k === dim ? 'on' : '') + '" data-mdim="' + k + '">Per ' + DIM_LBL[k].toLowerCase() + '</span>').join('') + '</div>';
@@ -533,23 +543,27 @@ function renderFilterPanel(){
   }
   const inc = [['FRC','FRC'],['FOT','FOT'],['ALL','FRC + FOT']].map(x => '<span data-inc="' + x[0] + '" class="' + (draft.inc === x[0] ? 'on' : '') + '">' + x[1] + '</span>').join('');
   const tgt = [['SNOP','SNOP'],['INTERNAL','Internal (115% SNOP)']].map(x => '<span data-tgt="' + x[0] + '" class="' + (draft.tgt === x[0] ? 'on' : '') + '">' + x[1] + '</span>').join('');
-  const src = D.sources.map(s2 => '<label class="fp-check"><input type="checkbox" data-src="' + esc(s2) + '"' + (draft.srcOff.has(s2) ? '' : ' checked') + '> ' + esc(tc(s2)) + (DEFAULT_SRC_OFF.includes(s2) ? ' <small>(default tidak dicentang)</small>' : '') + '</label>').join('');
+  const src = D.sources.map(s2 => '<label class="fp-check"><input type="checkbox" data-src="' + esc(s2) + '"' + (draft.srcOff.has(s2) ? '' : ' checked') + '> ' + esc(tc(s2)) + (s2 === DEFAULT_SRC ? ' <small>(default)</small>' : '') + '</label>').join('');
   $('#filterPanel').innerHTML =
     '<div class="fp-row"><div class="fp-group"><label class="fl">Periode</label><div class="fp-chips" style="margin-bottom:10px">' + mode + '</div>' + body + '</div>' +
-    '<div class="fp-group"><label class="fl">Incoterm</label><div class="fp-chips">' + inc + '</div><div style="font-size:11.5px;color:var(--sub);margin-top:8px;line-height:1.5">% pencapaian selalu dihitung dari FRC vs target ' + tgtLbl() + ' sampai hari data terakhir. FOT tidak punya target.</div></div></div>' +
+    '<div class="fp-group"><label class="fl">Incoterm</label><div class="fp-chips">' + inc + '</div><div style="font-size:11.5px;color:var(--sub);margin-top:8px;line-height:1.5">% pencapaian = realisasi incoterm terpilih vs target ' + tgtLbl() + '-nya sampai hari data terakhir. Target FRC dibagi ke ekspeditur, target FOT ke distributor.</div></div></div>' +
     '<div class="fp-row"><div class="fp-group"><label class="fl">Target</label><div class="fp-chips">' + tgt + '</div></div><div class="fp-group"></div></div>' +
     '<div class="fp-row"><div class="fp-group"><label class="fl">Source plant</label>' + src + '</div>' +
     '<div class="fp-group"><label class="fl">Berlaku untuk</label><div style="font-size:12px;color:var(--gray-d);line-height:1.6">Semua halaman: peta, grafik, tabel, ekspeditur, distributor, armada &amp; prognosa. Pilihan tersimpan selama sesi.</div></div></div>' +
     '<div class="fp-foot"><div class="fp-reset" data-act="reset">Reset filter</div><div class="fp-apply" data-act="apply">Terapkan</div></div>';
 }
 function filterStrip(){
-  const offs = [...F.srcOff];
   const per = PER();
   $('#filterSummary').innerHTML = '<span>Menampilkan</span><span class="tag"><b>' + esc(per.label) + '</b>' + (per.sub !== per.label ? ' · ' + esc(per.sub.replace(per.label + ' · ', '').replace(per.label, '')) : '') + '</span>' +
     '<span class="tag"><b>' + (F.inc === 'ALL' ? 'FRC + FOT' : F.inc) + '</b></span>' +
     '<span class="tag">target <b>' + (F.tgt === 'INTERNAL' ? 'Internal 115%' : 'SNOP') + '</b></span>' +
-    (offs.length ? '<span class="tag">tanpa ' + offs.map(s => esc(tc(s))).join(', ') + '</span>' : '<span class="tag">semua source</span>') +
+    '<span class="tag">' + srcTxt() + '</span>' +
     '<span class="edit" data-act="openfilter">Ubah filter &#9662;</span>';
+}
+/* "plant CP Indarung" / "3 dari 18 plant" / "semua plant" (short enough for the filter strip) */
+function srcTxt(){
+  const on = D.sources.filter(s => !F.srcOff.has(s));
+  return on.length === D.sources.length ? 'semua plant' : on.length <= 2 ? 'plant <b>' + on.map(s => esc(tc(s))).join(', ') + '</b>' : '<b>' + on.length + '</b> dari ' + D.sources.length + ' plant';
 }
 function applyFilter(){
   const k = draft.per.kind;
@@ -557,7 +571,7 @@ function applyFilter(){
   else if(k === 'ytd') F.per = {kind: 'ytd'};
   else F.per = {kind: 'month', month: draft.per.month || D.months[D.months.length - 1]};
   F.inc = draft.inc; F.srcOff = new Set(draft.srcOff); F.tgt = draft.tgt || 'SNOP';
-  try { sessionStorage.setItem('osp_f', JSON.stringify({per: F.per, inc: F.inc, srcOff: [...F.srcOff], tgt: F.tgt})); } catch(e) {}
+  try { sessionStorage.setItem('osp_f2', JSON.stringify({per: F.per, inc: F.inc, srcOff: [...F.srcOff], tgt: F.tgt})); } catch(e) {}
   closeNav(); closeFilter(); buildNav(); filterStrip(); route();
 }
 function closeFilter(){ const f = $('#filterStrip'); if(f) f.classList.remove('open'); }
@@ -570,7 +584,7 @@ function openFilter(){
 }
 function restoreFilter(){
   try {
-    const s = JSON.parse(sessionStorage.getItem('osp_f') || 'null');
+    const s = JSON.parse(sessionStorage.getItem('osp_f2') || 'null');
     if(s && s.per && (s.per.kind !== 'month' || D.months.includes(s.per.month))){ F.per = s.per; F.inc = s.inc; F.srcOff = new Set(s.srcOff); F.tgt = s.tgt === 'INTERNAL' ? 'INTERNAL' : 'SNOP'; }
   } catch(e) {}
 }
@@ -727,10 +741,10 @@ function distMapHTML(pname, m, opt){
     const name = B.dims.dist[o.key], i = matchDistrict(name, G.d);
     if(i < 0){ missing.push(o); return; }
     let a = agg.get(i);
-    if(!a){ a = {vol:0, frc:0, tgt:0, so:0, trips:0, hasTgt:false, keys:[]}; agg.set(i, a); }
-    a.vol += o.vol; a.frc += o.frc; a.tgt += o.tgt; a.so += o.so; a.trips += o.trips; a.hasTgt = a.hasTgt || o.hasTgt; a.keys.push(o.key);
+    if(!a){ a = {vol:0, frc:0, frc0:0, tgt:0, so:0, trips:0, hasTgt:false, keys:[]}; agg.set(i, a); }
+    a.vol += o.vol; a.frc += o.frc; a.frc0 += o.frc0; a.tgt += o.tgt; a.so += o.so; a.trips += o.trips; a.hasTgt = a.hasTgt || o.hasTgt; a.keys.push(o.key);
   });
-  agg.forEach(a => { a.pct = a.hasTgt && frcOn() ? (a.tgt > 0 ? pctOf(a.frc, a.tgt) : 100) : null; a.gap = a.frc - a.tgt; a.of = frcOn() && a.so > 0 ? pctOf(a.frc, a.so) : null; });   // same rules as summarize()
+  agg.forEach(a => { a.pct = a.hasTgt ? (a.tgt > 0 ? pctOf(a.frc, a.tgt) : 100) : null; a.gap = a.frc - a.tgt; a.of = soOn() && a.so > 0 ? pctOf(a.frc0, a.so) : null; });   // same rules as summarize()
   const [vx, vy, vw, vh] = G.vb, fs = Math.max(vw, vh) / 52;
   const defs = '<defs>' + [['Green', '#2E9E5C', '#1A7A42'], ['Amber', '#C9952E', '#8A5A00'], ['Red', '#FF6B74', '#E02A36'], ['Ink', '#5A5A5A', '#2B2B2B']].map(c =>
     '<linearGradient id="d' + c[0] + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="' + c[1] + '"/><stop offset="100%" stop-color="' + c[2] + '"/></linearGradient>').join('') + '</defs>';
@@ -806,7 +820,7 @@ function nodeHref(n){
 function treeHTML(nodes, levels, opt){
   opt = opt || {};
   const id = 'tr' + Math.random().toString(36).slice(2, 8);
-  const hasT = !!opt.tgt && frcOn();
+  const hasT = !!opt.tgt;
   let html = '<div class="tree-tools"><span>' + levels.map(l => LV_LBL[l]).join(' &rsaquo; ') + '</span><span><a data-tree-all="' + id + ':1">Buka semua</a> · <a data-tree-all="' + id + ':0">Tutup semua</a></span></div>' +
     '<div class="tbl-wrap"><table class="tbl tree" id="' + id + '"><thead><tr><th>Tujuan</th><th class="num">Realisasi (t)</th>' + (hasT ? '<th class="num">Target MTD (t)</th><th class="num">Capaian</th><th class="num">SO (t)</th><th class="num">Real/SO</th>' : '') + '<th class="num">Trip</th><th class="num">Kirim terakhir</th><th></th></tr></thead><tbody>';
   const walk = (list, depth, parent) => list.forEach((n, i) => {
@@ -849,15 +863,33 @@ function distrSummary(rows){
   return [...per.values()];
 }
 
+/* FOT target per distributor (target rows with t[8]), up to the last data day of the period. Not shown for FRC-only. */
+function distrTargets(per, sc){
+  per = toPer(per); sc = sc || {};
+  const out = new Map(), m0 = per.from.slice(0, 7), m1 = per.to.slice(0, 7);
+  if(F.inc === 'FRC') return out;
+  B.targets.forEach(t => {
+    if(!(t[8] >= 0) || t[0] < m0 || t[0] > m1 || !srcOk(t[4]) || (sc.distr != null && t[8] !== sc.distr)) return;
+    out.set(t[8], (out.get(t[8]) || 0) + targetBetween(t, per.from, per.tgtTo));
+  });
+  return out;
+}
+const blankDistr = k => ({key: k, frc: 0, fot: 0, vol: 0, trips: 0, prov: new Set(), dist: new Set(), toko: new Set(), last: -1});
+
 function pageDistrList(){
-  const m = PER(), rows = shipRows(m), list = distrSummary(rows).sort((a, b) => b.vol - a.vol);
+  const m = PER(), rows = shipRows(m), list = distrSummary(rows), tg = distrTargets(m);
+  tg.forEach((v, k) => { if(B.dims.distr[k] && !list.some(o => o.key === k)) list.push(blankDistr(k)); });
+  list.forEach(o => { o.tgt = tg.get(o.key); o.pct = o.tgt ? pctOf(o.fot, o.tgt) : null; });
+  list.sort((a, b) => b.vol - a.vol || (b.tgt || 0) - (a.tgt || 0));
   list.forEach((o, i) => o.rank = i + 1);
   const tot = list.reduce((a, o) => a + o.vol, 0), unk = rows.filter(r => !(B.dims.toko[r[7]] && B.dims.toko[r[7]][0])).reduce((a, r) => a + r[8], 0);
   const cols = [{h:'#', cls:'rank', val: o => o.rank, html: o => '#' + o.rank}, {h:'Distributor', cls:'name', val: o => tc(B.dims.distr[o.key])},
     {h:'FRC (t)', num:true, val: o => o.frc, html: o => o.frc ? fmt(o.frc) : '–'}, {h:'FOT (t)', num:true, val: o => o.fot, html: o => o.fot ? fmt(o.fot) : '–'},
-    {h:'Total (t)', num:true, val: o => o.vol, html: o => '<b>' + fmt(o.vol) + '</b>'}, {h:'Share', num:true, val: o => o.vol / (tot || 1), html: o => pctTxt(pctOf(o.vol, tot))},
+    {h:'Total (t)', num:true, val: o => o.vol, html: o => '<b>' + fmt(o.vol) + '</b>'}, {h:'Share', num:true, val: o => o.vol / (tot || 1), html: o => pctTxt(pctOf(o.vol, tot))}].concat(tg.size ? [
+    {h:'Target FOT ' + tgtLbl() + ' (t)', num:true, val: o => o.tgt || 0, html: o => o.tgt ? fmt(o.tgt) : '–'},
+    {h:'Capaian FOT', num:true, val: o => o.pct == null ? -1 : o.pct, html: o => o.pct == null ? '–' : '<b style="color:' + tierColor(o.pct) + '">' + pctTxt(o.pct) + '</b>'}] : [], [
     {h:'Trip', num:true, val: o => o.trips}, {h:'Provinsi', num:true, val: o => o.prov.size}, {h:'Distrik', num:true, val: o => o.dist.size},
-    {h:'Toko / gudang', num:true, val: o => o.toko.size}, {h:'Kirim terakhir', num:true, val: o => o.last, html: o => dayLabel(B.days[o.last])}];
+    {h:'Toko / gudang', num:true, val: o => o.toko.size}, {h:'Kirim terakhir', num:true, val: o => o.last, html: o => o.last >= 0 ? dayLabel(B.days[o.last]) : '–'}]);
   page('<div class="wrap">' + crumb([['Wilayah', '#/provinsi'], ['Distributor']]) +
     '<div class="dp-head"><div><div class="nm">Distributor &amp; Tujuan Kirim</div><div class="sub">' + fmt(list.length) + ' distributor · ' + (F.inc === 'ALL' ? 'FRC + FOT' : F.inc) + ' · ' + periodSub() + '</div></div></div>' +
     (unk > 0 ? '<div class="dp-review">' + pctTxt(pctOf(unk, tot)) + ' tonase periode ini belum punya data toko/gudang tujuan (' + fmt(unk) + ' t). Distributor tetap tercatat; toko tujuan akan muncul begitu kolom KODE_TOKO/NAMA_TOKO diisi di master Excel.</div>' : '') +
@@ -869,7 +901,7 @@ function pageDistr(name){
   const di = B.dims.distr.indexOf(name);
   if(di < 0) return notFound('Distributor ' + name);
   const m = PER(), sc = {distr: di}, rows = shipRows(m, sc);
-  const s = distrSummary(rows)[0] || {frc: 0, fot: 0, vol: 0, trips: 0, prov: new Set(), dist: new Set(), toko: new Set(), last: -1};
+  const s = distrSummary(rows)[0] || blankDistr(di), tgt = distrTargets(m, sc).get(di), pct = tgt ? pctOf(s.fot, tgt) : null;
   const ekspTree = buildTree(rows, ['eksp']);
   // monthly volume, last 6 months; bar click lists that month's ship-to points
   const idx = D.months.indexOf(m.month), months = m.kind === 'month' ? D.months.slice(Math.max(0, idx - 5), idx + 1) : D.months.filter(x => x >= m.from.slice(0, 7) && x <= m.month);
@@ -881,6 +913,7 @@ function pageDistr(name){
   }};
   page('<div class="wrap">' + crumb([['Wilayah', '#/provinsi'], ['Distributor', '#/distributor'], [tc(name)]]) +
     '<div class="dp-head"><div><div class="nm">' + esc(tc(name)) + '</div><div class="sub">Distributor · ' + (F.inc === 'ALL' ? 'FRC + FOT' : F.inc) + ' · ' + periodSub() + '</div></div></div>' +
+    (tgt ? '<div class="dp-review">Target FOT ' + tgtLbl() + ' s.d. ' + shortDate(m.tgtTo) + ': <b>' + fmt(tgt) + ' t</b>, realisasi FOT ' + fmt(s.fot) + ' t — capaian <b style="color:' + tierColor(pct) + '">' + pctTxt(pct) + '</b>. Target FOT adalah target distributor (ambil sendiri); target FRC ada di ekspeditur.</div>' : '') +
     '<div class="dp-grid4">' +
       kpi('box', 'var(--black)', 'Realisasi', fmt(s.vol) + ' <small>ton</small>', {hint: 'FRC ' + fmt(s.frc) + ' · FOT ' + fmt(s.fot)}) +
       kpi('trend', 'var(--black)', 'Trip', fmt(s.trips), {hint: s.last >= 0 ? 'terakhir ' + dayLabel(B.days[s.last]) : ''}) +
@@ -909,7 +942,7 @@ function pageHome(){
   const incTxt = F.inc === 'ALL' ? 'FRC + FOT' : F.inc;
   const prevTxt = m.kind === 'month' ? 'periode sama bulan lalu' : 'periode ' + m.days + ' hari sebelumnya';
   const head = 'Volume ' + incTxt + ' ' + esc(m.label) + ' <b>' + fmt(t.vol) + ' ton</b>' +
-    (t.pct != null ? (F.inc === 'ALL' ? '; FRC ' : ', ') + (isLatest ? 'sudah ' : '') + 'mencapai <b>' + pctTxt(t.pct) + '</b> dari target ' + tgtLbl() + (isLatest ? ' MTD' : '') : '') +
+    (t.pct != null ? (', ') + (isLatest ? 'sudah ' : '') + 'mencapai <b>' + pctTxt(t.pct) + '</b> dari target ' + tgtLbl() + (isLatest ? ' MTD' : '') : '') +
     (chg != null ? ' — ' + (chg >= 0 ? 'naik ' : 'turun ') + Math.abs(Math.round(chg)) + '% dari ' + prevTxt + '.' : '.');
   const withPct = provRows.filter(o => o.pct != null);
   const worst = withPct.length ? withPct.reduce((a, b) => a.gap < b.gap ? a : b) : null;
@@ -948,7 +981,7 @@ function mapHero(provRows, t, head, chg, isLatest){
       '<div class="mh-chips">' +
         chip('Realisasi', fmt(t.vol) + ' <small>t</small>', fmt(t.trips) + ' trip') +
         chip('Target ' + tgtLbl() + (isLatest ? ' MTD' : ''), t.hasTgt ? fmt(t.tgt) + ' <small>t</small>' : '–', t.hasTgt ? 'gap ' + signed(t.gap) + ' t' : '') +
-        chip('Capaian', pctTxt(t.pct), 'FRC vs ' + tgtLbl(), t.pct == null ? null : t.pct >= 100 ? '#5FD08F' : t.pct >= 85 ? '#E8B04A' : '#FF6B74') +
+        chip('Capaian', pctTxt(t.pct), incName() + ' vs ' + tgtLbl(), t.pct == null ? null : t.pct >= 100 ? '#5FD08F' : t.pct >= 85 ? '#E8B04A' : '#FF6B74') +
         chip(m.kind === 'month' ? 'vs bulan lalu' : 'vs periode lalu', chg == null ? '–' : (chg >= 0 ? '▲ ' : '▼ ') + Math.abs(Math.round(chg)) + '%', 'periode sama', chg == null ? null : chg >= 0 ? '#5FD08F' : '#FF6B74') +
       '</div>' +
       '<div class="mh-list"><div class="mh-lh"><span>Rank provinsi</span><a href="#/provinsi">Lihat tabel &rsaquo;</a></div><div class="mh-row mh-head"><span></span><span></span><span class="mh-tn">Realisasi</span><span class="mh-pc">Target</span><span class="mh-so">Real/SO</span></div>' + list + '</div>' +
@@ -972,7 +1005,7 @@ function pageProvList(){
 function sourcePanel(sc){
   const rows = [...summarize('src', PER(), sc).values()].filter(o => o.vol > 0 || o.tgt > 0).sort((a, b) => b.vol - a.vol);
   return '<div class="dp-panel"><div class="pt">Per source plant</div>' + (rows.length ? rows.map(o => rateRow(tc(B.dims.src[o.key]) + ' · ' + fmt(o.vol) + ' t', o.pct, null, o.hasTgt ? 'target ' + fmt(o.tgt) + ' t' : 'tanpa target')).join('') : '<div class="empty">Tidak ada data.</div>') +
-    '<div class="trend-detail">Baris tanpa atribusi plant pada target dihitung di semua source. ' + (F.srcOff.size ? 'Dikecualikan: ' + [...F.srcOff].map(s => esc(tc(s))).join(', ') + '.' : '') + '</div></div>';
+    '<div class="trend-detail">Baris tanpa atribusi plant pada target dihitung di semua source. ' + 'Ditampilkan: ' + srcTxt().replace(/<\/?b>/g, '') + '.' + '</div></div>';
 }
 function progCells(rows, label){
   const s = k => rows.reduce((a, r) => a + (r[k] || 0), 0);
@@ -1004,7 +1037,7 @@ function pageProv(name){
   const distCols = [C.rank, {h:'Distrik', cls:'name', val: r => tc(B.dims.dist[r.key])}, C.vol(), C.tgt, C.pct, C.gap, C.so, C.of, C.note];
   page('<div class="wrap">' + crumb([['Wilayah', '#/provinsi'], [tc(name)]]) +
     '<div class="dp-head"><div><div class="nm">' + esc(tc(name)) + '</div><div class="sub">Capaian tonase · ' + periodSub() + '</div></div><div class="badges">' + (me.rank ? '<div class="dp-badge">Rank ' + me.rank + ' / ' + all.rankTotal + '</div>' : '') + '<div class="dp-badge ' + tierClass(me.pct) + '">' + pctTxt(me.pct) + ' dari target</div></div></div>' +
-    '<div class="dp-review">' + reviewText(me.pct) + (me.hasTgt ? ' Realisasi FRC ' + fmt(me.frc) + ' t vs target MTD ' + fmt(me.tgt) + ' t (gap ' + signed(me.gap) + ' t).' : '') + (me.so ? ' Realisasi/SO ' + pctTxt(me.of) + '.' : '') + '</div>' +
+    '<div class="dp-review">' + reviewText(me.pct) + (me.hasTgt ? ' Realisasi ' + incName() + ' ' + fmt(me.frc) + ' t vs target MTD ' + fmt(me.tgt) + ' t (gap ' + signed(me.gap) + ' t).' : '') + (me.so ? ' Realisasi/SO ' + pctTxt(me.of) + '.' : '') + '</div>' +
     '<div class="dp-grid4">' +
       kpi('check', 'var(--green)', 'Realisasi', fmt(me.vol) + ' <small>ton</small>', {hint: fmt(me.trips) + ' trip'}) +
       kpi('target', 'var(--black)', 'Target MTD', me.hasTgt ? fmt(me.tgt) + ' <small>ton</small>' : '–', {hint: me.hasTgt ? 'bulan penuh ' + fmt(me.tgtFull) + ' t' : 'tidak ada target ' + tgtLbl() + ''}) +
@@ -1019,7 +1052,7 @@ function pageProv(name){
     '<div class="section-head"><div class="section-title">Kinerja &amp; tujuan pengiriman per distrik</div></div>' +
     treeHTML(buildTree(shipRows(m, sc), ['dist', 'distr', 'toko']), ['dist', 'distr', 'toko'], {tgt: {dist: summarize('dist', m, sc)}}) +
     '<div class="dp-cols even">' + sourcePanel(sc) + '<div class="dp-panel"><div class="pt">Bulan penuh</div>' +
-      '<div class="tgt-panel" style="margin:0;border:0;padding:0"><div class="tgt-item"><div class="tl">Target bulan</div><div class="tv">' + (me.hasTgt ? fmt(me.tgtFull) : '–') + ' t</div></div><div class="tgt-item"><div class="tl">Realisasi FRC</div><div class="tv">' + fmt(me.frc) + ' t</div></div><div class="tgt-item"><div class="tl">Sisa bulan</div><div class="tv ' + (me.tgtFull - me.frc > 0 ? 'bad' : 'good') + '">' + (me.hasTgt ? fmt(Math.max(0, me.tgtFull - me.frc)) : '–') + ' t</div></div></div></div></div>' +
+      '<div class="tgt-panel" style="margin:0;border:0;padding:0"><div class="tgt-item"><div class="tl">Target bulan</div><div class="tv">' + (me.hasTgt ? fmt(me.tgtFull) : '–') + ' t</div></div><div class="tgt-item"><div class="tl">Realisasi ' + incName() + '</div><div class="tv">' + fmt(me.frc) + ' t</div></div><div class="tgt-item"><div class="tl">Sisa bulan</div><div class="tv ' + (me.tgtFull - me.frc > 0 ? 'bad' : 'good') + '">' + (me.hasTgt ? fmt(Math.max(0, me.tgtFull - me.frc)) : '–') + ' t</div></div></div></div></div>' +
     '</div>', 'wilayah');
 }
 
@@ -1154,7 +1187,7 @@ function pageForecast(gran){
       '<div class="prog-cell"><div class="pl">Target s.d. hari ini</div><div class="pv">' + fmt(sTgt) + ' t</div><div class="pd">capaian ' + pctTxt(pctOf(sReal, sTgt)) + '</div></div>' +
       '<div class="prog-cell"><div class="pl">Proyeksi minggu</div><div class="pv" style="color:' + tierColor(pctOf(proj, wTgt)) + '">' + fmt(proj) + ' t</div><div class="pd">laju ' + fmt(runrate) + ' t/hari</div></div>' +
       '<div class="prog-cell"><div class="pl">Target minggu penuh</div><div class="pv">' + fmt(wTgt) + ' t</div><div class="pd">proyeksi ' + pctTxt(pctOf(proj, wTgt)) + '</div></div></div>' +
-      '<div class="dp-panel" style="margin-bottom:34px"><div class="pt">Realisasi FRC per hari vs target ' + tgtLbl() + ', ' + days[0].getDate() + ' ' + MON3[days[0].getMonth()] + ' – ' + days[6].getDate() + ' ' + MON3[days[6].getMonth()] + '</div>' + barsHTML(id, data) +
+      '<div class="dp-panel" style="margin-bottom:34px"><div class="pt">Realisasi ' + incName() + ' per hari vs target ' + tgtLbl() + ', ' + days[0].getDate() + ' ' + MON3[days[0].getMonth()] + ' – ' + days[6].getDate() + ' ' + MON3[days[6].getMonth()] + '</div>' + barsHTML(id, data) +
       '<div class="trend-legend"><span><i style="background:var(--green)"></i>&ge;100%</span><span><i style="background:var(--amber)"></i>85–99%</span><span><i style="background:var(--red)"></i>&lt;85%</span><span><i class="dash"></i>target ' + tgtLbl() + '</span></div><div class="trend-detail" id="tw-d">Klik batang untuk rincian hari itu per provinsi, distrik, ekspeditur &amp; source.</div></div>';
   } else {
     const m = PER().month, ld = lastDayOf(m), n = dim(m);
@@ -1163,13 +1196,13 @@ function pageForecast(gran){
       return Object.assign(o, {rr, proj, projPct: o.hasTgt ? pctOf(proj, o.tgtFull) : null});
     }).sort((a, b) => (a.projPct == null ? 999 : a.projPct) - (b.projPct == null ? 999 : b.projPct));
     const t = total(m), rr = t.frc / ld, proj = t.frc + rr * (n - ld);
-    const cols = [{h:'Provinsi', cls:'name', val: r => tc(B.dims.prov[r.key])}, {h:'Realisasi FRC', num:true, val: r => r.frc, html: r => fmt(r.frc)},
+    const cols = [{h:'Provinsi', cls:'name', val: r => tc(B.dims.prov[r.key])}, {h:'Realisasi ' + incName(), num:true, val: r => r.frc, html: r => fmt(r.frc)},
       {h:'Laju / hari', num:true, val: r => r.rr, html: r => fmt(r.rr)}, {h:'Proyeksi akhir bulan', num:true, val: r => r.proj, html: r => fmt(r.proj)},
       {h:'Target bulan', num:true, val: r => r.hasTgt ? r.tgtFull : null, html: r => r.hasTgt ? fmt(r.tgtFull) : '–'},
       {h:'Proyeksi %', num:true, cls:'pc', val: r => r.projPct, html: r => pctTxt(r.projPct), style: r => 'color:' + tierColor(r.projPct)},
       {h:'Perlu / hari', num:true, val: r => r.hasTgt && n > ld ? (r.tgtFull - r.frc) / (n - ld) : null, html: r => r.hasTgt && n > ld ? fmt(Math.max(0, (r.tgtFull - r.frc) / (n - ld))) : '–'}];
     body = '<div class="prog-row">' +
-      '<div class="prog-cell"><div class="pl">Realisasi FRC</div><div class="pv">' + fmt(t.frc) + ' t</div><div class="pd">tgl 1–' + ld + '</div></div>' +
+      '<div class="prog-cell"><div class="pl">Realisasi ' + incName() + '</div><div class="pv">' + fmt(t.frc) + ' t</div><div class="pd">tgl 1–' + ld + '</div></div>' +
       '<div class="prog-cell"><div class="pl">Proyeksi akhir bulan</div><div class="pv" style="color:' + tierColor(pctOf(proj, t.tgtFull)) + '">' + fmt(proj) + ' t</div><div class="pd">laju ' + fmt(rr) + ' t/hari</div></div>' +
       '<div class="prog-cell"><div class="pl">Target bulan</div><div class="pv">' + fmt(t.tgtFull) + ' t</div><div class="pd">proyeksi ' + pctTxt(pctOf(proj, t.tgtFull)) + '</div></div>' +
       '<div class="prog-cell"><div class="pl">Perlu per hari</div><div class="pv">' + (n > ld ? fmt(Math.max(0, (t.tgtFull - t.frc) / (n - ld))) : '–') + ' t</div><div class="pd">sisa ' + (n - ld) + ' hari</div></div></div>' +
