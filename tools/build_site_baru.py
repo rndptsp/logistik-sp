@@ -390,7 +390,7 @@ def build(cfg):
     packed = gzip.compress(plain, 9)
 
     iv = os.urandom(12)
-    meta = {"build": "build." + datetime.datetime.now().strftime("%Y.%m.%d.%H"), "asOf": bundle["asOf"],
+    meta = {"build": "build." + datetime.datetime.now().strftime("%Y.%m.%d.%H%M"), "asOf": bundle["asOf"],
             "iv": base64.b64encode(iv).decode()}
     lock = load_lock()
     if lock:

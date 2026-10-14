@@ -48,25 +48,39 @@ if(/\.github\.io$/.test(location.hostname)) location.replace('https://logistik-s
 <main>
   <div class="links"><a href="/">Buka dashboard ›</a><a href="/#/kualitas">Kualitas data ›</a></div>
 
-  <h2>1 · Upload master Excel</h2>
-  <div class="card">
-    <div class="msg" style="color:var(--red);margin-bottom:10px"><b>Upload dinonaktifkan sementara.</b> Dashboard sekarang dibangun dari MASTER BARU lewat Mac (<code>tools/run_build.bat</code>, lalu push). Server build belum mendukung master baru; upload di sini akan menimpa dashboard dengan data format lama.</div>
-    <div class="row">
-      <input type="file" id="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
-      <button id="up" disabled>Upload &amp; update</button>
+  <div id="seedBox" hidden>
+    <h2>0 · Muat master awal (sekali)</h2>
+    <div class="card">
+      <div class="note" style="margin:0 0 10px">Server belum punya master. Pilih <b>semua</b> file dari folder <i>MASTER BARU</i> di Mac: isi <code>data/</code> (rilis.csv.gz, so.csv.gz, target_ekspeditur.csv.gz, target_distributor.csv.gz) dan <code>config/</code> (settings.json, ekspeditur_map.json, so_frozen_attrib_master_lama.json). Hanya bisa dilakukan sekali; file disimpan di R2 privat.</div>
+      <div class="row"><input type="file" id="seedFiles" multiple accept=".gz,.json"><button id="seedBtn" disabled>Muat master awal</button></div>
+      <div class="msg" id="seedMsg"></div>
     </div>
-    <div class="bar" id="bar"><i></i></div>
+  </div>
+
+  <h2>1 · Update data</h2>
+  <div class="card">
+    <div class="note" style="margin:0 0 12px">Pilih file ekspor apa adanya (.xlsx). File langsung diunggah; tekan <b>Proses update</b> setelah semua file yang kamu butuhkan terunggah. Harian: Rilis + SO. Awal bulan: tambah Tactical + SNOP + Monitoring (ketiganya sekaligus). Upload ulang hari yang sama aman: SPJ/SO yang sama menggantikan, tidak digandakan.</div>
+    <table id="slots"></table>
+    <div class="row" style="margin-top:14px">
+      <label class="note" style="margin:0">Bulan target&nbsp;<select id="month"></select></label>
+      <label class="note" style="margin:0"><input type="checkbox" id="force"> Abaikan guardrail (jumlah baris turun &gt;10%)</label>
+      <button id="go" disabled style="margin-left:auto">Proses update</button>
+    </div>
     <div class="msg" id="upMsg"></div>
-    <div class="note">File: <b>MASTER_DATA_OUTBOUND_LOGISTIC.xlsx</b> (struktur sheet sesuai tab PANDUAN). Setelah upload, dashboard ter-update otomatis ±3–5 menit. Data hari ini disembunyikan (situs s.d. H-1).</div>
+    <div class="note">Selesai ±5–15 menit (file Rilis besar). Data hari ini disembunyikan (situs s.d. H-1). Jika gagal, dashboard tetap versi terakhir yang berhasil dan master tersimpan tidak berubah.</div>
   </div>
 
   <h2>2 · Status update terakhir</h2>
   <div class="card" id="build"><div class="msg">Memuat…</div></div>
 
-  <h2>3 · Riwayat upload</h2>
-  <div class="card" style="padding:6px 12px"><table><thead><tr><th>Waktu</th><th>Oleh</th><th class="hide">File</th><th class="n">Ukuran</th></tr></thead><tbody id="hist"></tbody></table></div>
+  <h2>3 · Riwayat update</h2>
+  <div class="card" style="padding:6px 12px"><table><thead><tr><th>Waktu</th><th>Oleh</th><th class="hide">Isi</th></tr></thead><tbody id="hist"></tbody></table></div>
 
-  <h2>4 · Ganti kata sandi penonton</h2>
+  <h2>4 · Versi master (rollback)</h2>
+  <div class="card" style="padding:6px 12px"><table><thead><tr><th>Versi</th><th>Isi</th><th class="n"></th></tr></thead><tbody id="vers"></tbody></table>
+  <div class="note" style="padding:0 6px 10px">Tujuh versi terakhir disimpan otomatis sebelum tiap update. <b>Kembalikan</b> memulihkan master ke keadaan itu lalu membangun ulang dashboard (±5 menit). Pengembalian sendiri juga tersimpan sebagai versi, jadi bisa dibatalkan.</div></div>
+
+  <h2>5 · Ganti kata sandi penonton</h2>
   <div class="card">
     <input type="password" id="pwOld" placeholder="Kata sandi sekarang" autocomplete="current-password">
     <input type="password" id="pwNew" placeholder="Kata sandi baru (min. 8 karakter)" autocomplete="new-password">
@@ -87,8 +101,10 @@ let poll = null;
 async function load(){
   const r = await fetch('/api/admin/status', {cache: 'no-store'});
   if(!r.ok){ $('#build').innerHTML = '<div class="msg" style="color:var(--red)">Tidak bisa memuat status (' + r.status + ').</div>'; return; }
-  const s = await r.json();
+  const s = await r.json(); S = s;
   $('#who').textContent = s.email;
+  $('#seedBox').hidden = !!s.store;
+  if(!busy){ renderSlots(); renderVersions(); }
   const b = s.build;
   $('#build').innerHTML = !b ? '<div class="msg">Belum ada update lewat halaman ini.</div>' :
     '<span class="st ' + esc(b.state) + '">' + esc(STATE[b.state] || b.state) + '</span>' +
@@ -98,32 +114,106 @@ async function load(){
     (b.run_url ? '<dt>Detail teknis</dt><dd><a href="' + esc(b.run_url) + '" target="_blank" rel="noopener">GitHub Action ›</a></dd>' : '') +
     (b.error ? '<dt>Error</dt><dd style="color:var(--red)">' + esc(b.error) + '</dd>' : '') + '</dl>' +
     (b.log ? '<pre>' + esc(b.log) + '</pre>' : '');
-  $('#hist').innerHTML = s.history.length ? s.history.map(h => '<tr><td>' + when(h.at) + '</td><td>' + esc(h.by) + '</td><td class="hide">' + esc(h.name) + '</td><td class="n">' + mb(h.size) + '</td></tr>').join('') : '<tr><td colspan="4">Belum ada.</td></tr>';
-  const busy = b && (b.state === 'queued' || b.state === 'running');
+  $('#hist').innerHTML = s.history.length ? s.history.map(h => '<tr><td>' + when(h.at) + '</td><td>' + esc(h.by) + '</td><td class="hide">' + esc(h.name) + '</td></tr>').join('') : '<tr><td colspan="3">Belum ada.</td></tr>';
+  const running = b && (b.state === 'queued' || b.state === 'running');
   clearTimeout(poll);
-  if(busy) poll = setTimeout(load, 10000);
+  if(running) poll = setTimeout(load, 10000);
 }
 
-const UPLOAD_PAUSED = true;   // see functions/api/admin/upload.js
-if(UPLOAD_PAUSED) $('#file').disabled = true;
-$('#file').addEventListener('change', () => { $('#up').disabled = UPLOAD_PAUSED || !$('#file').files.length; $('#upMsg').textContent = ''; });
-$('#up').addEventListener('click', () => {
-  const f = $('#file').files[0]; if(!f) return;
-  if(!/\.xlsx$/i.test(f.name)){ $('#upMsg').textContent = 'Pilih file .xlsx.'; return; }
-  $('#up').disabled = true; $('#bar').style.display = 'block'; $('#upMsg').style.color = 'var(--sub)'; $('#upMsg').textContent = 'Mengunggah ' + f.name + ' (' + mb(f.size) + ')…';
-  const x = new XMLHttpRequest();
-  x.open('POST', '/api/admin/upload');
-  x.setRequestHeader('x-filename', encodeURIComponent(f.name));
-  x.upload.onprogress = e => { if(e.lengthComputable) $('#bar i').style.width = (e.loaded / e.total * 100) + '%'; };
-  x.onload = () => {
-    let r = {}; try { r = JSON.parse(x.responseText); } catch(e) {}
-    $('#bar').style.display = 'none'; $('#bar i').style.width = 0;
-    if(x.status === 200){ $('#upMsg').style.color = 'var(--green)'; $('#upMsg').textContent = 'Terunggah. Build dimulai — status di bawah diperbarui otomatis.'; $('#file').value = ''; }
-    else { $('#upMsg').style.color = 'var(--red)'; $('#upMsg').textContent = 'Gagal: ' + (r.error || x.status); $('#up').disabled = false; }
-    load();
-  };
-  x.onerror = () => { $('#upMsg').style.color = 'var(--red)'; $('#upMsg').textContent = 'Koneksi terputus. Coba lagi.'; $('#up').disabled = false; };
-  x.send(f);
+const PART = 16 * 1024 * 1024;
+const SLOT_ORDER = [['rilis', 'Harian'], ['so', 'Harian'], ['tactical', 'Awal bulan'], ['snop', 'Awal bulan'], ['monitoring', 'Awal bulan']];
+let S = null, busy = false;
+const api = (q, init) => fetch('/api/admin/' + q, init);
+
+function renderSlots(){
+  const inb = {}; S.inbox.forEach(f => inb[f.slot] = f);
+  $('#slots').innerHTML = '<tbody>' + SLOT_ORDER.map(([k, g]) => {
+    const f = inb[k];
+    return '<tr><td style="width:36%"><b>' + esc(S.slots[k]) + '</b><br><span class="note">' + g + '</span></td><td>' +
+      (f ? '<span class="st ok">Terunggah</span> ' + esc(f.name) + ' · ' + mb(f.size) + ' · ' + when(f.at) + ' <a href="#" data-del="' + k + '" style="color:var(--red)">hapus</a><br>' : '') +
+      '<input type="file" data-slot="' + k + '" accept=".xlsx"><div class="bar" id="bar_' + k + '"><i></i></div><div class="note" id="m_' + k + '"></div></td></tr>';
+  }).join('') + '</tbody>';
+  const have = k => !!inb[k], tg = ['tactical', 'snop', 'monitoring'].filter(have).length;
+  $('#go').disabled = busy || !S.inbox.length || (tg > 0 && tg < 3) || !S.store;
+  if(tg > 0 && tg < 3) $('#upMsg').textContent = 'Target butuh tiga file: Tactical, SNOP, dan Monitoring.';
+}
+
+async function uploadSlot(slot, file){
+  const m = $('#m_' + slot), bar = $('#bar_' + slot); busy = true; $('#go').disabled = true;
+  bar.style.display = 'block'; m.style.color = 'var(--sub)';
+  try {
+    if(!/\.xlsx$/i.test(file.name)) throw new Error('Pilih file .xlsx');
+    const q = '?slot=' + slot;
+    let r = await api('upload' + q + '&action=begin&name=' + encodeURIComponent(file.name), {method: 'POST'});
+    let j = await r.json(); if(!r.ok) throw new Error(j.error || r.status);
+    const id = j.uploadId, n = Math.ceil(file.size / PART), parts = [];
+    for(let i = 0; i < n; i++){
+      m.textContent = 'Mengunggah ' + file.name + ' (' + mb(file.size) + ') bagian ' + (i + 1) + '/' + n + '…';
+      let ok = false, err;
+      for(let t = 0; t < 3 && !ok; t++){   // retry a flaky mobile connection per part
+        try {
+          r = await api('upload' + q + '&action=part&uploadId=' + encodeURIComponent(id) + '&n=' + (i + 1), {method: 'POST', body: file.slice(i * PART, (i + 1) * PART)});
+          j = await r.json(); if(!r.ok) { if(r.status < 500) throw Object.assign(new Error(j.error || r.status), {fatal: true}); throw new Error(j.error || r.status); }
+          parts.push({partNumber: j.partNumber, etag: j.etag}); ok = true;
+        } catch(e) { err = e; if(e.fatal) break; }
+      }
+      if(!ok) { await api('upload' + q + '&action=abort&uploadId=' + encodeURIComponent(id), {method: 'POST'}); throw err; }
+      bar.firstChild.style.width = ((i + 1) / n * 100) + '%';
+    }
+    r = await api('upload' + q + '&action=complete&uploadId=' + encodeURIComponent(id), {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({parts, name: file.name, size: file.size})});
+    j = await r.json(); if(!r.ok) throw new Error(j.error || r.status);
+    m.style.color = 'var(--green)'; m.textContent = 'Selesai diunggah.';
+  } catch(e) { m.style.color = 'var(--red)'; m.textContent = 'Gagal: ' + e.message; }
+  busy = false; await load();
+}
+$('#slots').addEventListener('change', e => { const i = e.target; if(i.dataset && i.dataset.slot && i.files[0]) uploadSlot(i.dataset.slot, i.files[0]); });
+$('#slots').addEventListener('click', async e => {
+  const d = e.target.dataset && e.target.dataset.del; if(!d) return; e.preventDefault();
+  await api('upload?slot=' + d, {method: 'DELETE'}); load();
+});
+$('#go').addEventListener('click', async () => {
+  const msg = $('#upMsg'); $('#go').disabled = true; msg.style.color = 'var(--sub)'; msg.textContent = 'Memulai…';
+  const r = await api('start', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({month: +$('#month').value, force: $('#force').checked})});
+  const j = await r.json();
+  if(r.ok){ msg.style.color = 'var(--green)'; msg.textContent = 'Build dimulai — status di bawah diperbarui otomatis.'; $('#force').checked = false; }
+  else { msg.style.color = 'var(--red)'; msg.textContent = 'Gagal: ' + (j.error || r.status); }
+  load();
+});
+(function(){ const sel = $('#month'), cur = new Date().getMonth() + 1;
+  sel.innerHTML = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'].map((n, i) => '<option value="' + (i + 1) + '"' + (i + 1 === cur ? ' selected' : '') + '>' + n + '</option>').join(''); })();
+
+function renderVersions(){
+  $('#vers').innerHTML = S.versions.length ? S.versions.map(v => {
+    const t = v.ts.replace(/^(\d{4})(\d\d)(\d\d)T(\d\d)(\d\d)(\d\d)$/, '$1-$2-$3T$4:$5:$6Z');
+    return '<tr><td>' + when(t) + '</td><td>' + esc(v.note || '') + (v.data && v.data.asOf ? '<br><span class="note">isi: data s.d. ' + esc(v.data.asOf) + (v.data.name ? ' · ' + esc(v.data.name) : '') + '</span>' : '') + '</td><td class="n"><button data-rb="' + esc(v.ts) + '">Kembalikan</button></td></tr>';
+  }).join('') : '<tr><td colspan="3">Belum ada versi tersimpan (muncul setelah update pertama).</td></tr>';
+}
+$('#vers').addEventListener('click', async e => {
+  const ts = e.target.dataset && e.target.dataset.rb; if(!ts) return;
+  if(!confirm('Kembalikan master ke versi ' + ts + ' dan bangun ulang dashboard?')) return;
+  e.target.disabled = true;
+  const r = await api('versions', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({ts})}); const j = await r.json();
+  if(!r.ok) alert('Gagal: ' + (j.error || r.status));
+  load();
+});
+
+/* one-time seed of the master store */
+const SEED_MAP = {'rilis.csv.gz': 'data/rilis.csv.gz', 'so.csv.gz': 'data/so.csv.gz', 'target_ekspeditur.csv.gz': 'data/target_ekspeditur.csv.gz', 'target_distributor.csv.gz': 'data/target_distributor.csv.gz',
+  'settings.json': 'config/settings.json', 'ekspeditur_map.json': 'config/ekspeditur_map.json', 'so_frozen_attrib_master_lama.json': 'config/so_frozen_attrib_master_lama.json'};
+$('#seedFiles').addEventListener('change', () => { const names = [...$('#seedFiles').files].map(f => f.name), miss = Object.keys(SEED_MAP).filter(k => !names.includes(k));
+  $('#seedBtn').disabled = !!miss.length; $('#seedMsg').style.color = 'var(--sub)'; $('#seedMsg').textContent = miss.length ? 'Belum lengkap, kurang: ' + miss.join(', ') : 'Lengkap (' + names.length + ' file).'; });
+$('#seedBtn').addEventListener('click', async () => {
+  const msg = $('#seedMsg'); $('#seedBtn').disabled = true;
+  try {
+    for(const f of [...$('#seedFiles').files]){
+      const p = SEED_MAP[f.name]; if(!p) continue;
+      msg.style.color = 'var(--sub)'; msg.textContent = 'Mengunggah ' + f.name + '…';
+      const r = await api('seed?path=' + encodeURIComponent(p), {method: 'PUT', body: f}); const j = await r.json(); if(!r.ok) throw new Error(f.name + ': ' + (j.error || r.status));
+    }
+    const r = await api('seed', {method: 'POST'}); const j = await r.json(); if(!r.ok) throw new Error(j.error || r.status);
+    msg.style.color = 'var(--green)'; msg.textContent = 'Master awal dimuat. Lanjut ke bagian 1.';
+  } catch(e) { msg.style.color = 'var(--red)'; msg.textContent = 'Gagal: ' + e.message; $('#seedBtn').disabled = false; }
+  load();
 });
 
 /* Viewer password change: same scheme as tools/build_site.py write_lock(). */

@@ -119,6 +119,7 @@ def read_rilis(path,sheets):
         it=w.iter_rows(values_only=True);h=next(it,None)
         if not h: continue
         hm=header_map(h);need=['NO SPJ','TGL SPJ','NAMA PROPINSI','INCOTERM','TONASE']
+        if 'NO SPJ' not in hm: log('  sheet %-28s dilewati (bukan sheet Rilis: kolom NO SPJ tidak ada)'%w.title);continue
         miss=[n for n in need if n not in hm]
         if miss: raise SystemExit('Sheet %s: kolom wajib tidak ditemukan: %s'%(w.title,miss))
         seen_sheets.append(code);n=0
@@ -129,6 +130,7 @@ def read_rilis(path,sheets):
             if r[hm['NAMA PROPINSI']] in PLANT_BATAS and code not in PLANT_BATAS[r[hm['NAMA PROPINSI']]]: continue
             rec={k:(r[i] if i<len(r) else None) for k,i in hm.items()};out.append((code,rec));n+=1
         log('  sheet %-28s baris dalam cakupan: %d'%(w.title,n))
+    if not seen_sheets: raise SystemExit('Tidak ada sheet Rilis (kolom NO SPJ) di file ini. Salah slot upload?')
     return out,seen_sheets,tot
 def cmd_rilis(a):
     sheets=set(a.sheets.split(',')) if a.sheets else None
@@ -212,7 +214,9 @@ def ton(uom,prod,q,defaults):
     return q*kg/1000
 def cmd_so(a):
     log('== SO',a.input,dt.datetime.now().strftime('%Y-%m-%d %H:%M'))
-    wb=openpyxl.load_workbook(a.input,read_only=True,data_only=True);ws=wb['List SO'];it=ws.iter_rows(values_only=True);hm=header_map(next(it))
+    wb=openpyxl.load_workbook(a.input,read_only=True,data_only=True)
+    if 'List SO' not in wb.sheetnames: raise SystemExit('Sheet "List SO" tidak ada di file ini (sheet: %s). Salah slot upload?'%wb.sheetnames)
+    ws=wb['List SO'];it=ws.iter_rows(values_only=True);hm=header_map(next(it))
     need=['Sales Order','Product Code','Line','Tanggal Kirim','Incoterm','Qty SO','UOM','Qty Release','Qty Rest SO','Propinsi','Rejection','Blocking','Keterangan']
     miss=[n for n in need if n not in hm]
     if miss: raise SystemExit('Kolom wajib tidak ditemukan di List SO: %s'%miss)

@@ -1,21 +1,49 @@
-# Halaman admin: upload master Excel dari web
+# Halaman admin: update data dari web
 
-> **Status: upload dinonaktifkan sementara.** Dashboard dibangun dari MASTER BARU lewat Mac (`tools/run_build.bat`). Lihat README.
-
-Admin membuka `https://logistik-sp.pages.dev/admin`, masuk dengan Google, lalu meng-upload
-`MASTER_DATA_OUTBOUND_LOGISTIC.xlsx`. Dashboard ter-update otomatis dalam ±3–5 menit.
+Admin membuka `https://logistik-sp.pages.dev/admin`, masuk dengan Google, mengunggah file ekspor apa adanya
+(Rilis + SO tiap hari; Tactical + SNOP + Monitoring di awal bulan), lalu menekan **Proses update**.
+Dashboard ter-update otomatis dalam ±5–15 menit, tanpa Mac atau GitHub Desktop.
 
 ```
 Admin (HP/laptop) ─ Google login (Cloudflare Access + cek di kode) ─► /admin
-   upload .xlsx ─► R2 (privat) ─► memicu GitHub Action
-                                   └─ unduh master → build_site.py (tanpa kata sandi, pakai tools/lock.json)
-                                      → push data/ → Cloudflare Pages + GitHub Pages ter-update
-                                      → status + log build dikirim balik ke /admin
+   pilih file ─► dipotong 16 MB di browser ─► R2 privat: inbox/<slot>.xlsx
+   "Proses update" ─► GitHub Action (repository_dispatch)
+        unduh store master (R2) + inbox ─► tools/master/run_web.py
+          Target (jika 3 file ada) → 01_TARGET.xlsx → Rilis → SO → rapikan kemasan
+        ─► tools/build_site_baru.py (kunci publik tools/lock.json, tanpa kata sandi)
+        ─► commit data/site.enc + data/meta.json + index.html
+        ─► store baru ke R2: versi lama disimpan (7 terakhir), inbox yang terproses dihapus
+        ─► status + log dikirim balik ke /admin
 ```
 
-- Kata sandi penonton **tidak disimpan di server mana pun**. Ganti kata sandi dikerjakan di browser admin (kunci privat dikunci ulang), server hanya menerima kunci yang sudah terkunci.
-- Master Excel hanya ada di R2 (bucket privat, versi terakhir saja) dan sesaat di mesin build. Tidak pernah masuk repo atau log GitHub (repo ini publik); log build hanya tampil di halaman admin.
-- Build lewat Mac tetap bisa seperti biasa.
+## Isi R2 (bucket privat `logistik-sp-master`)
+| Awalan | Isi |
+|---|---|
+| `store/current/` | master aktif: `data/rilis.csv.gz`, `so.csv.gz`, `target_*.csv.gz`, `config/*.json`, `_meta.json` |
+| `store/versions/<waktu>/` | 7 salinan terakhir sebelum tiap update / rollback |
+| `store/staging/` | hasil run yang belum dipromosikan (dipakai sesaat) |
+| `inbox/<slot>.xlsx` | file mentah yang diunggah (rilis, so, tactical, snop, monitoring); dihapus setelah berhasil diproses |
+| `state/` | status build, opsi, riwayat |
+
+Master (rilis/SO/target) **tidak pernah** ada di repo. Di mesin build hanya ada di folder sementara runner dan
+dihapus di akhir. Output tiap langkah ditulis ke berkas log yang dikirim ke halaman admin, bukan ke log GitHub (publik).
+
+## Pemakaian
+1. **Sekali saja (bagian 0):** pilih ketujuh file master dari folder `MASTER BARU` (4 × `data/*.csv.gz`, 3 × `config/*.json`).
+2. **Harian (bagian 1):** pilih Rilis dan SO → tunggu "Terunggah" → **Proses update**. Upload ulang hari yang sama aman
+   (kunci NO SPJ / SO+produk+line menggantikan baris lama, tidak ada duplikat).
+3. **Awal bulan:** tambah Tactical + SNOP (versi sheet "Rincian") + Monitoring, pilih bulan target.
+4. **Rollback (bagian 4):** tombol *Kembalikan* pada versi yang diinginkan memulihkan master lalu membangun ulang dashboard.
+   Rollback juga tersimpan sebagai versi, jadi bisa dibatalkan.
+- Guardrail (SPJ dobel, tanggal di luar rentang, jumlah baris turun >10%, tonase tidak valid) menghentikan build
+  dan menampilkan alasannya di log admin; master tersimpan dan dashboard tidak berubah. Centang *Abaikan guardrail* hanya bila sengaja.
+- Tidak ada file mentah yang diganti nama: slot menentukan jenis file. Format kolom: lihat `TEMPLATE_UPDATE_HARIAN.xlsx`
+  (di folder MASTER BARU, bukan di repo) atau ringkasan di bawah.
+
+### Kolom wajib
+- **Rilis** (satu sheet per plant, nama sheet diawali kode plant): `NO SPJ`, `TGL SPJ`, `NAMA PROPINSI`, `INCOTERM`, `TONASE`; kolom lain sesuai ekspor.
+- **SO** (sheet `List SO`): `Sales Order`, `Product Code`, `Line`, `Tanggal Kirim`, `Incoterm`, `Qty SO`, `UOM`, `Qty Release`, `Qty Rest SO`, `Propinsi`, `Rejection`, `Blocking`, `Keterangan` (hanya `AP1` diambil).
+- **Target:** tiga file ekspor sekaligus; skrip `tools/master/update_target.py` yang membacanya.
 
 ## Setup sekali (±60 menit)
 
@@ -69,5 +97,10 @@ Ubah email di policy Access (langkah 3.4) **dan** di `ADMIN_EMAILS` (langkah 4).
 kode memeriksa daftar sendiri, jadi salah konfigurasi Access saja tidak membuka akses.
 
 ## Kalau build gagal
-Status **Gagal** di halaman admin menampilkan log build (mis. sheet atau kolom yang hilang). Perbaiki master, upload ulang.
-Data di dashboard tetap versi terakhir yang berhasil.
+Status **Gagal** menampilkan log (mis. sheet/kolom hilang, guardrail). Perbaiki file lalu unggah ulang slot itu dan tekan Proses update lagi.
+Dashboard dan master tersimpan tetap versi terakhir yang berhasil. Jika dashboard sudah terbit tetapi simpan master gagal
+(pesan di akhir log), unggah file hari itu lagi: upsert membuatnya konsisten.
+
+## Cadangan: build lewat Mac
+`tools/run_build.bat` (master di folder `MASTER BARU`, `run_harian.py`) tetap bisa dipakai. Hati-hati: master di Mac dan di R2 adalah dua salinan;
+pilih satu jalur per periode, atau muat ulang master awal ke R2 (hapus `store/` di R2 lebih dulu).

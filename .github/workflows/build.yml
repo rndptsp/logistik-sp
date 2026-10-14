@@ -1,6 +1,6 @@
-# Builds data/ from the master Excel uploaded on the admin page (Cloudflare), then pushes it.
-# The master is downloaded into the runner's temp folder only: never committed, never an artifact.
-# The build log stays out of this (public) log and goes to the admin page instead.
+# Builds data/ from the master store + files uploaded on the admin page (Cloudflare R2), then pushes it.
+# Raw uploads and the master store are downloaded into the runner's temp folder only: never committed, never an
+# artifact, and every step's output goes to a log file that is sent to the admin page (this repo/log is public).
 name: Build data from admin upload
 on:
   repository_dispatch:
@@ -14,12 +14,14 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 60
     env:
       TZ: Asia/Jakarta            # H-1 rule: "today" must be Indonesian today, not UTC
       ADMIN_URL: ${{ secrets.ADMIN_URL }}
       BUILD_TOKEN: ${{ secrets.BUILD_TOKEN }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      MASTER_HOME: ${{ runner.temp }}/master
+      INBOX: ${{ runner.temp }}/inbox
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -28,12 +30,12 @@ jobs:
       - run: pip install -q -r tools/requirements.txt
       - name: Report running
         run: python3 tools/ci_report.py running
-      - name: Download master
-        run: |
-          mkdir -p "$RUNNER_TEMP/m"
-          curl -fsS -H "Authorization: Bearer $BUILD_TOKEN" "$ADMIN_URL/api/build/master" -o "$RUNNER_TEMP/m/master.xlsx"
-      - name: Build (log goes to the admin page)
-        run: python3 tools/build_site.py --master "$RUNNER_TEMP/m/master.xlsx" > "$RUNNER_TEMP/build.log" 2>&1
+      - name: Download master store + uploaded files
+        run: python3 tools/ci_store.py pull "$MASTER_HOME" "$INBOX" > "$RUNNER_TEMP/build.log" 2>&1
+      - name: Update master (log goes to the admin page)
+        run: python3 tools/master/run_web.py --inbox "$INBOX" >> "$RUNNER_TEMP/build.log" 2>&1
+      - name: Build site (log goes to the admin page)
+        run: MASTER_BARU="$MASTER_HOME" python3 tools/build_site_baru.py --master x >> "$RUNNER_TEMP/build.log" 2>&1
       - name: Commit and push data
         run: |
           mkdir -p "$RUNNER_TEMP/out" && cp data/site.enc data/meta.json "$RUNNER_TEMP/out/"
@@ -46,15 +48,21 @@ jobs:
             cp "$RUNNER_TEMP/out/site.enc" "$RUNNER_TEMP/out/meta.json" data/
             sed -E -i "s/(style\.css|app\.js|sumatra\.js)\?v=[^\"]*/\1?v=$BUILD/g" index.html
             git add data/site.enc data/meta.json index.html
-            if git diff --cached --quiet; then echo "Data tidak berubah."; exit 0; fi
+            if git diff --cached --quiet; then echo "Data tidak berubah." >> "$RUNNER_TEMP/build.log"; exit 0; fi
             git commit -q -m "Update data dari upload admin: data s.d. $ASOF ($BUILD)"
             git push -q origin main && exit 0
             sleep 5
           done
           exit 1
+      - name: Save updated master store (only after the site is published)
+        run: |
+          if [ -n "$(ls -A "$INBOX"/*.xlsx 2>/dev/null)" ]; then
+            python3 tools/ci_store.py push "$MASTER_HOME" >> "$RUNNER_TEMP/build.log" 2>&1
+            python3 tools/ci_store.py promote "$MASTER_HOME" >> "$RUNNER_TEMP/build.log" 2>&1
+          else echo "Tanpa file baru: master tersimpan tidak berubah." >> "$RUNNER_TEMP/build.log"; fi
       - name: Report result
         if: always()
         run: python3 tools/ci_report.py ${{ job.status == 'success' && 'ok' || 'failed' }}
-      - name: Remove master
+      - name: Remove master and uploads
         if: always()
-        run: rm -rf "$RUNNER_TEMP/m" "$RUNNER_TEMP/build.log"
+        run: rm -rf "$MASTER_HOME" "$INBOX" "$RUNNER_TEMP/build.log" "$RUNNER_TEMP/out"

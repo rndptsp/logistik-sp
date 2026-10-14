@@ -17,7 +17,7 @@ seluruh data terenkripsi (AES-GCM) di `data/site.enc` dan hanya terbuka dengan k
 
 ## Update data lewat web (admin)
 
-Lihat **ADMIN.md**: admin login Google di `/admin`, upload master Excel, dashboard ter-update otomatis. Cara lewat Mac di bawah tetap berlaku.
+Lihat **ADMIN.md**: admin login Google di `/admin`, unggah file ekspor (Rilis + SO harian; Tactical + SNOP + Monitoring awal bulan), dashboard ter-update otomatis; ada rollback tujuh versi. Cara lewat Mac di bawah tetap berlaku sebagai cadangan.
 
 ## Update data (rutin) — master baru (MASTER BARU)
 
@@ -28,7 +28,7 @@ Sumber data sekarang folder `02. DASHBOARD/MASTER BARU` (Rilis, SO, Target; liha
 3. Commit & push `data/`, `index.html` sekali.
 
 Filter Kemasan (ZAK / CURAH / JUMBO BAG) default ZAK. Sumatera Selatan (CP Indarung saja) tampil tanpa menambah capaian.
-**Upload di /admin dinonaktifkan** (`UPLOAD_PAUSED` di `functions/api/admin/upload.js` dan `admin/index.html`): server build (`build.yml`) masih memakai master Excel lama (`build_site.py`) dan akan menimpa dashboard dengan data format lama. Aktifkan lagi setelah `build.yml` membangun dari MASTER BARU.
+Upload di /admin aktif: `build.yml` membangun dari store master di R2 + file unggahan (`tools/master/run_web.py` lalu `tools/build_site_baru.py`). Builder lama (`build_site.py`, `run_build_lama.bat`) tinggal sebagai cadangan.
 **Target per kemasan:** kolom opsional `KEMASAN` di sheet *Target Ekspeditur* (`01_TARGET.xlsx`): ZAK / CURAH / JUMBO (BAG); kosong = ZAK. Capaian hanya menghitung realisasi kemasan yang punya target; kemasan tanpa target hanya tampil sebagai volume.
 **Incoterm:** FRC = truk saja. FRC kontainer, FRC kapal dan FOT kontainer adalah incoterm terpisah (filter sendiri). Real/SO hanya untuk FRC truk (SO dibaca hanya baris INCOTERM = FRC). FRC* = target ekspeditur; FOT/FOB/FAS = target distributor.
 Builder lama (`build_site.py`, `run_build_lama.bat`) tetap ada sebagai cadangan.

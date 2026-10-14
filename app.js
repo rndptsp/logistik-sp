@@ -569,14 +569,17 @@ function renderFilterPanel(){
   const inc = INCS().map(x => [x, incLbl(x)]).concat([['ALL', 'Semua']]).map(x => '<span data-inc="' + x[0] + '" class="' + (draft.inc === x[0] ? 'on' : '') + '">' + x[1] + '</span>').join('');
   const kem = (KEMS().length ? KEMS().map(x => [x, x]).concat([['ALL', 'Semua']]) : []).map(x => '<span data-kem="' + x[0] + '" class="' + (draft.kem === x[0] ? 'on' : '') + '">' + x[1] + '</span>').join('');
   const tgt = [['SNOP','SNOP'],['INTERNAL','Internal (115% SNOP)']].map(x => '<span data-tgt="' + x[0] + '" class="' + (draft.tgt === x[0] ? 'on' : '') + '">' + x[1] + '</span>').join('');
-  const src = D.sources.map(s2 => '<label class="fp-check"><input type="checkbox" data-src="' + esc(s2) + '"' + (draft.srcOff.has(s2) ? '' : ' checked') + '> ' + esc(tc(s2)) + (s2 === DEFAULT_SRC ? ' <small>(default)</small>' : '') + '</label>').join('');
+  const src = D.sources.map(s2 => '<label class="fp-check"><input type="checkbox" data-src="' + esc(s2) + '"' + (draft.srcOff.has(s2) ? '' : ' checked') + '> ' + esc(s2.toUpperCase()) + (s2 === DEFAULT_SRC ? ' <small>(default)</small>' : '') + '</label>').join('');
+  const tip = (t, r) => '<span class="fp-info' + (r ? ' r' : '') + '" tabindex="0" data-info="' + esc(t) + '">i</span>';
+  const kemTip = 'Default ZAK. Target tersedia untuk: ' + [...D.tgtKem].map(k => KEMS()[k]).join(', ') + '. Kemasan tanpa target tidak dihitung dalam capaian.';
+  const incTip = '% pencapaian = realisasi incoterm terpilih vs target ' + tgtLbl() + '-nya sampai hari data terakhir. Target FRC dibagi ke ekspeditur, target FOT ke distributor.';
+  const srcTip = 'Berlaku untuk semua halaman: peta, grafik, tabel, ekspeditur, distributor, armada & prognosa. Pilihan tersimpan selama sesi.';
   $('#filterPanel').innerHTML =
     '<div class="fp-row"><div class="fp-group"><label class="fl">Periode</label><div class="fp-chips" style="margin-bottom:10px">' + mode + '</div>' + body + '</div>' +
-    '<div class="fp-group"><label class="fl">Incoterm</label><div class="fp-chips">' + inc + '</div><div style="font-size:11.5px;color:var(--sub);margin-top:8px;line-height:1.5">% pencapaian = realisasi incoterm terpilih vs target ' + tgtLbl() + '-nya sampai hari data terakhir. Target FRC dibagi ke ekspeditur, target FOT ke distributor.</div></div></div>' +
-    (kem ? '<div class="fp-row"><div class="fp-group"><label class="fl">Kemasan</label><div class="fp-chips">' + kem + '</div><div style="font-size:11.5px;color:var(--sub);margin-top:8px;line-height:1.5">Default ZAK. Target tersedia untuk: ' + [...D.tgtKem].map(k => KEMS()[k]).join(', ') + '. Kemasan tanpa target tidak dihitung dalam capaian.</div></div><div class="fp-group"></div></div>' : '') +
-    '<div class="fp-row"><div class="fp-group"><label class="fl">Target</label><div class="fp-chips">' + tgt + '</div></div><div class="fp-group"></div></div>' +
-    '<div class="fp-row"><div class="fp-group"><label class="fl">Source plant</label>' + src + '</div>' +
-    '<div class="fp-group"><label class="fl">Berlaku untuk</label><div style="font-size:12px;color:var(--gray-d);line-height:1.6">Semua halaman: peta, grafik, tabel, ekspeditur, distributor, armada &amp; prognosa. Pilihan tersimpan selama sesi.</div></div></div>' +
+    '<div class="fp-group"><label class="fl">Incoterm' + tip(incTip, true) + '</label><div class="fp-chips">' + inc + '</div></div></div>' +
+    '<div class="fp-row">' + (kem ? '<div class="fp-group"><label class="fl">Kemasan' + tip(kemTip) + '</label><div class="fp-chips">' + kem + '</div></div>' : '<div class="fp-group"></div>') +
+    '<div class="fp-group"><label class="fl">Target' + tip('SNOP = target resmi. Internal = 115% dari SNOP.', true) + '</label><div class="fp-chips">' + tgt + '</div></div></div>' +
+    '<div class="fp-group" style="margin-bottom:18px"><label class="fl">Source plant' + tip(srcTip) + '</label><div class="fp-cols">' + src + '</div></div>' +
     '<div class="fp-foot"><div class="fp-reset" data-act="reset">Reset filter</div><div class="fp-apply" data-act="apply">Terapkan</div></div>';
 }
 function filterStrip(){
@@ -590,7 +593,7 @@ function filterStrip(){
 /* "plant CP Indarung" / "3 dari 18 plant" / "semua plant" (short enough for the filter strip) */
 function srcTxt(){
   const on = D.sources.filter(s => !F.srcOff.has(s));
-  return on.length === D.sources.length ? 'semua plant' : on.length <= 2 ? 'plant <b>' + on.map(s => esc(tc(s))).join(', ') + '</b>' : '<b>' + on.length + '</b> dari ' + D.sources.length + ' plant';
+  return on.length === D.sources.length ? 'semua plant' : on.length <= 2 ? 'plant <b>' + on.map(s => esc(s.toUpperCase())).join(', ') + '</b>' : '<b>' + on.length + '</b> dari ' + D.sources.length + ' plant';
 }
 function applyFilter(){
   const k = draft.per.kind;

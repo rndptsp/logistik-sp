@@ -8,7 +8,7 @@
 import {json, SLOTS} from '../../../lib/admin.js';
 
 const MAX_MB = 400, PART_MIN = 5 * 1024 * 1024;
-const UPLOAD_PAUSED = true;   // set to false when the Action in .github/workflows/build.yml runs the master pipeline (see ADMIN.md)
+const UPLOAD_PAUSED = false;   // set to false when the Action in .github/workflows/build.yml runs the master pipeline (see ADMIN.md)
 
 export async function onRequestPost({request, env, data}){
   if(UPLOAD_PAUSED) return json({error: 'Upload dinonaktifkan sementara.'}, 409);
