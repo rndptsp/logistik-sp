@@ -540,7 +540,8 @@ const C = {
 
 /* ===================== Shell: nav, filter, search ===================== */
 function setActiveNav(key){ $$('#mainNav .navitem').forEach(n => n.classList.toggle('on', n.dataset.nav === key)); }
-function closeNav(){ $$('#mainNav .navitem').forEach(n => n.classList.remove('open')); }
+function syncNavAria(){ $$('#mainNav .navitem').forEach(n => { const b = n.querySelector('[data-toggle]'); if(b) b.setAttribute('aria-expanded', n.classList.contains('open') ? 'true' : 'false'); }); }
+function closeNav(){ $$('#mainNav .navitem').forEach(n => n.classList.remove('open')); syncNavAria(); }
 function buildNav(){
   const pm = summarize('prov', PER());
   const provs = [...pm.values()].filter(o => o.vol > 0 || o.tgt > 0).sort((a, b) => b.vol - a.vol);
@@ -1479,12 +1480,14 @@ function bindEvents(){
       saveFilter();
       closeQuick(); closeNav(); closeFilter(); buildNav(); filterStrip(); route(); return;
     }
+    if(e.target.closest('#navBurger')){ const hd = $('header'), o = hd.classList.toggle('nav-open'); $('#navBurger').setAttribute('aria-expanded', o ? 'true' : 'false'); if(!o) closeNav(); return; }
+    if(window.innerWidth <= 1100 && e.target.closest('#mainNav a[href]')) $('header').classList.remove('nav-open');
     const tgl = e.target.closest('[data-toggle]');
     if(tgl){
       const item = tgl.parentElement, was = item.classList.contains('open');
       closeNav();
       if(!was){
-        closeFilter(); item.classList.add('open');
+        closeFilter(); item.classList.add('open'); syncNavAria();
         const panel = item.querySelector('.dropdown,.mega,.filter-panel');   // on narrow screens panels are position:fixed under the header
         if(panel) panel.style.top = window.innerWidth <= 1100 ? ($('header').getBoundingClientRect().bottom + 4) + 'px' : '';
       }
@@ -1549,7 +1552,15 @@ function bindEvents(){
     if(e.target.id === 'fpMonth') draft.per.month = e.target.value;
     if(e.target.id === 'fpFrom') draft.from = e.target.value;
     if(e.target.id === 'fpTo') draft.to = e.target.value; });
-  document.addEventListener('keydown', e => { if(e.key === 'Escape'){ closeNav(); closeFilter(); closeModal(); $('#searchResults').classList.remove('show'); } });
+  $$('#mainNav [data-toggle]').forEach(b => { b.setAttribute('role', 'button'); b.setAttribute('tabindex', '0'); b.setAttribute('aria-haspopup', 'true'); b.setAttribute('aria-expanded', 'false'); });
+  document.addEventListener('keydown', e => {
+    const t = e.target;
+    if(t && t.matches && t.matches('#mainNav [data-toggle]') && (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown')){ e.preventDefault(); if(!(e.key === 'ArrowDown' && t.parentElement.classList.contains('open'))) t.click(); const f = t.parentElement.classList.contains('open') && t.parentElement.querySelector('a'); if(f && e.key === 'ArrowDown') f.focus(); }
+    if(t && t.closest && t.closest('#mainNav .dropdown,#mainNav .mega') && (e.key === 'ArrowDown' || e.key === 'ArrowUp')){ const l = [...t.closest('.navitem').querySelectorAll('.dropdown a,.mega a')], i = l.indexOf(t); if(i >= 0){ e.preventDefault(); l[(i + (e.key === 'ArrowDown' ? 1 : -1) + l.length) % l.length].focus(); } }
+    if(e.key === '/' && !/^(INPUT|TEXTAREA|SELECT)$/.test((t && t.tagName) || '')){ const sbx = $('#searchBox'); if(sbx && sbx.offsetParent){ e.preventDefault(); sbx.focus(); } }
+    if(e.key === 'Escape'){ const hd = $('header'); hd.classList.remove('nav-open'); $('#navBurger').setAttribute('aria-expanded', 'false');  closeNav(); closeFilter(); closeModal(); $('#searchResults').classList.remove('show'); } });
+  /* desktop: open menus on hover with small intent delay */
+  if(window.matchMedia('(hover:hover)').matches){ let ht; $$('#mainNav .navitem').forEach(n => { if(!n.querySelector('[data-toggle]')) return; n.addEventListener('mouseenter', () => { if(window.innerWidth <= 1100) return; clearTimeout(ht); ht = setTimeout(() => { const b = n.querySelector('[data-toggle]'); if(!n.classList.contains('open')) b.click(); }, 120); }); n.addEventListener('mouseleave', () => { clearTimeout(ht); if(window.innerWidth > 1100) ht = setTimeout(() => { n.classList.remove('open'); syncNavAria(); }, 200); }); }); }
   const sb = $('#searchBox');
   sb.addEventListener('input', () => doSearch(sb.value));
   sb.addEventListener('focus', () => doSearch(sb.value));
