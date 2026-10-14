@@ -4,7 +4,7 @@
     ci_store.py push  <home>           upload the updated store files to staging (nothing becomes current yet)
     ci_store.py promote <home>         staging -> current (previous current kept as a version), processed inbox removed
 Needs ADMIN_URL, BUILD_TOKEN. Data only ever lands in the folders given (the runner's temp dir)."""
-import json, os, sys, urllib.request
+import json, os, sys, urllib.request, urllib.error
 
 URL = os.environ["ADMIN_URL"].rstrip("/") + "/api/build/"
 H = {"authorization": "Bearer " + os.environ["BUILD_TOKEN"]}
@@ -45,4 +45,7 @@ def main():
         body = {"asOf": meta.get("asOf"), "build": meta.get("build"), "inbox": json.load(open(os.path.join(home, "_inbox_pulled.json")))}
         print(json.load(call("promote", "POST", json.dumps(body).encode(), "application/json")))
     else: sys.exit("perintah tidak dikenal")
-main()
+try:
+    main()
+except urllib.error.HTTPError as e:
+    print("GAGAL: server menjawab HTTP %s untuk %s" % (e.code, e.url.replace(URL, "/api/build/")), file=sys.stderr); sys.exit(1)

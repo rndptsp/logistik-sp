@@ -131,7 +131,7 @@ function renderSlots(){
     const f = inb[k];
     return '<tr><td style="width:36%"><b>' + esc(S.slots[k]) + '</b><br><span class="note">' + g + '</span></td><td>' +
       (f ? '<span class="st ok">Terunggah</span> ' + esc(f.name) + ' · ' + mb(f.size) + ' · ' + when(f.at) + ' <a href="#" data-del="' + k + '" style="color:var(--red)">hapus</a><br>' : '') +
-      '<input type="file" data-slot="' + k + '" accept=".xlsx"><div class="bar" id="bar_' + k + '"><i></i></div><div class="note" id="m_' + k + '"></div></td></tr>';
+      '<a href="template/TEMPLATE_' + k.replace('tactical','TACTICAL').toUpperCase() + '.xlsx" download style="float:right;font-size:12px;color:var(--red);font-weight:700">⬇ Unduh template</a><input type="file" data-slot="' + k + '" accept=".xlsx"><div class="bar" id="bar_' + k + '"><i></i></div><div class="note" id="m_' + k + '"></div></td></tr>';
   }).join('') + '</tbody>';
   const have = k => !!inb[k], tg = ['tactical', 'snop', 'monitoring'].filter(have).length;
   $('#go').disabled = busy || (tg > 0 && tg < 3) || !S.store;
