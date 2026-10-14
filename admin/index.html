@@ -134,7 +134,8 @@ function renderSlots(){
       '<input type="file" data-slot="' + k + '" accept=".xlsx"><div class="bar" id="bar_' + k + '"><i></i></div><div class="note" id="m_' + k + '"></div></td></tr>';
   }).join('') + '</tbody>';
   const have = k => !!inb[k], tg = ['tactical', 'snop', 'monitoring'].filter(have).length;
-  $('#go').disabled = busy || !S.inbox.length || (tg > 0 && tg < 3) || !S.store;
+  $('#go').disabled = busy || (tg > 0 && tg < 3) || !S.store;
+  $('#go').textContent = S.inbox.length ? 'Proses update' : 'Bangun ulang dari master';
   if(tg > 0 && tg < 3) $('#upMsg').textContent = 'Target butuh tiga file: Tactical, SNOP, dan Monitoring.';
 }
 
@@ -173,7 +174,7 @@ $('#slots').addEventListener('click', async e => {
 });
 $('#go').addEventListener('click', async () => {
   const msg = $('#upMsg'); $('#go').disabled = true; msg.style.color = 'var(--sub)'; msg.textContent = 'Memulai…';
-  const r = await api('start', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({month: +$('#month').value, force: $('#force').checked})});
+  const r = await api('start', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({month: +$('#month').value, force: $('#force').checked, rebuild: !S.inbox.length})});
   const j = await r.json();
   if(r.ok){ msg.style.color = 'var(--green)'; msg.textContent = 'Build dimulai — status di bawah diperbarui otomatis.'; $('#force').checked = false; }
   else { msg.style.color = 'var(--red)'; msg.textContent = 'Gagal: ' + (j.error || r.status); }
