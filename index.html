@@ -8,7 +8,7 @@ if(/\.github\.io$/.test(location.hostname)) location.replace('https://logistik-s
 <meta name="robots" content="noindex, nofollow">
 <title>Outbound Logistics — Semen Padang</title>
 <link rel="icon" href="assets/icon-192.png">
-<link rel="stylesheet" href="style.css?v=build.2026.10.15.0237">
+<link rel="stylesheet" href="style.css?v=build.2026.10.15.0305">
 </head>
 <body>
 
@@ -50,11 +50,25 @@ if(/\.github\.io$/.test(location.hostname)) location.replace('https://logistik-s
         <div class="navbtn" data-toggle>Ekspeditur <span class="caret">&#9660;</span></div>
         <div class="mega mega-eksp">
           <div class="mega-title">Ekspeditur FRC &middot; capaian bulan terpilih</div>
-          <div class="eksp-grid" id="navEkspList"></div>
+          <div class="eksp-wrap" id="navEkspList"></div>
           <a class="mega-foot" href="#/ekspeditur">Peringkat &amp; scorecard semua ekspeditur &rsaquo;</a>
         </div>
       </div>
-      <div class="navitem" data-nav="armada"><a class="navbtn" href="#/armada">Armada</a></div>
+      <div class="navitem" data-nav="distributor">
+        <div class="navbtn" data-toggle>Distributor <span class="caret">&#9660;</span></div>
+        <div class="mega mega-eksp">
+          <div class="mega-title">Distributor &middot; volume periode terpilih</div>
+          <div class="eksp-grid" id="navDistrList"></div>
+          <a class="mega-foot" href="#/distributor">Semua distributor &amp; toko tujuan &rsaquo;</a>
+        </div>
+      </div>
+      <div class="navitem" data-nav="armada">
+        <div class="navbtn" data-toggle>Armada <span class="caret">&#9660;</span></div>
+        <div class="dropdown">
+          <a href="#/armada">Truk &middot; moda darat<small>Truk aktif, trip, SLA, daftar per ekspeditur</small></a>
+          <a href="#/kapal">Kapal &middot; moda laut<small>Tonase per kapal: FOB, FAS, kontainer</small></a>
+        </div>
+      </div>
       <div class="navitem" data-nav="prognosa">
         <div class="navbtn" data-toggle>Prognosa <span class="caret">&#9660;</span></div>
         <div class="dropdown">
@@ -76,7 +90,7 @@ if(/\.github\.io$/.test(location.hostname)) location.replace('https://logistik-s
   <footer class="foot" id="foot"></footer>
 </div>
 
-<script src="assets/sumatra.js?v=build.2026.10.15.0237"></script>
-<script src="app.js?v=build.2026.10.15.0237"></script>
+<script src="assets/sumatra.js?v=build.2026.10.15.0305"></script>
+<script src="app.js?v=build.2026.10.15.0305"></script>
 </body>
 </html>

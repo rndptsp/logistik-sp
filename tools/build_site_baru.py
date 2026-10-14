@@ -270,7 +270,8 @@ def build(cfg):
         last_day[month] = max(last_day.get(month, 0), d.day)
         p, di = prov(up(r.get("NAMA_PROPINSI"))), dist(up(r.get("NAMA_AREA_DISTRIK")))
         dist_prov.setdefault(di, p)
-        e = eksp(up(r.get("EXPEDITUR_KODE")) if frc else "")
+        kapal = up(r.get("NAMA_KAPAL"))   # sea shipments (FOB/FAS): the vessel is the carrier, i.e. the "ekspeditur"
+        e = eksp(up(r.get("EXPEDITUR_KODE")) if frc else ("KAPAL " + kapal if kapal else ""))
         s = src(up(r.get("SOURCE_PLANT")))
         dwell = r.get("DWELL_TIME_JAM")
         ok_dwell = dwell not in (None, "") and not r.get("DWELL_WAITING_FLAG") and 0 <= num(dwell) <= 48
