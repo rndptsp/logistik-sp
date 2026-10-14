@@ -12,11 +12,12 @@ Never touches git. The old builder (build_site.py, master Excel lama) stays as a
 Business rules:
   - Realisasi date = TGL_SPJ; only rows with tonnage; today's rows skipped (site shows up to H-1); duplicate SPJ skipped.
   - Incoterm = INCOTERMS below (FRC*, FOT*, FOB, FAS); kemasan ZAK / CURAH / JUMBO BAG (empty = ZAK).
-  - Target = 01_TARGET.xlsx, zak only: FRC* rows per ekspeditur, other incoterms per distributor (EXPEDITUR_KODE
-    holds the distributor). Target MTD = sum of daily D1..D<last data day>.
+  - Target = 01_TARGET.xlsx: FRC* rows per ekspeditur, other incoterms per distributor (EXPEDITUR_KODE holds the
+    distributor). Optional column KEMASAN (ZAK / CURAH / JUMBO BAG, empty = ZAK): curah and jumbo targets are
+    used when present. Target MTD = sum of daily D1..D<last data day>.
   - Provinsi non-kinerja: target 0 for every combination with realisasi, so it shows 100% and the site keeps it
     out of totals.
-  - SO = FRC* only, by TGL_KIRIM (SOCC).
+  - SO = FRC (truk) only, by TGL_KIRIM (SOCC). FRC CONTAINER / FRC KAPAL are separate incoterms.
 """
 import base64, datetime, gzip, json, os, re, secrets, sys, time
 from collections import defaultdict
@@ -221,7 +222,8 @@ def build(cfg):
     prov, dist, eksp, src, distr, truck, toko = Dict(), Dict(), Dict(), Dict(), Dict(), Dict(), Dict()
     kem_d = Dict()
     kem_d("ZAK"); kem_d("CURAH"); kem_d("JUMBO BAG")
-    kemasan = lambda v: kem_d(up(v) or "ZAK")
+    KEM_ALIAS = {"SAK": "ZAK", "JUMBO": "JUMBO BAG", "JUMBO 1 TON": "JUMBO BAG", "JUMBOBAG": "JUMBO BAG"}
+    kemasan = lambda v: kem_d(KEM_ALIAS.get(up(v), up(v)) or "ZAK")
     toko_meta = {}
     dist_prov = {}
 
@@ -308,16 +310,18 @@ def build(cfg):
         code = up(r.get("EXPEDITUR_KODE"))
         s = src(up(r.get("SOURCE_PLANT")))
         ton = round(num(r.get("TARGET_TON_BULAN")), 3)
+        kem = kemasan(r.get("KEMASAN"))   # optional column; empty = ZAK
         if inc.startswith("FRC"):
-            targets.append([month, p, di, eksp(code), s, ton, daily, INCOTERMS.index(inc), -1])
+            targets.append([month, p, di, eksp(code), s, ton, daily, INCOTERMS.index(inc), -1, kem])
         else:   # distributor target: EXPEDITUR_KODE holds the distributor
-            targets.append([month, p, di, eksp(""), s, ton, daily, INCOTERMS.index(inc), distr(code)])
-    print(f"  target rows: {len(targets):,} ({', '.join(sorted({t[0] for t in targets}))})")
+            targets.append([month, p, di, eksp(""), s, ton, daily, INCOTERMS.index(inc), distr(code), kem])
+    print(f"  target rows: {len(targets):,} ({', '.join(sorted({t[0] for t in targets}))}); kemasan: "
+          f"{', '.join(sorted({kem_d.items[t[9]] for t in targets}))}")
 
-    # ---------------- Sales Order (03_SO.xlsx / data/so.csv.gz): FRC only, SOCC by delivery day ----------------
+    # ---------------- Sales Order (03_SO.xlsx / data/so.csv.gz): FRC truk only, SOCC by delivery day ----------------
     so, sod = defaultdict(float), defaultdict(float)
     for r in read_store(os.path.join(base, "data", "so.csv.gz")):
-        if not up(r.get("INCOTERM")).startswith("FRC"):
+        if up(r.get("INCOTERM")) != "FRC":   # Real/SO = FRC truk; FRC container/kapal kept apart
             continue
         dk = as_date(r.get("TGL_KIRIM"))
         if not dk:
@@ -334,11 +338,12 @@ def build(cfg):
     except OSError:
         nonkin = []
     zero = set()
+    tgt_kem = {t[9] for t in targets} or {kem_d("ZAK")}   # only kemasan that have targets elsewhere
     for (day, inc_, s_, p_, di_, e_, k_) in facts:
-        if p_ in nonkin:
-            zero.add((day[:7], p_, di_, e_, s_, INCOTERMS.index(inc_))) if k_ == kem_d("ZAK") else None
-    for m_, p_, di_, e_, s_, ii in sorted(zero):
-        targets.append([m_, p_, di_, e_, s_, 0.0, [0.0] * 31, ii, -1 if ii in (0, 4, 5) else distr("")])
+        if p_ in nonkin and k_ in tgt_kem:
+            zero.add((day[:7], p_, di_, e_, s_, INCOTERMS.index(inc_), k_))
+    for m_, p_, di_, e_, s_, ii, k_ in sorted(zero):
+        targets.append([m_, p_, di_, e_, s_, 0.0, [0.0] * 31, ii, -1 if INCOTERMS[ii].startswith("FRC") else distr(""), k_])
     print(f"  provinsi non-kinerja: {[prov.items[i] for i in nonkin]}; target 0: {len(zero)} baris")
 
     try:
