@@ -1302,26 +1302,30 @@ function pageForecast(gran){
 
 /* Moda laut: one row per vessel (the ekspeditur of FOB/FAS shipments is "KAPAL <nama>"). Sea rows without a vessel name
    (FAS, containers, ...) are shown as a separate line so the gap is visible instead of silently missing. */
+/* "NAMA" for one value, "NAMA +2" for several (full list in the tooltip) */
+function setTxt(set, dims, unit){
+  const nm = [...set].map(i => tc(dims[i]) || '–'); if(!nm.length) return '–';
+  return '<span title="' + esc(nm.join(', ')) + '">' + esc(nm[0]) + (nm.length > 1 ? ' <small>+' + (nm.length - 1) + ' ' + unit + '</small>' : '') + '</span>';
+}
 function pageKapal(){
   const sv = [F.inc, F.moda]; F.inc = 'ALL'; F.moda = 'LAUT';
   try {
     const m = PER(), rows = shipRows(m), by = new Map(), tot = rows.reduce((a, r) => a + r[8], 0);
     rows.forEach(r => {
       const nm = B.dims.eksp[r[6]], k = /^KAPAL /.test(nm || '') ? nm : '\u0000';
-      let o = by.get(k); if(!o){ o = {k, nm: k === '\u0000' ? '(kapal tidak tercatat di sumber)' : nm, vol: 0, trips: 0, inc: new Set(), distr: new Set(), prov: new Set(), dist: new Set(), last: -1}; by.set(k, o); }
-      o.vol += r[8]; o.trips += r[9]; o.inc.add(INCS()[r[1]]); o.distr.add(r[5]); o.prov.add(r[3]); o.dist.add(r[4]); o.last = Math.max(o.last, r[0]);
+      let o = by.get(k); if(!o){ o = {k, nm: k === '\u0000' ? '(kapal tidak tercatat di sumber)' : nm, vol: 0, trips: 0, days: new Set(), inc: new Set(), distr: new Set(), prov: new Set(), dist: new Set(), last: -1}; by.set(k, o); }
+      o.vol += r[8]; o.trips += r[9]; o.days.add(r[0]); o.inc.add(INCS()[r[1]]); o.distr.add(r[5]); o.prov.add(r[3]); o.dist.add(r[4]); o.last = Math.max(o.last, r[0]);
     });
     const list = [...by.values()].sort((a, b) => (a.k === '\u0000') - (b.k === '\u0000') || b.vol - a.vol);
     list.forEach((o, i) => o.rank = o.k === '\u0000' ? null : i + 1);
     const cols = [{h:'#', cls:'rank', val: o => o.rank || 999, html: o => o.rank ? '#' + o.rank : '–'}, {h:'Kapal', cls:'name', val: o => o.nm},
-      {h:'Incoterm', val: o => [...o.inc].join(', '), html: o => esc([...o.inc].map(incLbl).join(', '))},
-      {h:'Realisasi (t)', num:true, val: o => o.vol, html: o => '<b>' + fmt(o.vol) + '</b>'}, {h:'Share', num:true, val: o => o.vol / (tot || 1), html: o => pctTxt(pctOf(o.vol, tot))},
-      {h:'Trip (truk ke pelabuhan)', num:true, val: o => o.trips}, {h:'Distributor', num:true, val: o => o.distr.size}, {h:'Provinsi', num:true, val: o => o.prov.size}, {h:'Distrik', num:true, val: o => o.dist.size},
-      {h:'Kirim terakhir', num:true, val: o => o.last, html: o => o.last >= 0 ? dayLabel(B.days[o.last]) : '–'}];
-    cols[3].total = fmt(tot); cols[4].total = '100%'; cols[5].total = fmt(list.reduce((a, o) => a + o.trips, 0));
+      {h:'Trip', num:true, val: o => o.trips}, {h:'Tonase (t)', num:true, val: o => o.vol, html: o => '<b>' + fmt(o.vol) + '</b>'}, {h:'Hari muat', num:true, val: o => o.days.size},
+      {h:'Distributor', val: o => o.distr.size, html: o => setTxt(o.distr, B.dims.distr, 'distributor')}, {h:'Provinsi', val: o => o.prov.size, html: o => setTxt(o.prov, B.dims.prov, 'provinsi')},
+      {h:'Distrik', val: o => o.dist.size, html: o => setTxt(o.dist, B.dims.dist, 'distrik')}];
+    cols[2].total = fmt(list.reduce((a, o) => a + o.trips, 0)); cols[3].total = fmt(tot);
     const named = list.filter(o => o.k !== '\u0000'), unk = by.get('\u0000');
     page('<div class="wrap">' + crumb([['Kapal']]) +
-      '<div class="dp-head"><div><div class="nm">Kapal · moda laut</div><div class="sub">' + fmt(named.length) + ' kapal · ' + esc(modaIncs('LAUT').map(incLbl).join(', ')) + ' · ' + periodSub() + '</div></div></div>' +
+      '<div class="dp-head"><div><div class="nm">Kapal · moda laut</div><div class="sub">' + fmt(named.length) + ' kapal · trip = jumlah muat (SPJ) · ' + periodSub() + '</div></div></div>' +
       '<div class="dp-hint" style="font-size:12px;color:var(--sub);margin:-6px 0 14px">Filter aktif: ' + srcTxt() + ' · kemasan <b>' + (F.kem === 'ALL' ? 'semua' : esc(F.kem)) + '</b> · <a class="section-link" data-act="openfilter" style="cursor:pointer;color:var(--red);font-weight:700">ubah filter</a></div>' +
       (unk && tot ? '<div class="dp-review">' + pctTxt(pctOf(unk.vol, tot)) + ' tonase laut periode ini (' + fmt(unk.vol) + ' t) belum punya nama kapal di sumber Rilis. Yang tercatat nama kapalnya baru FOB; FAS, kontainer, FRC KAPAL, FRC KONTAINER dan FOB KAPAL (polysling) menunggu data tambahan.</div>' : '') +
       (list.length ? table(cols, list, {total: true, limit: 400}) : '<div class="dp-review">Tidak ada pengiriman laut pada filter ini (plant, kemasan, periode).</div>') + '</div>', 'armada');
