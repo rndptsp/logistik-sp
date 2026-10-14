@@ -20,10 +20,12 @@ jobs:
       ADMIN_URL: ${{ secrets.ADMIN_URL }}
       BUILD_TOKEN: ${{ secrets.BUILD_TOKEN }}
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
-      MASTER_HOME: ${{ runner.temp }}/master
-      INBOX: ${{ runner.temp }}/inbox
     steps:
       - uses: actions/checkout@v4
+      - name: Temp folders (runner context is not available in job-level env)
+        run: |
+          echo "MASTER_HOME=$RUNNER_TEMP/master" >> "$GITHUB_ENV"
+          echo "INBOX=$RUNNER_TEMP/inbox" >> "$GITHUB_ENV"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
