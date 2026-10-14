@@ -1,8 +1,10 @@
-// GET: last build, upload history, who is asking.
-import {json, readJSON} from '../../../lib/admin.js';
+// GET: last build, upload history, inbox, store, who is asking.
+import {json, readJSON, listAll, listVersions, SLOTS} from '../../../lib/admin.js';
 
 export async function onRequestGet({env, data}){
-  const [build, history, master] = await Promise.all([readJSON(env, 'state/build.json', null), readJSON(env, 'state/history.json', []), env.MASTER.head('master/latest.xlsx')]);
-  return json({email: data.email, build, history,
-    master: master ? Object.assign({size: master.size}, master.customMetadata) : null});
+  const [build, history, inbox, meta, versions] = await Promise.all([readJSON(env, 'state/build.json', null), readJSON(env, 'state/history.json', []),
+    listAll(env, 'inbox/'), readJSON(env, 'store/current/_meta.json', null), listVersions(env)]);
+  return json({email: data.email, build, history, slots: SLOTS, versions,
+    inbox: inbox.map(o => Object.assign({slot: o.key.slice(6).replace(/\.xlsx$/, ''), size: o.size}, o.customMetadata)),
+    store: meta});
 }

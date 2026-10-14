@@ -117,9 +117,9 @@ const kemOk = k => F.kem === 'ALL' || !KEMS().length || KEMS()[k] === F.kem;
 const tKem = t => t[9] == null ? Math.max(0, KEMS().indexOf('ZAK')) : t[9];
 const kemName = () => F.kem === 'ALL' ? 'semua kemasan' : F.kem;
 const incOk = inc => F.inc === 'ALL' || INCS()[inc] === F.inc;
-/* Franco family: FRC (truk), FRC CONTAINER, FRC KAPAL - each its own incoterm; only FRC truk has SO (Real/SO).
+/* Franco family: FRC (truk), FRC CONTAINER, FRC KAPAL - each its own incoterm; only FRC TRUK has SO (Real/SO).
    The rest is picked up by the distributor. */
-const INC_LBL = {'FRC': 'FRC truk', 'FRC CONTAINER': 'FRC kontainer', 'FRC KAPAL': 'FRC kapal', 'FOT CONTAINER': 'FOT kontainer'};
+const INC_LBL = {'FRC': 'FRC TRUK', 'FRC CONTAINER': 'FRC KONTAINER', 'FRC KAPAL': 'FRC KAPAL', 'FOT CONTAINER': 'FOT KONTAINER'};
 const incLbl = x => INC_LBL[x] || x;
 const isFrc = inc => /^FRC/.test(INCS()[inc] || '');
 const frcSel = () => /^FRC/.test(F.inc);
@@ -131,7 +131,7 @@ const tInc = t => t[7] || 0;
 const achOk = inc => incOk(inc) && (isFrc(inc) || D.nfTgt);   // realisasi counted against target
 /* Only realisasi in a kemasan that has targets counts toward achievement (volume still shows the chosen kemasan). */
 const achKem = k => !KEMS().length || D.tgtKem.has(k);
-const soOn = () => F.inc === 'FRC' || F.inc === 'ALL';   // SO is FRC truk only
+const soOn = () => F.inc === 'FRC' || F.inc === 'ALL';   // SO is FRC TRUK only
 const incName = () => F.inc === 'ALL' ? 'semua incoterm' : incLbl(F.inc);
 
 /* ===================== Periods ===================== */
@@ -205,7 +205,7 @@ function summarize(group, per, sc, opt){
   B.facts.forEach(f => {
     if(!inPer(f[0], per) || !srcOk(f[2]) || !kemOk(f[10]) || !scopeOkF(f, sc) || nkSkip(f[3], group, sc)) return;
     const o = get(FK[group](f));
-    if(f[1] === 0) o.frc0 += f[6];   // FRC truk (Real/SO)
+    if(f[1] === 0) o.frc0 += f[6];   // FRC TRUK (Real/SO)
     if(achOk(f[1]) && achKem(f[10])) o.frc += f[6];
     if(incOk(f[1])){ o.vol += f[6]; o.trips += f[7]; o.dwS += f[8]; o.dwN += f[9]; }
   });
@@ -911,8 +911,8 @@ function pageDistrList(){
   list.forEach((o, i) => o.rank = i + 1);
   const tot = list.reduce((a, o) => a + o.vol, 0), unk = rows.filter(r => !(B.dims.toko[r[7]] && B.dims.toko[r[7]][0])).reduce((a, r) => a + r[8], 0);
   const cols = [{h:'#', cls:'rank', val: o => o.rank, html: o => '#' + o.rank}, {h:'Distributor', cls:'name', val: o => tc(B.dims.distr[o.key])},
-    {h:'FRC truk (t)', num:true, val: o => o.frc, html: o => o.frc ? fmt(o.frc) : '–'}].concat(list.some(o => o.fc) ? [
-    {h:'FRC kontainer/kapal (t)', num:true, val: o => o.fc, html: o => o.fc ? fmt(o.fc) : '–'}] : [], [{h:'Ambil sendiri (t)', num:true, val: o => o.nf, html: o => o.nf ? fmt(o.nf) : '–'},
+    {h:'FRC TRUK (t)', num:true, val: o => o.frc, html: o => o.frc ? fmt(o.frc) : '–'}].concat(list.some(o => o.fc) ? [
+    {h:'FRC KONTAINER/KAPAL (t)', num:true, val: o => o.fc, html: o => o.fc ? fmt(o.fc) : '–'}] : [], [{h:'Ambil sendiri (t)', num:true, val: o => o.nf, html: o => o.nf ? fmt(o.nf) : '–'},
     {h:'Total (t)', num:true, val: o => o.vol, html: o => '<b>' + fmt(o.vol) + '</b>'}, {h:'Share', num:true, val: o => o.vol / (tot || 1), html: o => pctTxt(pctOf(o.vol, tot))}].concat(tg.size ? [
     {h:'Target distributor ' + tgtLbl() + ' (t)', num:true, val: o => o.tgt || 0, html: o => o.tgt ? fmt(o.tgt) : '–'},
     {h:'Capaian', num:true, val: o => o.pct == null ? -1 : o.pct, html: o => o.pct == null ? '–' : '<b style="color:' + tierColor(o.pct) + '">' + pctTxt(o.pct) + '</b>'}] : [], [
@@ -943,7 +943,7 @@ function pageDistr(name){
     '<div class="dp-head"><div><div class="nm">' + esc(tc(name)) + '</div><div class="sub">Distributor · ' + incName() + ' · ' + periodSub() + '</div></div></div>' +
     (tgt ? '<div class="dp-review">Target distributor ' + incName() + ' ' + tgtLbl() + ' s.d. ' + shortDate(m.tgtTo) + ': <b>' + fmt(tgt) + ' t</b>, realisasi ' + fmt(s.nfz) + ' t (zak) — capaian <b style="color:' + tierColor(pct) + '">' + pctTxt(pct) + '</b>. Target FOT/FOB/FAS adalah target distributor (ambil sendiri); target FRC ada di ekspeditur.</div>' : '') +
     '<div class="dp-grid4">' +
-      kpi('box', 'var(--black)', 'Realisasi', fmt(s.vol) + ' <small>ton</small>', {hint: 'FRC truk ' + fmt(s.frc) + (s.fc ? ' · FRC kontainer/kapal ' + fmt(s.fc) : '') + ' · ambil sendiri ' + fmt(s.nf)}) +
+      kpi('box', 'var(--black)', 'Realisasi', fmt(s.vol) + ' <small>ton</small>', {hint: 'FRC TRUK ' + fmt(s.frc) + (s.fc ? ' · FRC KONTAINER/KAPAL ' + fmt(s.fc) : '') + ' · ambil sendiri ' + fmt(s.nf)}) +
       kpi('trend', 'var(--black)', 'Trip', fmt(s.trips), {hint: s.last >= 0 ? 'terakhir ' + dayLabel(B.days[s.last]) : ''}) +
       kpi('pin', 'var(--amber)', 'Toko / gudang', fmt(s.toko.size), {hint: s.prov.size + ' provinsi · ' + s.dist.size + ' distrik'}) +
       kpi('truck', 'var(--black)', 'Ekspeditur', fmt(ekspTree.filter(n => B.dims.eksp[n.key]).length), {hint: s.nf ? 'termasuk angkut sendiri' : ''}) +
@@ -1456,6 +1456,9 @@ function bindEvents(){
 
 /* ===================== Crypto, gate, session ===================== */
 const IDLE_MS = 15 * 60 * 1000;
+const REMEMBER_MS = 30 * 24 * 3600 * 1000;   // opt-in 'tetap masuk' (checkbox, off by default)
+function rememberKey(){ try { const k = localStorage.getItem('osp_rk'), e = +(localStorage.getItem('osp_re') || 0); if(k && Date.now() < e) return k; } catch(_) {} return null; }
+function forgetRemember(){ try { localStorage.removeItem('osp_rk'); localStorage.removeItem('osp_re'); } catch(_) {} }
 const b64 = s => Uint8Array.from(atob(s), c => c.charCodeAt(0));
 const toB64 = buf => btoa(String.fromCharCode(...new Uint8Array(buf)));
 let META = null;
@@ -1500,8 +1503,8 @@ function trimToYesterday(b){
   b.days.forEach(d => { const m = d.slice(0, 7); b.lastDay[m] = Math.max(b.lastDay[m] || 0, +d.slice(8)); });
 }
 function touch(){ try { sessionStorage.setItem('osp_t', String(Date.now())); } catch(e) {} }
-function logout(){ try { sessionStorage.removeItem('osp_k'); sessionStorage.removeItem('osp_t'); } catch(e) {} location.reload(); }
-async function start(key, meta){
+function logout(){ forgetRemember(); try { sessionStorage.removeItem('osp_k'); sessionStorage.removeItem('osp_t'); } catch(e) {} location.reload(); }
+async function start(key, meta, remember){
   B = await loadBundle(key, meta);
   B.build = meta.build;
   trimToYesterday(B);
@@ -1509,13 +1512,14 @@ async function start(key, meta){
   B.sodMonths = new Set(B.sod.map(s => s[0].slice(0, 7)));
   prepare(); restoreFilter();
   try { sessionStorage.setItem('osp_k', toB64(await crypto.subtle.exportKey('raw', key))); } catch(e) {}
+  if(remember){ try { localStorage.setItem('osp_rk', toB64(await crypto.subtle.exportKey('raw', key))); localStorage.setItem('osp_re', String(Date.now() + REMEMBER_MS)); } catch(e) {} }
   touch();
   $('#gate').hidden = true; $('#app').hidden = false;
   buildNav(); buildSearch(); filterStrip();
-  $('#foot').innerHTML = '<span>PT Semen Padang · Outbound Logistics · ' + esc(meta.build) + ' · data s.d. ' + dayLabel(B.asOf) + '</span><span><a href="#/kualitas">Kualitas data</a> · Sesi otomatis keluar setelah 15 menit tanpa aktivitas · <a data-act="logout">Keluar</a></span>';
+  $('#foot').innerHTML = '<span>PT Semen Padang · Outbound Logistics · ' + esc(meta.build) + ' · data s.d. ' + dayLabel(B.asOf) + '</span><span><a href="#/kualitas">Kualitas data</a> · ' + (rememberKey() ? 'Tetap masuk di perangkat ini sampai ' + new Date(+localStorage.getItem('osp_re')).toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'}) : 'Sesi otomatis keluar setelah 15 menit tanpa aktivitas') + ' · <a data-act="logout">Keluar</a></span>';
   bindEvents(); route();
   ['click', 'keydown', 'scroll', 'mousemove', 'touchstart'].forEach(ev => window.addEventListener(ev, throttleTouch, {passive: true}));
-  setInterval(() => { const t = +(sessionStorage.getItem('osp_t') || 0); if(Date.now() - t > IDLE_MS) logout(); }, 30000);
+  setInterval(() => { const t = +(sessionStorage.getItem('osp_t') || 0); if(Date.now() - t > IDLE_MS && !rememberKey()) logout(); }, 30000);
 }
 let lastTouch = 0;
 function throttleTouch(){ const n = Date.now(); if(n - lastTouch > 5000){ lastTouch = n; touch(); } }
@@ -1523,14 +1527,15 @@ function throttleTouch(){ const n = Date.now(); if(n - lastTouch > 5000){ lastTo
 (async function init(){
   const msg = $('#gateMsg'), btn = $('#gateBtn');
   try {
-    const k = sessionStorage.getItem('osp_k'), t = +(sessionStorage.getItem('osp_t') || 0);
-    if(k && Date.now() - t < IDLE_MS){
+    const rk = rememberKey();
+    const k = sessionStorage.getItem('osp_k') || rk, t = +(sessionStorage.getItem('osp_t') || 0);
+    if(k && (rk || Date.now() - t < IDLE_MS)){
       msg.style.color = 'var(--sub)'; msg.textContent = 'Memulihkan sesi…';
       const meta = await getMeta();
       const key = await crypto.subtle.importKey('raw', b64(k), {name: 'AES-GCM'}, true, ['decrypt']);
       await start(key, meta); return;
     }
-  } catch(e) { try { sessionStorage.removeItem('osp_k'); } catch(_) {} msg.textContent = ''; }
+  } catch(e) { try { sessionStorage.removeItem('osp_k'); } catch(_) {} if(e && e.name === 'OperationError') forgetRemember(); msg.textContent = ''; }
   $('#gatePw').focus();
   $('#gateForm').addEventListener('submit', async e => {
     e.preventDefault();
@@ -1538,7 +1543,7 @@ function throttleTouch(){ const n = Date.now(); if(n - lastTouch > 5000){ lastTo
     btn.disabled = true; msg.style.color = 'var(--sub)'; msg.textContent = 'Membuka data…';
     try {
       const meta = await getMeta();
-      await start(await deriveKey(pw, meta), meta);
+      await start(await deriveKey(pw, meta), meta, $('#gateRemember').checked);
     } catch(err) {
       btn.disabled = false; msg.style.color = 'var(--red)';
       msg.textContent = err && err.name === 'OperationError' ? 'Kata sandi salah.' : 'Gagal memuat data: ' + (err.message || err);
