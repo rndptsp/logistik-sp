@@ -50,6 +50,7 @@ if(/\.github\.io$/.test(location.hostname)) location.replace('https://logistik-s
 
   <h2>1 · Upload master Excel</h2>
   <div class="card">
+    <div class="msg" style="color:var(--red);margin-bottom:10px"><b>Upload dinonaktifkan sementara.</b> Dashboard sekarang dibangun dari MASTER BARU lewat Mac (<code>tools/run_build.bat</code>, lalu push). Server build belum mendukung master baru; upload di sini akan menimpa dashboard dengan data format lama.</div>
     <div class="row">
       <input type="file" id="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet">
       <button id="up" disabled>Upload &amp; update</button>
@@ -103,7 +104,9 @@ async function load(){
   if(busy) poll = setTimeout(load, 10000);
 }
 
-$('#file').addEventListener('change', () => { $('#up').disabled = !$('#file').files.length; $('#upMsg').textContent = ''; });
+const UPLOAD_PAUSED = true;   // see functions/api/admin/upload.js
+if(UPLOAD_PAUSED) $('#file').disabled = true;
+$('#file').addEventListener('change', () => { $('#up').disabled = UPLOAD_PAUSED || !$('#file').files.length; $('#upMsg').textContent = ''; });
 $('#up').addEventListener('click', () => {
   const f = $('#file').files[0]; if(!f) return;
   if(!/\.xlsx$/i.test(f.name)){ $('#upMsg').textContent = 'Pilih file .xlsx.'; return; }

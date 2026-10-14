@@ -92,7 +92,7 @@ function prepare(){
   const srcEmpty = dims.src.indexOf('');
   const eksEmpty = dims.eksp.indexOf('');
   const frcEksp = new Set(), liveProv = new Set(), liveDist = new Set();
-  B.facts.forEach(f => { if(f[1] === 0 && f[5] !== eksEmpty) frcEksp.add(f[5]); liveProv.add(f[3]); liveDist.add(f[4]); });
+  B.facts.forEach(f => { if(isFrc(f[1]) && f[5] !== eksEmpty) frcEksp.add(f[5]); liveProv.add(f[3]); liveDist.add(f[4]); });
   const sources = [...new Set(B.facts.map(f => f[2]).concat(B.targets.map(t => t[4])))].filter(i => i !== srcEmpty).map(i => dims.src[i]).sort();
   D = { dayMonth, dayNum, dayDow, months, provIdx, ekspIdx, distIdx, srcEmpty, eksEmpty,
         ekspList: [...frcEksp].map(i => dims.eksp[i]).sort(), liveProv, liveDist, sources };
@@ -115,13 +115,18 @@ const kemOk = k => F.kem === 'ALL' || !KEMS().length || KEMS()[k] === F.kem;
 const tgtKemOk = () => F.kem === 'ALL' || F.kem === 'ZAK' || !KEMS().length;
 const kemName = () => F.kem === 'ALL' ? 'semua kemasan' : F.kem;
 const incOk = inc => F.inc === 'ALL' || INCS()[inc] === F.inc;
-const nfOn = () => F.inc !== 'FRC' && F.inc !== 'ALL';   // a non-franco incoterm (distributor pick-up) is selected
+/* Franco family: FRC, FRC CONTAINER, FRC KAPAL (ekspeditur, SO); the rest is picked up by the distributor. */
+const isFrc = inc => /^FRC/.test(INCS()[inc] || '');
+const frcSel = () => /^FRC/.test(F.inc);
+const nfOn = () => !frcSel() && F.inc !== 'ALL';   // a non-franco incoterm (distributor pick-up) is selected
 const lastDayOf = m => Math.min(B.lastDay[m] || dim(m), dim(m));
 /* Targets: FRC rows (ekspeditur) and FOT/FOB/FAS rows (distributor, t[8]); t[7] = incoterm, absent on older builds = FRC.
    Achievement = realisasi of the selected incoterm(s) vs their targets; Real/SO stays FRC-only (SO is FRC). */
 const tInc = t => t[7] || 0;
-const achOk = inc => incOk(inc) && (inc === 0 || D.nfTgt);   // realisasi counted against target
-const soOn = () => F.inc === 'FRC' || F.inc === 'ALL';
+const achOk = inc => incOk(inc) && (isFrc(inc) || D.nfTgt);   // realisasi counted against target
+/* Targets are zak only, so only zak realisasi counts toward achievement (volume still shows the chosen kemasan). */
+const achKem = k => !KEMS().length || KEMS()[k] === 'ZAK';
+const soOn = () => frcSel() || F.inc === 'ALL';
 const incName = () => F.inc === 'ALL' ? 'semua incoterm' : F.inc;
 
 /* ===================== Periods ===================== */
@@ -195,8 +200,8 @@ function summarize(group, per, sc, opt){
   B.facts.forEach(f => {
     if(!inPer(f[0], per) || !srcOk(f[2]) || !kemOk(f[10]) || !scopeOkF(f, sc) || nkSkip(f[3], group, sc)) return;
     const o = get(FK[group](f));
-    if(f[1] === 0) o.frc0 += f[6];
-    if(achOk(f[1])) o.frc += f[6];
+    if(isFrc(f[1])) o.frc0 += f[6];
+    if(achOk(f[1]) && achKem(f[10])) o.frc += f[6];
     if(incOk(f[1])){ o.vol += f[6]; o.trips += f[7]; o.dwS += f[8]; o.dwN += f[9]; }
   });
   const m0 = per.from.slice(0, 7), m1 = fullTo.slice(0, 7);
@@ -264,7 +269,7 @@ function rangeGroup(fromISO, toISO, sc, group){
     const ds = B.days[f[0]];
     if(ds < fromISO || ds > toISO || !srcOk(f[2]) || !kemOk(f[10]) || !scopeOkF(f, sc) || nkSkip(f[3], group, sc)) return;
     const o = get(FK[group](f));
-    if(achOk(f[1])) o.frc += f[6];
+    if(achOk(f[1]) && achKem(f[10])) o.frc += f[6];
     if(incOk(f[1])){ o.vol += f[6]; o.trips += f[7]; }
   });
   {
@@ -875,8 +880,8 @@ function treeAll(id, open){
 }
 function distrSummary(rows){
   const per = new Map();
-  rows.forEach(r => { let o = per.get(r[5]); if(!o){ o = {key: r[5], frc: 0, nf: 0, vol: 0, trips: 0, prov: new Set(), dist: new Set(), toko: new Set(), last: -1}; per.set(r[5], o); }
-    if(r[1] === 0) o.frc += r[8]; else o.nf += r[8]; o.vol += r[8]; o.trips += r[9]; o.prov.add(r[3]); o.dist.add(r[4]); if(B.dims.toko[r[7]] && B.dims.toko[r[7]][0]) o.toko.add(r[7]); o.last = Math.max(o.last, r[0]); });
+  rows.forEach(r => { let o = per.get(r[5]); if(!o){ o = {key: r[5], frc: 0, nf: 0, nfz: 0, vol: 0, trips: 0, prov: new Set(), dist: new Set(), toko: new Set(), last: -1}; per.set(r[5], o); }
+    if(isFrc(r[1])) o.frc += r[8]; else { o.nf += r[8]; if(achKem(r[10])) o.nfz += r[8]; } o.vol += r[8]; o.trips += r[9]; o.prov.add(r[3]); o.dist.add(r[4]); if(B.dims.toko[r[7]] && B.dims.toko[r[7]][0]) o.toko.add(r[7]); o.last = Math.max(o.last, r[0]); });
   return [...per.values()];
 }
 
@@ -884,19 +889,19 @@ function distrSummary(rows){
 function distrTargets(per, sc){
   per = toPer(per); sc = sc || {};
   const out = new Map(), m0 = per.from.slice(0, 7), m1 = per.to.slice(0, 7);
-  if(F.inc === 'FRC') return out;
+  if(frcSel()) return out;
   B.targets.forEach(t => {
     if(!tgtKemOk() || !(t[8] >= 0) || t[0] < m0 || t[0] > m1 || !incOk(tInc(t)) || !srcOk(t[4]) || (sc.distr != null && t[8] !== sc.distr)) return;
     out.set(t[8], (out.get(t[8]) || 0) + targetBetween(t, per.from, per.tgtTo));
   });
   return out;
 }
-const blankDistr = k => ({key: k, frc: 0, nf: 0, vol: 0, trips: 0, prov: new Set(), dist: new Set(), toko: new Set(), last: -1});
+const blankDistr = k => ({key: k, frc: 0, nf: 0, nfz: 0, vol: 0, trips: 0, prov: new Set(), dist: new Set(), toko: new Set(), last: -1});
 
 function pageDistrList(){
   const m = PER(), rows = shipRows(m), list = distrSummary(rows), tg = distrTargets(m);
   tg.forEach((v, k) => { if(B.dims.distr[k] && !list.some(o => o.key === k)) list.push(blankDistr(k)); });
-  list.forEach(o => { o.tgt = tg.get(o.key); o.pct = o.tgt ? pctOf(o.nf, o.tgt) : null; });
+  list.forEach(o => { o.tgt = tg.get(o.key); o.pct = o.tgt ? pctOf(o.nfz, o.tgt) : null; });
   list.sort((a, b) => b.vol - a.vol || (b.tgt || 0) - (a.tgt || 0));
   list.forEach((o, i) => o.rank = i + 1);
   const tot = list.reduce((a, o) => a + o.vol, 0), unk = rows.filter(r => !(B.dims.toko[r[7]] && B.dims.toko[r[7]][0])).reduce((a, r) => a + r[8], 0);
@@ -918,7 +923,7 @@ function pageDistr(name){
   const di = B.dims.distr.indexOf(name);
   if(di < 0) return notFound('Distributor ' + name);
   const m = PER(), sc = {distr: di}, rows = shipRows(m, sc);
-  const s = distrSummary(rows)[0] || blankDistr(di), tgt = distrTargets(m, sc).get(di), pct = tgt ? pctOf(s.nf, tgt) : null;
+  const s = distrSummary(rows)[0] || blankDistr(di), tgt = distrTargets(m, sc).get(di), pct = tgt ? pctOf(s.nfz, tgt) : null;
   const ekspTree = buildTree(rows, ['eksp']);
   // monthly volume, last 6 months; bar click lists that month's ship-to points
   const idx = D.months.indexOf(m.month), months = m.kind === 'month' ? D.months.slice(Math.max(0, idx - 5), idx + 1) : D.months.filter(x => x >= m.from.slice(0, 7) && x <= m.month);
@@ -930,7 +935,7 @@ function pageDistr(name){
   }};
   page('<div class="wrap">' + crumb([['Wilayah', '#/provinsi'], ['Distributor', '#/distributor'], [tc(name)]]) +
     '<div class="dp-head"><div><div class="nm">' + esc(tc(name)) + '</div><div class="sub">Distributor · ' + incName() + ' · ' + periodSub() + '</div></div></div>' +
-    (tgt ? '<div class="dp-review">Target distributor ' + incName() + ' ' + tgtLbl() + ' s.d. ' + shortDate(m.tgtTo) + ': <b>' + fmt(tgt) + ' t</b>, realisasi ' + fmt(s.nf) + ' t — capaian <b style="color:' + tierColor(pct) + '">' + pctTxt(pct) + '</b>. Target FOT/FOB/FAS adalah target distributor (ambil sendiri); target FRC ada di ekspeditur.</div>' : '') +
+    (tgt ? '<div class="dp-review">Target distributor ' + incName() + ' ' + tgtLbl() + ' s.d. ' + shortDate(m.tgtTo) + ': <b>' + fmt(tgt) + ' t</b>, realisasi ' + fmt(s.nfz) + ' t (zak) — capaian <b style="color:' + tierColor(pct) + '">' + pctTxt(pct) + '</b>. Target FOT/FOB/FAS adalah target distributor (ambil sendiri); target FRC ada di ekspeditur.</div>' : '') +
     '<div class="dp-grid4">' +
       kpi('box', 'var(--black)', 'Realisasi', fmt(s.vol) + ' <small>ton</small>', {hint: 'FRC ' + fmt(s.frc) + ' · ambil sendiri ' + fmt(s.nf)}) +
       kpi('trend', 'var(--black)', 'Trip', fmt(s.trips), {hint: s.last >= 0 ? 'terakhir ' + dayLabel(B.days[s.last]) : ''}) +

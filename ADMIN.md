@@ -1,5 +1,7 @@
 # Halaman admin: upload master Excel dari web
 
+> **Status: upload dinonaktifkan sementara.** Dashboard dibangun dari MASTER BARU lewat Mac (`tools/run_build.bat`). Lihat README.
+
 Admin membuka `https://logistik-sp.pages.dev/admin`, masuk dengan Google, lalu meng-upload
 `MASTER_DATA_OUTBOUND_LOGISTIC.xlsx`. Dashboard ter-update otomatis dalam ±3–5 menit.
 

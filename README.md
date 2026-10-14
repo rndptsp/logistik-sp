@@ -28,7 +28,8 @@ Sumber data sekarang folder `02. DASHBOARD/MASTER BARU` (Rilis, SO, Target; liha
 3. Commit & push `data/`, `index.html` sekali.
 
 Filter Kemasan (ZAK / CURAH / JUMBO BAG) default ZAK; target hanya untuk zak. Sumatera Selatan (CP Indarung saja) tampil tanpa menambah capaian.
-**Catatan:** alur upload admin (`build.yml`) masih membangun dari master Excel lama (`build_site.py`) dan tidak membaca MASTER BARU; jangan dipakai bersamaan sampai disesuaikan.
+**Upload di /admin dinonaktifkan** (`UPLOAD_PAUSED` di `functions/api/admin/upload.js` dan `admin/index.html`): server build (`build.yml`) masih memakai master Excel lama (`build_site.py`) dan akan menimpa dashboard dengan data format lama. Aktifkan lagi setelah `build.yml` membangun dari MASTER BARU.
+Capaian selalu dihitung dari realisasi **zak** (target hanya zak); filter kemasan lain hanya mengubah volume. FRC, FRC CONTAINER dan FRC KAPAL = franco (ekspeditur, SO); incoterm lain = target distributor.
 Builder lama (`build_site.py`, `run_build_lama.bat`) tetap ada sebagai cadangan.
 
 ## Update data (cara lama, master Excel)

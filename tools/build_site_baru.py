@@ -1,32 +1,22 @@
-"""Build the encrypted data bundle from MASTER BARU (data/rilis.csv.gz, data/so.csv.gz, 01_TARGET.xlsx).
+"""Build the encrypted data bundle from MASTER BARU (folder 02. DASHBOARD/MASTER BARU).
 
-Versi untuk master baru (3 tabel). Builder lama build_site.py (master lama) tetap sebagai cadangan.
+    python tools/build_site_baru.py            # master baru di ../MASTER BARU (atau cfg "master_baru" / env MASTER_BARU)
+    python tools/build_site_baru.py --password # ganti password situs, lalu build ulang
+    tools\run_build.bat                        # sama, untuk Windows (double-click)
 
-    python tools/build_site.py            # uses tools/config.json
-    python tools/build_site.py --setup    # (re)create tools/config.json
-    python tools/build_site.py --password # ganti password situs, lalu build ulang
-    python tools/build_site.py --lock     # sekali: pasang kunci publik (build tanpa password)
-    python tools/build_site.py --master X.xlsx   # build dari file lain (mis. di server), tanpa config.json
+Reads MASTER BARU: data/rilis.csv.gz (realisasi), data/so.csv.gz (SO), 01_TARGET.xlsx (sheet Target Ekspeditur),
+config/settings.json (provinsi_non_kinerja) and config/ekspeditur_map.json (nama ekspeditur). Aggregates, gzips and
+encrypts to data/site.enc + data/meta.json with the public-key lock in tools/lock.json (no password needed).
+Never touches git. The old builder (build_site.py, master Excel lama) stays as a fallback: run_build_lama.bat.
 
-Reads MASTER_DATA_OUTBOUND_LOGISTIC.xlsx (one sheet per dataset, append-only), aggregates it,
-gzips + encrypts it with AES-GCM and writes data/site.enc + data/meta.json. Never touches git.
-
-Encryption, two modes:
-  - Public-key lock (tools/lock.json present, the normal mode after --lock): each build makes a random data key,
-    encrypts the data with it and locks the data key with an RSA public key. The matching private key is stored
-    locked with the viewer password (AES-GCM, key = PBKDF2-SHA256(password)). The build needs no password, so it
-    can run on a server; lock.json holds nothing secret and is committed.
-  - Legacy (no lock.json): data encrypted directly with the password-derived key from config.json.
-
-Business rules (same as the previous logistik-sp dashboard, now logistik-sp-lama):
-  - Realisasi date = TGL_SPJ; only rows with tonnage are counted.
-  - Target = SNOP only (no RKAP/CONTRACT fallback). Target MTD = sum of daily D1..D<last data day>.
-  - Sheet "SNOP" (the SNOP export pasted as-is) is the target source for every month it covers: zak, every
-    plant and incoterm (FRC/FOT/FOB/FAS), realisasi or not. FRC is split to ekspeditur x day like the "Target
-    Ekspeditur" rows of the same month (allocate_snop); FOT/FOB/FAS are distributor targets, split by the
-    distributors' realisasi of that incoterm. Realisasi INCOTERM may be FRC/FOT/FOB/FAS. Months not in the
-    SNOP sheet keep the "Target Ekspeditur" rows (FRC). The site's filters decide incoterm/source
-    (default: FRC, CP INDARUNG); all data is shipped.
+Business rules:
+  - Realisasi date = TGL_SPJ; only rows with tonnage; today's rows skipped (site shows up to H-1); duplicate SPJ skipped.
+  - Incoterm = INCOTERMS below (FRC*, FOT*, FOB, FAS); kemasan ZAK / CURAH / JUMBO BAG (empty = ZAK).
+  - Target = 01_TARGET.xlsx, zak only: FRC* rows per ekspeditur, other incoterms per distributor (EXPEDITUR_KODE
+    holds the distributor). Target MTD = sum of daily D1..D<last data day>.
+  - Provinsi non-kinerja: target 0 for every combination with realisasi, so it shows 100% and the site keeps it
+    out of totals.
+  - SO = FRC* only, by TGL_KIRIM (SOCC).
 """
 import base64, datetime, gzip, json, os, re, secrets, sys, time
 from collections import defaultdict
@@ -203,124 +193,6 @@ def sheet_rows(wb, name):
 
 
 INCOTERMS = ["FRC", "FOT", "FOB", "FAS", "FRC CONTAINER", "FRC KAPAL", "FOT CONTAINER"]   # index = incoterm code in the bundle (facts/ship/trucks/targets)
-PLANT_ALIAS = {"CP BATURAJA SMBR": "SMBR"}   # SNOP plant name -> SOURCE_PLANT name in the realisasi sheets
-
-
-def plant_name(v):
-    s = re.sub(r"\s+SP$", "", up(v))
-    return PLANT_ALIAS.get(s, s)
-
-
-def snop_rows(wb, check):
-    """Rows of sheet SNOP that become targets: (month, incoterm, provinsi, distrik, plant, ton). Zak only, every
-    plant, incoterm and handling (container/polysling included), with or without realisasi yet."""
-    if "SNOP" not in wb.sheetnames:
-        return []
-    out = []
-    for r in sheet_rows(wb, "SNOP"):
-        g = {up(k): v for k, v in r.items() if k}
-        ton, term = num(g.get("VOLUME")), up(g.get("TERM"))
-        mno = MONTH_PREFIX.get(up(g.get("PERIODE"))[:3])
-        if ton <= 0 or not mno or not g.get("TAHUN"):
-            continue
-        if up(g.get("KEMASAN")) != "ZAK":
-            check["SNOP curah/jumbo (bukan zak, tidak dipakai)"] += 1
-            continue
-        if term not in INCOTERMS:
-            check[f"SNOP incoterm {term or '(kosong)'} (tidak dikenal, tidak dipakai)"] += 1
-            continue
-        out.append((f"{int(num(g['TAHUN']))}-{mno:02d}", term, up(g.get("PROVINSI")), up(g.get("SALES DISTRIK")),
-                    plant_name(g.get("DELIV. PLANT")), ton))
-    return out
-
-
-def allocate_snop(rows, base, ship, prov, dist, eksp, src, distr, dist_prov, check):
-    """SNOP (month x distrik x plant) -> target rows [month, prov, dist, eksp, src, ton, daily31, inc, distributor].
-    FRC (inc 0), first match wins:
-      ekspeditur split + daily shape of the Target Ekspeditur rows for the same month, distrik and plant;
-      else ekspeditur shares from FRC realisasi (same month/distrik/plant, then any month, then the distrik's
-      Target Ekspeditur rows, then any plant), with the daily shape of the distrik (or province) target that month;
-      else one row without ekspeditur.
-    FOT/FOB/FAS (inc 1-3): distributor shares from realisasi of the same incoterm (month/distrik/plant, month/distrik, distrik/plant, distrik),
-      no ekspeditur; else one row without distributor.
-    base = Target Ekspeditur rows [month, prov, dist, eksp, src, ton, daily|None]; months covered by SNOP replace them."""
-    dkey = lambda s: re.sub("[^A-Z]", "", s)
-    known = {dkey(n): n for n in dist.items if n}   # SNOP spelling -> realisasi spelling ("KAB. TAPANULI SELATAN")
-    vol = defaultdict(float)
-    for m, term, p, d, s, ton in rows:
-        pi, di = prov(p), dist(known.get(dkey(d), d))
-        dist_prov.setdefault(di, pi)
-        vol[(m, INCOTERMS.index(term), pi, di, src(s))] += ton
-    months = {k[0] for k in vol}
-    ndays = lambda m: (datetime.date(int(m[:4]) + int(m[5:]) // 12, int(m[5:]) % 12 + 1, 1) - datetime.timedelta(days=1)).day
-
-    # patterns from Target Ekspeditur
-    mrows = defaultdict(list)                                    # (m, dist, src) -> rows
-    shape = defaultdict(lambda: [0.0] * 31)                      # (m, dist, src) / (m, dist) / (m, prov) -> daily sum
-    m_eksp = defaultdict(lambda: defaultdict(float))             # (m, dist) -> eksp -> ton
-    for t in base:
-        m, p, di, e, s, ton, daily = t
-        n = ndays(m)
-        dl = daily if daily else [ton / n if i < n else 0.0 for i in range(31)]
-        mrows[(m, di, s)].append((e, ton, dl))
-        m_eksp[(m, di)][e] += ton
-        for k in ((m, di, s), (m, di), (m, p)):
-            sh = shape[k]
-            for i in range(31):
-                sh[i] += dl[i]
-    # patterns from realisasi
-    no_e, no_d = eksp(""), distr("")
-    r_eksp = defaultdict(lambda: defaultdict(float))
-    r_distr = defaultdict(lambda: defaultdict(float))
-    for (day, inc, s, p, di, dr, e, _), v in ship.items():
-        m = day[:7]
-        if inc == "FRC" and e != no_e:
-            for k in ((m, di, s), (di, s), (m, di)):
-                r_eksp[k][e] += v[0]
-        elif inc != "FRC" and dr != no_d:
-            for k in ((m, di, s), (m, di), (di, s), (di,)):
-                r_distr[(INCOTERMS.index(inc),) + k][dr] += v[0]
-
-    def pick(*cands):
-        for c in cands:
-            if c and sum(c.values()) > 0:
-                return c
-        return None
-
-    def daily_of(m, p, di, s, ton):
-        n = ndays(m)
-        for k in ((m, di, s), (m, di), (m, p)):
-            sh = shape.get(k)
-            if sh and sum(sh[:n]) > 0:
-                tot = sum(sh[:n])
-                return [round(ton * sh[i] / tot, 3) if i < n else 0.0 for i in range(31)]
-        return [round(ton / n, 3) if i < n else 0.0 for i in range(31)]
-
-    out = [list(t) + [0, -1] for t in base if t[0] not in months]
-    for (m, inc, p, di, s), V in sorted(vol.items()):
-        if inc == 0:
-            own = mrows.get((m, di, s))
-            tot = sum(x[1] for x in own) if own else 0
-            if tot > 0:
-                for e, ton, dl in own:
-                    out.append([m, p, di, e, s, round(V * ton / tot, 3), [round(V * x / tot, 3) for x in dl], 0, -1])
-                continue
-            shares = pick(r_eksp.get((m, di, s)), r_eksp.get((di, s)), m_eksp.get((m, di)), r_eksp.get((m, di)))
-            if not shares:
-                check["target FRC tanpa pola ekspeditur (baris tanpa ekspeditur)"] += 1
-                shares = {no_e: 1.0}
-            tot = sum(shares.values())
-            for e, w in shares.items():
-                out.append([m, p, di, e, s, round(V * w / tot, 3), daily_of(m, p, di, s, V * w / tot), 0, -1])
-        else:
-            shares = pick(*(r_distr.get((inc,) + k) for k in ((m, di, s), (m, di), (di, s), (di,))))
-            if not shares:
-                check[f"target {INCOTERMS[inc]} tanpa realisasi distributor (baris tanpa distributor)"] += 1
-                shares = {no_d: 1.0}
-            tot = sum(shares.values())
-            for dr, w in shares.items():
-                out.append([m, p, di, no_e, s, round(V * w / tot, 3), daily_of(m, p, di, s, V * w / tot), inc, dr])
-    return out
 
 
 class Dict:

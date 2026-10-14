@@ -2,8 +2,13 @@
 import {json, readJSON, writeJSON, startBuild} from '../../../lib/admin.js';
 
 const MAX_MB = 60;
+/* Paused: the dashboard is now built from MASTER BARU (tools/build_site_baru.py, on the Mac). The build server
+   (.github/workflows/build.yml) still runs the old builder on the old master Excel, so an upload here would
+   overwrite the dashboard with old-format data. Set to false once build.yml builds from MASTER BARU. */
+const UPLOAD_PAUSED = true;
 
 export async function onRequestPost({request, env, data}){
+  if(UPLOAD_PAUSED) return json({error: 'Upload dinonaktifkan sementara: dashboard sekarang dibangun dari MASTER BARU lewat Mac (tools/run_build.bat). Server build belum mendukung master baru.'}, 409);
   const name = decodeURIComponent(request.headers.get('x-filename') || 'master.xlsx');
   if(!/\.xlsx$/i.test(name)) return json({error: 'File harus .xlsx'}, 400);
   const buf = await request.arrayBuffer();
