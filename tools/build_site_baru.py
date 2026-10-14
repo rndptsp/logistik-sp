@@ -469,6 +469,12 @@ def build(cfg):
         targets.append([m_, p_, di_, e_, s_, 0.0, [0.0] * 31, ii, -1 if ii in (0, 4, 5) else distr("")])
     print(f"  provinsi non-kinerja: {[prov.items[i] for i in nonkin]}; target 0: {len(zero)} baris")
 
+    try:
+        with open(os.path.join(base, "config", "ekspeditur_map.json"), encoding="utf-8") as f:
+            kamus = json.load(f).get("kamus", {})
+    except OSError:
+        kamus = {}
+
     # Prognosa / SO H+1..3: sumber snapshot monitoring tidak dipakai lagi (master baru).
     latest = ("", "")
     fields, prog, soh = [], [], {}
@@ -484,7 +490,7 @@ def build(cfg):
         "asOf": days[-1] if days else None,
         "lastDay": last_day,
         "dims": {"inc": INCOTERMS, "prov": prov.items, "dist": dist.items, "eksp": eksp.items, "src": src.items,
-                 "distr": distr.items, "truck": truck.items, "nonKin": nonkin, "kem": kem_d.items,
+                 "distr": distr.items, "truck": truck.items, "nonKin": nonkin, "kem": kem_d.items, "ekspNama": [kamus.get(n, "") for n in eksp.items],
                  "toko": [toko_meta.get(i, ["", "", ""]) for i in range(len(toko.items))],
                  "distProv": [dist_prov.get(i, -1) for i in range(len(dist.items))]},
         "days": days,

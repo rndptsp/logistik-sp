@@ -1117,6 +1117,8 @@ function pageEkspList(){
     '</div>', 'ekspeditur');
 }
 
+/* Nama lengkap ekspeditur (kamus master baru) bila kode hanya singkatan. */
+const ekspFull = c => { const n = (B.dims.ekspNama || [])[D.ekspIdx[c]]; return n && n !== c ? esc(n) + ' · ' : ''; };
 function pageEksp(code){
   const ei = D.ekspIdx[code];
   if(ei == null) return notFound('Ekspeditur ' + code);
@@ -1132,7 +1134,7 @@ function pageEksp(code){
     {h:'Hari aktif', num:true, val: r => r.days}, {h:'SLA (jam)', num:true, val: r => r.dwN ? r.dwS / r.dwN : null, html: r => r.dwN ? fmt1(r.dwS / r.dwN) : '–'},
     {h:'Aktif', val: r => r.first, html: r => activeTxt(r)}, {h:'Provinsi utama', val: r => tc(B.dims.prov[r.prov])}];
   page('<div class="wrap">' + crumb([['Ekspeditur', '#/ekspeditur'], [code]]) +
-    '<div class="dp-head"><div><div class="nm">' + esc(code) + '</div><div class="sub">Mitra ekspeditur FRC · ' + periodSub() + '</div></div><div class="badges">' + (me.rank ? '<div class="dp-badge">Rank ' + me.rank + ' / ' + all.filter(o => o.key !== D.eksEmpty && o.rank).length + '</div>' : '') + '<div class="dp-badge ' + tierClass(me.pct) + '">' + pctTxt(me.pct) + ' dari target</div></div></div>' +
+    '<div class="dp-head"><div><div class="nm">' + esc(code) + '</div><div class="sub">' + ekspFull(code) + 'Mitra ekspeditur FRC · ' + periodSub() + '</div></div><div class="badges">' + (me.rank ? '<div class="dp-badge">Rank ' + me.rank + ' / ' + all.filter(o => o.key !== D.eksEmpty && o.rank).length + '</div>' : '') + '<div class="dp-badge ' + tierClass(me.pct) + '">' + pctTxt(me.pct) + ' dari target</div></div></div>' +
     '<div class="dp-review">' + reviewText(me.pct) + (me.hasTgt ? ' Realisasi ' + fmt(me.frc) + ' t vs target MTD ' + fmt(me.tgt) + ' t (gap ' + signed(me.gap) + ' t).' : '') + (one ? ' ' + one + ' truk baru 1 trip bulan ini.' : '') + '</div>' +
     '<div class="dp-grid4">' +
       kpi('check', 'var(--green)', 'Realisasi', fmt(me.vol) + ' <small>ton</small>', {hint: fmt(me.trips) + ' trip'}) +

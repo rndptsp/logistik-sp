@@ -19,7 +19,19 @@ seluruh data terenkripsi (AES-GCM) di `data/site.enc` dan hanya terbuka dengan k
 
 Lihat **ADMIN.md**: admin login Google di `/admin`, upload master Excel, dashboard ter-update otomatis. Cara lewat Mac di bawah tetap berlaku.
 
-## Update data (rutin)
+## Update data (rutin) — master baru (MASTER BARU)
+
+Sumber data sekarang folder `02. DASHBOARD/MASTER BARU` (Rilis, SO, Target; lihat `README_UPDATE.md` di sana):
+
+1. Harian: `python3 run_harian.py` di folder MASTER BARU (awal bulan: tambah `--target`).
+2. Build situs: double-click `tools\run_build.bat` (atau `python3 tools/build_site_baru.py --master x`).
+3. Commit & push `data/`, `index.html` sekali.
+
+Filter Kemasan (ZAK / CURAH / JUMBO BAG) default ZAK; target hanya untuk zak. Sumatera Selatan (CP Indarung saja) tampil tanpa menambah capaian.
+**Catatan:** alur upload admin (`build.yml`) masih membangun dari master Excel lama (`build_site.py`) dan tidak membaca MASTER BARU; jangan dipakai bersamaan sampai disesuaikan.
+Builder lama (`build_site.py`, `run_build_lama.bat`) tetap ada sebagai cadangan.
+
+## Update data (cara lama, master Excel)
 
 **Satu-satunya sumber: `02. DASHBOARD/MASTER_DATA_OUTBOUND_LOGISTIC.xlsx`.** Tab *PANDUAN* di file itu berisi daftar sheet, sumber dan kolom wajib.
 
