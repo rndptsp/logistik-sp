@@ -1055,7 +1055,41 @@ function pageDistr(name){
 
 /* ===================== Pages ===================== */
 const view = () => $('#view');
-function page(html, nav){ view().innerHTML = '<div class="page-fade">' + html + '</div>'; setActiveNav(nav); window.scrollTo(0, 0); }
+/* Page header photo: assets/bg/bg.js sets window.BG = {key: {f: file, t: title, a: author, l: licence, u: source page}}.
+   Keys: prov-<province>, plant-<plant>, moda-darat / moda-laut / moda-kontainer. No entry = plain header. */
+const slug = s => String(s || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+const PROV_BG = {'RIAU KEPULAUAN': 'kepulauan-riau', 'KEPULAUAN RIAU': 'kepulauan-riau'};
+const provBg = n => 'prov-' + (PROV_BG[n] || slug(n));
+function plantBg(n){
+  const u = String(n || '').toUpperCase();
+  if(/INDARUNG/.test(u)) return 'plant-indarung';
+  if(/TELUK BAYUR|TRANSHPMNT|BATAM|BELAWAN|MALAHAYATI|LHOKSEUMAWE/.test(u)) return 'moda-laut';
+  return 'moda-darat';
+}
+function pageBgKey(){
+  const [a, b] = (location.hash.replace(/^#\/?/, '') || '').split('/').map(decodeURIComponent);
+  if(a === 'provinsi') return b ? provBg(b) : 'moda-darat';
+  if(a === 'distrik' && b){ const di = D.distIdx[b]; return di == null ? null : provBg(B.dims.prov[B.dims.distProv[di]]); }
+  if(a === 'plant') return b ? plantBg(b) : 'plant-indarung';
+  if(a === 'kapal') return 'moda-laut';
+  if(a === 'distributor') return F.moda === 'LAUT' ? 'moda-laut' : 'moda-darat';
+  if(a === 'ekspeditur' || a === 'armada' || a === 'prognosa') return 'moda-darat';
+  return null;
+}
+function applyPageBg(){
+  const bg = (window.BG || {})[pageBgKey()], h = $('#view .dp-head');
+  if(!bg || !h) return;
+  h.classList.add('has-bg');
+  h.style.setProperty('--bg', 'url("assets/bg/' + bg.f + '")');
+  h.insertAdjacentHTML('beforeend', '<a class="bg-credit" href="#/kredit" title="' + esc(bg.t + ' — ' + bg.a + ' (' + bg.l + ')') + '">Foto: ' + esc(bg.t) + '</a>');
+}
+function page(html, nav){ view().innerHTML = '<div class="page-fade">' + html + '</div>'; applyPageBg(); setActiveNav(nav); window.scrollTo(0, 0); }
+/* Photo credits (licence requirement for CC BY / CC BY-SA photos). */
+function pageCredits(){
+  const rows = Object.entries(window.BG || {}).map(([k, v]) => '<tr><td class="name">' + esc(v.t) + '<small>' + esc(k) + '</small></td><td>' + esc(v.a) + '</td><td>' + esc(v.l) + '</td><td><a href="' + esc(v.u) + '" target="_blank" rel="noopener">Sumber &rsaquo;</a></td></tr>').join('');
+  page('<div class="wrap">' + crumb([['Kredit foto']]) + '<div class="dp-head"><div><div class="nm">Kredit foto</div><div class="sub">Foto header halaman, berlisensi bebas (Wikimedia Commons)</div></div></div>' +
+    (rows ? '<div class="tbl-wrap"><table class="tbl"><thead><tr><th>Foto</th><th>Fotografer</th><th>Lisensi</th><th></th></tr></thead><tbody>' + rows + '</tbody></table></div>' : '<div class="dp-review">Belum ada foto.</div>') + '</div>', '');
+}
 function crumb(parts){ return '<div class="crumb"><a href="#/">Home</a>' + parts.map(p => '<span class="sep">/</span>' + (p[1] ? '<a href="' + p[1] + '">' + esc(p[0]) + '</a>' : esc(p[0]))).join('') + '</div>'; }
 function periodSub(){ return PER().sub; }
 function pageHome(){
@@ -1536,6 +1570,7 @@ function route(){
     else if(a === 'armada') pageArmada();
     else if(a === 'kapal') pageKapal();
     else if(a === 'kualitas') pageQuality();
+    else if(a === 'kredit') pageCredits();
     else if(a === 'prognosa') pageForecast(PROG_GRAN[b] || 'harian');
     // old addresses -> their single new home
     else if(a === 'forecast') location.replace('#/prognosa/' + PROG_SLUG[b in PROG_SLUG ? b : 'harian']);
@@ -1735,7 +1770,7 @@ async function start(key, meta, remember){
   touch();
   $('#gate').hidden = true; $('#app').hidden = false;
   buildNav(); buildSearch(); filterStrip();
-  $('#foot').innerHTML = '<span>PT Semen Padang · Outbound Logistics · ' + esc(meta.build) + ' · data s.d. ' + dayLabel(B.asOf) + '</span><span><a href="#/kualitas">Kualitas data</a> · ' + (rememberKey() ? 'Tetap masuk di perangkat ini sampai ' + new Date(+localStorage.getItem('osp_re')).toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'}) : 'Sesi otomatis keluar setelah 15 menit tanpa aktivitas') + ' · <a data-act="logout">Keluar</a></span>';
+  $('#foot').innerHTML = '<span>PT Semen Padang · Outbound Logistics · ' + esc(meta.build) + ' · data s.d. ' + dayLabel(B.asOf) + '</span><span><a href="#/kualitas">Kualitas data</a> · <a href="#/kredit">Kredit foto</a> · ' + (rememberKey() ? 'Tetap masuk di perangkat ini sampai ' + new Date(+localStorage.getItem('osp_re')).toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'}) : 'Sesi otomatis keluar setelah 15 menit tanpa aktivitas') + ' · <a data-act="logout">Keluar</a></span>';
   bindEvents(); route();
   ['click', 'keydown', 'scroll', 'mousemove', 'touchstart'].forEach(ev => window.addEventListener(ev, throttleTouch, {passive: true}));
   setInterval(() => { const t = +(sessionStorage.getItem('osp_t') || 0); if(Date.now() - t > IDLE_MS && !rememberKey()) logout(); }, 30000);

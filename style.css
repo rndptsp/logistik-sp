@@ -498,3 +498,14 @@ table.tree td.name small{display:block;color:var(--sub);font-weight:400;font-siz
 .dm-kh{font-size:11px;font-weight:800;color:var(--red);margin:2px 6px 3px;}
 .dm-more{display:block;font-size:11.5px;font-weight:700;color:var(--sub);padding:3px 6px;}
 .dm-more:hover{color:var(--red);}
+
+/* Page header photo (assets/bg, see applyPageBg) */
+.dp-head.has-bg{position:relative;min-height:150px;align-items:flex-end;padding:30px 26px 26px;color:#fff;border-radius:2px;
+  background:linear-gradient(90deg,rgba(0,0,0,.78) 0%,rgba(0,0,0,.5) 55%,rgba(0,0,0,.25) 100%),var(--bg) center/cover no-repeat,#222;}
+.dp-head.has-bg .nm{color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.4);}
+.dp-head.has-bg .sub{color:rgba(255,255,255,.85);}
+.dp-head.has-bg .dp-badge{box-shadow:0 1px 4px rgba(0,0,0,.25);color:#111;}
+.dp-head.has-bg .dp-badge.good{color:var(--green);}.dp-head.has-bg .dp-badge.mid{color:var(--amber);}.dp-head.has-bg .dp-badge.bad{color:var(--red);}
+.bg-credit{position:absolute;right:10px;bottom:6px;font-size:10px;color:rgba(255,255,255,.7);max-width:60%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.bg-credit:hover{color:#fff;}
+@media(max-width:700px){.dp-head.has-bg{min-height:120px;padding:22px 16px 24px;}.dp-head.has-bg .nm{font-size:22px;}}
