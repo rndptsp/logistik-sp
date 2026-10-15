@@ -241,6 +241,8 @@ def build(cfg):
     facts = defaultdict(lambda: [0.0, 0, 0.0, 0])
     ship = defaultdict(lambda: [0.0, 0])
     trucks = defaultdict(lambda: [0, 0.0, 0.0, 0])
+    hours = defaultdict(lambda: [0.0, 0])   # (exit date, src, inc, hour, kem) -> [ton, trips]: release per hour, last 62 days
+    hour_from = (datetime.date.today() - datetime.timedelta(days=62)).isoformat()
     last_day = {}
     n_real = 0
     check = defaultdict(int)
@@ -299,6 +301,10 @@ def build(cfg):
             toko_kec[ti][kec(kc)] += ton
         g = ship[(d.isoformat(), inc, s, p, di, distr(up(r.get("DISTRIBUTOR"))), e, ti, kem)]
         g[0] += ton; g[1] += 1
+        m_out = re.match(r"(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):", str(r.get("WAKTU_KELUAR") or ""))   # truck out of the plant
+        if m_out and hour_from <= m_out.group(1) < today.isoformat():
+            hg = hours[(m_out.group(1), s, inc, int(m_out.group(2)), kem)]
+            hg[0] += ton; hg[1] += 1
         nopol = up(r.get("NOPOL"))
         if nopol:
             tk = trucks[(d.isoformat(), truck(nopol), inc, e, s, p, kem)]
@@ -431,7 +437,9 @@ def build(cfg):
         "trucks": [[day_idx[k[0]], k[1], INCOTERMS.index(k[2]), k[3], k[4], k[5], v[0], round(v[1], 2), round(v[2], 2), v[3], k[6]]
                    for k, v in trucks.items()],
         "targets": targets,
-        "tdistr": tdistr,   # FRC targets per distributor, same layout as targets (distributor achievement only)
+        "tdistr": tdistr,
+        # release per hour by truck exit time (WAKTU_KELUAR), last 62 days: [day index, src, inc, hour, ton, trips, kem]
+        "hours": [[day_idx[k[0]], k[1], INCOTERMS.index(k[2]), k[3], round(v[0], 2), v[1], k[4]] for k, v in hours.items() if k[0] in day_idx],   # FRC targets per distributor, same layout as targets (distributor achievement only)
         "so": [[k[0], k[1], k[2], k[3], round(v, 2)] for k, v in so.items() if v],
         "sod": [[k[0], k[1], k[2], k[3], round(v, 2), k[4]] for k, v in sod.items() if v],
         "prog": {"date": "", "time": "", "fields": [], "rows": []},

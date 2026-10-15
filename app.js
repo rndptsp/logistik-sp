@@ -553,6 +553,8 @@ function buildNav(){
   const pm = summarize('prov', PER());
   const provs = [...pm.values()].filter(o => o.vol > 0 || o.tgt > 0).sort((a, b) => b.vol - a.vol);
   $('#navProvList').innerHTML = provs.map(o => '<a href="#/provinsi/' + enc(B.dims.prov[o.key]) + '">' + esc(tc(B.dims.prov[o.key])) + '<span>' + pctTxt(o.pct) + '</span></a>').join('') || '<span class="empty">—</span>';
+  /* Company names without the legal form ("PT", ", PT", ".PT", "PT.") for compact menus. */
+  const coName = n => String(n || '').replace(/\s*\(PERSERO\)/i, '').replace(/[\s,.]*\bPT\.?\s*$/i, '').replace(/^\s*PT\.?\s+/i, '').trim();
   /* Ekspeditur menu: grouped per source plant (only plants switched on in the filter), compact */
   const names = D.ekspList.slice().sort();
   $('#navEkspList').innerHTML = D.sources.filter(sn => !F.srcOff.has(sn)).map(sn => {
@@ -560,7 +562,8 @@ function buildNav(){
     const items = names.map(code => {
       const o = em.get(D.ekspIdx[code]); if(!o || !(o.vol > 0 || o.tgt > 0)) return '';
       const p = o.pct;
-      return '<a class="eksp-item" href="#/ekspeditur/' + enc(code) + '" title="' + esc(code) + '"><span class="en">' + esc(code) + '</span><span class="ep" style="color:' + tierColor(p) + '">' + (o.hasTgt ? pctTxt(p) : (o.vol ? fmt(o.vol) + ' t' : '–')) + '</span></a>';
+      const full = (B.dims.ekspNama || [])[D.ekspIdx[code]], nm = full ? tc(coName(full)) : code;   // full name; code when the master has none
+      return '<a class="eksp-item" href="#/ekspeditur/' + enc(code) + '" title="' + esc(code + (full ? ' · ' + full : '')) + '"><span class="en">' + esc(nm) + '</span><span class="ep" style="color:' + tierColor(p) + '">' + (o.hasTgt ? pctTxt(p) : (o.vol ? fmt(o.vol) + ' t' : '–')) + '</span></a>';
     }).join('');
     return items ? '<a class="eksp-plant" href="' + plantHref(sn) + '">' + esc(sn.toUpperCase()) + ' &rsaquo;</a><div class="eksp-grid">' + items + '</div>' : '';
   }).join('') || '<span class="empty">Tidak ada ekspeditur pada plant terpilih</span>';
@@ -578,8 +581,8 @@ function buildNav(){
   const cols = [...byKem.entries()].filter(([, g]) => g.tot > 0).sort((a, b) => (KORD.indexOf(a[0]) + 1 || 9) - (KORD.indexOf(b[0]) + 1 || 9)).map(([kn, g]) => {
     const list = [...g.d.entries()].sort((a, b) => b[1] - a[1]);
     const items = list.slice(0, DCAP).map(([di, v]) => {
-      const nm = tc(B.dims.distr[di]);
-      return '<a class="eksp-item" href="#/distributor/' + enc(B.dims.distr[di]) + '" title="' + esc(nm) + '"><span class="en">' + esc(nm) + '</span><span class="ep" style="color:var(--sub)">' + fmt(v) + ' t</span></a>';
+      const nm = tc(coName(B.dims.distr[di]));
+      return '<a class="eksp-item" href="#/distributor/' + enc(B.dims.distr[di]) + '" title="' + esc(tc(B.dims.distr[di])) + '"><span class="en">' + esc(nm) + '</span><span class="ep" style="color:var(--sub)">' + fmt(v) + ' t</span></a>';
     }).join('');
     const more = list.length > DCAP ? '<a class="dm-more" href="#/distributor">+' + (list.length - DCAP) + ' distributor lain &rsaquo;</a>' : '';
     return '<div class="dm-kem"><div class="dm-kh">' + esc(kn) + ' &middot; ' + fmt(g.tot) + ' t &middot; ' + list.length + ' distributor</div>' + items + more + '</div>';
@@ -1490,7 +1493,7 @@ function plantReview(si, per, all){
 function plantChart(R){
   const W = 1100, H = 330, L = 52, Rm = 12, T = 26, Bm = 28, n = R.keys.length;
   const bs = R.keys.map(k => R.Bk.get(k)), withData = bs.filter(b => b.tot > 0);
-  const avg = withData.length ? withData.reduce((a, b) => a + b.tot, 0) / withData.length : 0;
+  let avg = withData.length ? withData.reduce((a, b) => a + b.tot, 0) / withData.length : 0;
   const max = Math.max(1, ...bs.map(b => Math.max(b.tot, b.tgt * tgtK(), b.prev || 0))) * 1.1;
   const step = (W - L - Rm) / n, bw = Math.min(30, step * 0.68), y = v => T + (H - T - Bm) * (1 - v / max);
   const nice = v => { const p = Math.pow(10, Math.floor(Math.log10(v))); return [1, 2, 2.5, 5, 10].map(x => x * p).find(x => v / x <= 5); };
@@ -1509,18 +1512,19 @@ function plantChart(R){
       acc += v;
     });
     if(b.tot > 0 && (n <= 16 || i % 1 === 0)) labels += '<text x="' + cx.toFixed(1) + '" y="' + (y(b.tot) - 5).toFixed(1) + '" class="pc-val" text-anchor="middle">' + (b.tot >= 1000 ? (b.tot / 1000).toFixed(1).replace('.', ',') + 'k' : fmt(b.tot)) + '</text>';
-    const k = R.keys[i], lab = R.monthly ? monthShort(k) : (+k.slice(8) === 1 || i % (n > 20 ? 1 : 1) === 0 ? String(+k.slice(8)) : '');
+    const k = R.keys[i], lab = R.tick ? R.tick(k) : R.monthly ? monthShort(k) : String(+k.slice(8));
     xl += '<text x="' + cx.toFixed(1) + '" y="' + (H - 10) + '" class="pc-ax" text-anchor="middle">' + lab + '</text>';
-    const tip = (R.monthly ? monthLabel(k) : dayLabel(k)) + '|' + (b.tot ? 'Rilis ' + fmt(b.tot) + ' t · ' + fmt(b.trips) + ' trip · ' + b.trucks.size + ' truk' : 'Belum ada rilis') +
+    const tip = (R.title ? R.title(k) : R.monthly ? monthLabel(k) : dayLabel(k)) + '|' + (b.tot ? 'Rilis ' + fmt(b.tot) + ' t · ' + fmt(b.trips) + ' trip' + (R.hourly ? '' : ' · ' + b.trucks.size + ' truk') : 'Belum ada rilis') +
       segs.slice().reverse().map(ii => '|' + incLbl(INCS()[ii]) + ': ' + fmt(b.inc.get(ii)) + ' t').join('') +
-      (b.tgt ? '|Target ' + tgtLbl() + ' ' + fmt(b.tgt * tgtK()) + ' t' + (b.tot ? ' · capaian ' + pctTxt(pctOf(b.tot, b.tgt * tgtK())) : '') : '') + (b.prev != null ? '|Bulan lalu (tgl sama) ' + fmt(b.prev) + ' t' : '') + (b.dwN ? '|SLA ' + fmt1(b.dwS / b.dwN) + ' jam' : '');
+      (b.tgt ? '|Target ' + tgtLbl() + ' ' + fmt(b.tgt * tgtK()) + ' t' + (b.tot ? ' · capaian ' + pctTxt(pctOf(b.tot, b.tgt * tgtK())) : '') : '') + (b.prev != null ? '|' + (R.prevLbl || 'Bulan lalu (tgl sama)') + ' ' + fmt(b.prev) + ' t' : '') + (b.dwN ? '|SLA ' + fmt1(b.dwS / b.dwN) + ' jam' : '');
     hits += '<rect x="' + (cx - step / 2).toFixed(1) + '" y="' + T + '" width="' + step.toFixed(1) + '" height="' + (H - T - Bm) + '" class="pc-hit" data-tip="' + esc(tip) + '"/>';
   });
   const pts = (f) => bs.map((b, i) => f(b) == null ? null : [L + step * (i + 0.5), y(f(b))]);
   const path = ps => { let d = '', pen = false; ps.forEach(p => { if(!p){ pen = false; return; } d += (pen ? 'L' : 'M') + p[0].toFixed(1) + ',' + p[1].toFixed(1); pen = true; }); return d; };
   const tgtLine = '<path d="' + path(pts(b => b.tgt ? b.tgt * tgtK() : null)) + '" class="pc-tgt"/>';
   const prevPts = pts(b => b.prev != null && b.prev > 0 ? b.prev : null);
-  const prevLine = R.monthly ? '' : '<path d="' + path(prevPts) + '" class="pc-prev"/>' + prevPts.filter(Boolean).map(p => '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="2.6" class="pc-prevdot"/>').join('');
+  const prevLine = R.monthly || R.noPrev ? '' : '<path d="' + path(prevPts) + '" class="pc-prev"/>' + prevPts.filter(Boolean).map(p => '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="2.6" class="pc-prevdot"/>').join('');
+  if(R.avgAll) avg = bs.reduce((a, b) => a + b.tot, 0) / n;   // per hour: the day's total spread over 24 hours
   const avgLine = avg ? '<line x1="' + L + '" x2="' + (W - Rm) + '" y1="' + y(avg).toFixed(1) + '" y2="' + y(avg).toFixed(1) + '" class="pc-avg"/><text x="' + (W - Rm) + '" y="' + (y(avg) - 4).toFixed(1) + '" class="pc-avgl" text-anchor="end">rata-rata ' + fmt(avg) + ' t</text>' : '';
   return '<svg class="pc-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Rilis per ' + (R.monthly ? 'bulan' : 'hari') + ' per incoterm">' + grid.join('') + bars + avgLine + tgtLine + prevLine + labels + xl + hits + '</svg>';
 }
@@ -1540,6 +1544,53 @@ function plantSla(R){
     '<text x="' + (W - Rm) + '" y="' + (y(avg) - 4).toFixed(1) + '" class="pc-avgl" text-anchor="end">rata-rata ' + fmt1(avg) + ' jam</text></svg>';
 }
 const nextMonth = m => { const y = +m.slice(0, 4), mo = +m.slice(5); return mo === 12 ? (y + 1) + '-01' : y + '-' + pad2(mo + 1); };
+/* Release per hour (truck exit time, bundle.hours: last 62 days) for one plant and day. */
+let plantHourDay = null, plantHourCtx = null;
+function plantHours(si, day, all){
+  const incs = INCS().map((n, i) => i).filter(i => all || incOk(i)), inSet = new Set(incs);
+  const H = (B.hours || []).filter(h => h[1] === si && inSet.has(h[2]) && kemOk(h[6]));
+  const days = [...new Set(H.map(h => h[0]))].sort((a, b) => a - b);
+  if(!days.length) return null;
+  const per = PER(), inPerDays = days.filter(d => inPer(d, per));
+  let di = day != null && days.includes(day) ? day : (inPerDays.length ? inPerDays[inPerDays.length - 1] : days[days.length - 1]);
+  const pos = days.indexOf(di), prevDay = pos > 0 ? days[pos - 1] : null;
+  const keys = Array.from({length: 24}, (_, h) => pad2(h));
+  const Bk = new Map(keys.map(k => [k, {inc: new Map(), tot: 0, trips: 0, dwS: 0, dwN: 0, tgt: 0, prev: prevDay == null ? null : 0, trucks: new Set()}]));
+  H.forEach(h => {
+    const b = Bk.get(pad2(h[3]));
+    if(h[0] === di){ b.inc.set(h[2], (b.inc.get(h[2]) || 0) + h[4]); b.tot += h[4]; b.trips += h[5]; }
+    else if(h[0] === prevDay) b.prev += h[4];
+  });
+  const ds = B.days[di], m = ds.slice(0, 7), d = +ds.slice(8);
+  let dayTgt = 0;
+  B.targets.forEach(t => {
+    if(t[0] !== m || t[4] !== si || !inSet.has(tInc(t)) || !kemOk(tKem(t)) || !areaProvOk(t[1])) return;
+    dayTgt += t[6] ? (t[6][d - 1] || 0) : t[5] / dim(m);
+  });
+  Bk.forEach(b => b.tgt = dayTgt / 24);
+  const used = [...new Set(H.filter(h => h[0] === di).map(h => h[2]))];
+  return {keys, Bk, incs: incs.filter(i => used.includes(i)), monthly: false, hourly: true, avgAll: true, noPrev: prevDay == null,
+    tick: k => k, title: k => dayLabel(ds) + ' · jam ' + k + '.00–' + k + '.59', prevLbl: prevDay != null ? 'Hari sebelumnya (' + shortDate(B.days[prevDay]) + ')' : '',
+    day: di, days, dayTgt, prevDay};
+}
+function plantHourSection(){
+  const c = plantHourCtx; if(!c) return '';
+  const R = plantHours(c.si, plantHourDay, plantAllInc);
+  if(!R) return '<div id="plantHours"><div class="section-head"><div class="section-title">Rilis per jam (ton)</div></div><div class="dp-review">Belum ada data jam keluar truk untuk plant ini (kolom WAKTU_KELUAR di Rilis; 62 hari terakhir).</div></div>';
+  const bs = R.keys.map(k => R.Bk.get(k)), tot = bs.reduce((a, b) => a + b.tot, 0), trips = bs.reduce((a, b) => a + b.trips, 0);
+  const peak = bs.reduce((a, b, i) => b.tot > a.v ? {v: b.tot, i} : a, {v: 0, i: 0}), idle = bs.filter(b => !b.tot).length;
+  const ds = B.days[R.day], pos = R.days.indexOf(R.day), prv = pos > 0 ? R.days[pos - 1] : null, nxt = pos < R.days.length - 1 ? R.days[pos + 1] : null;
+  const tgtDay = R.dayTgt * tgtK();
+  const nav = '<div class="ph-nav">' + (prv != null ? '<a href="#" data-plantday="' + prv + '">&lsaquo; ' + shortDate(B.days[prv]) + '</a>' : '<span></span>') +
+    '<b>' + dayLabel(ds) + '</b>' + (nxt != null ? '<a href="#" data-plantday="' + nxt + '">' + shortDate(B.days[nxt]) + ' &rsaquo;</a>' : '<span></span>') + '</div>';
+  const stats = '<div class="ph-stats"><span>Total <b>' + fmt(tot) + ' t</b> · ' + fmt(trips) + ' trip</span><span>Rata-rata <b>' + fmt(tot / 24) + ' t/jam</b></span>' +
+    (tgtDay ? '<span>Target ' + tgtLbl() + ' <b>' + fmt(tgtDay / 24) + ' t/jam</b> · capaian hari ini <b style="color:' + tierColor(pctOf(tot, tgtDay)) + '">' + pctTxt(pctOf(tot, tgtDay)) + '</b></span>' : '') +
+    '<span>Puncak <b>jam ' + pad2(peak.i) + '</b> (' + fmt(peak.v) + ' t)</span><span>Jam tanpa rilis <b>' + idle + '</b></span></div>';
+  const legend = R.incs.map(i => '<span><i style="background:' + incColor(i) + '"></i>' + esc(incLbl(INCS()[i])) + '</span>').join('') +
+    (tgtDay ? '<span><i class="ln tgt"></i>target ' + tgtLbl() + ' / jam</span>' : '') + '<span><i class="ln avg"></i>rata-rata (total ÷ 24)</span>' + (R.prevDay != null ? '<span><i class="ln prev"></i>hari sebelumnya</span>' : '');
+  return '<div id="plantHours"><div class="section-head"><div class="section-title">Rilis per jam (ton) · jam truk keluar</div>' + nav + '</div>' +
+    '<div class="dp-panel pc-panel">' + stats + '<div class="pc-legend">' + legend + '</div>' + plantChart(R) + '</div></div>';
+}
 function pagePlant(name){
   const si = B.dims.src.indexOf(name);
   if(si < 0 || !name) return notFound('Plant ' + name);
@@ -1597,6 +1648,9 @@ function pagePlant(name){
     cols[0].total = '<b>Total</b>'; cols[1].total = '<b>' + fmt(vol) + '</b>'; cols[2].total = tgt ? '<b>' + fmt(tgt) + '</b>' : '–'; cols[3].total = pc(pS); cols[4].total = pc(pI);
     cols[5].total = tgt ? signed(az - tgt) : '–'; cols[6].total = prev ? fmt(prev) : '–'; cols[7].total = chg == null ? '–' : (chg >= 0 ? '+' : '−') + fmt1(Math.abs(chg)) + '%'; cols[8].total = fmt(trips); cols[9].total = dwN ? fmt1(dwS / dwN) : '–';
   }
+  if(!plantHourCtx || plantHourCtx.si !== si) plantHourDay = null;   // another plant: start at its latest day
+  plantHourCtx = {si};
+  const hourSec = plantHourSection();
   const cmp = '<div class="section-head"><div class="section-title">Perbandingan per incoterm</div><div class="section-sub">' + esc(m.sub) + ' vs ' + shortDate(R.pp.from) + '–' + shortDate(R.pp.to) + '</div></div>' +
     (rows.length ? table(cols, rows, {total: rows.length > 1}) : '<div class="dp-review">Tidak ada data untuk filter ini.</div>');
   // destinations (filter-driven, as before)
@@ -1606,7 +1660,7 @@ function pagePlant(name){
   page('<div class="wrap">' + crumb([['Plant', '#/plant'], [name]]) +
     '<div class="dp-head"><div><div class="nm">' + esc(name) + '</div><div class="sub">Plant / packing plant asal pengiriman · ' + esc(scopeTxt) + ' · ' + periodSub() + '</div></div></div>' +
     (F.srcOff.has(name) ? '<div class="dp-review">Plant ini tidak dicentang di filter plant: halaman ini tetap menampilkan datanya, tetapi Ringkasan dan halaman lain tidak menghitungnya sampai dicentang.</div>' : '') +
-    hero + chart + cmp +
+    hero + chart + hourSec + cmp +
     '<div class="dp-cols">' +
       '<div class="dp-panel"><div class="pt">Provinsi tujuan<span class="pt-sub">capaian target · ' + esc(incName()) + '</span></div>' + (provs.length ? provs.map(o => rateRow(tc(B.dims.prov[o.key]) + ' · ' + fmt(o.vol) + ' t', o.pct, '#/provinsi/' + enc(B.dims.prov[o.key]), o.hasTgt ? 'target ' + fmt(o.tgt) + ' t' : 'tanpa target')).join('') : '<div class="empty">Tidak ada data.</div>') + '</div>' +
       '<div class="dp-panel"><div class="pt">Ekspeditur / pengangkut<span class="pt-sub">' + esc(incName()) + '</span></div>' + (eks.length ? eks.map(o => rateRow(B.dims.eksp[o.key] + ' · ' + fmt(o.vol) + ' t', o.pct, '#/ekspeditur/' + enc(B.dims.eksp[o.key]), o.hasTgt ? 'target ' + fmt(o.tgt) + ' t' : 'tanpa target')).join('') : '<div class="empty">Tidak ada data.</div>') + '</div>' +
@@ -2017,6 +2071,8 @@ function bindEvents(){
     const sort = e.target.closest('[data-sort]');
     if(sort){ const [id, i] = sort.dataset.sort.split(':'); const T = TABLES[id]; if(T.sort === +i) T.dir = -T.dir; else { T.sort = +i; T.dir = T.cols[+i].num ? -1 : 1; } $('#' + id).innerHTML = tableInner(id); return; }
     if(e.target.closest('[data-plantinc]')){ e.preventDefault(); plantAllInc = !plantAllInc; route(); return; }
+    const pd = e.target.closest('[data-plantday]');
+    if(pd){ e.preventDefault(); plantHourDay = +pd.dataset.plantday; const sec = $('#plantHours'); if(sec) sec.outerHTML = plantHourSection(); return; }
     const go = e.target.closest('[data-href]');
     if(go && go.dataset.href && go.dataset.href !== 'null'){ location.hash = go.dataset.href; return; }
     if(!e.target.closest('#mainNav')) closeNav();

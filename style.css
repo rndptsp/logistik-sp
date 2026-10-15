@@ -50,7 +50,7 @@ nav{display:flex;align-items:stretch;gap:4px;font-size:13px;font-weight:700;colo
 .dropdown a:hover{background:var(--gray-l);}
 .dropdown a small{display:block;font-weight:400;font-size:11.5px;color:var(--sub);margin-top:2px;}
 .mega{width:620px;padding:22px 24px;}
-.mega-eksp{width:600px;max-height:calc(100vh - 140px);overflow-y:auto;}
+.mega-eksp{width:820px;max-height:calc(100vh - 140px);overflow-y:auto;}   /* full ekspeditur names */
 .mega-title{font-size:11px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.04em;margin-bottom:12px;}
 
 .mega-list a{display:block;padding:7px 0;font-size:13px;font-weight:600;color:var(--black);border-bottom:1px solid var(--line);}
@@ -598,3 +598,8 @@ table.tree td.name small{display:block;color:var(--sub);font-weight:400;font-siz
 .pc-toggle{font-size:12px;font-weight:700;color:var(--red);}
 .inc-dot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:8px;vertical-align:0;}
 @media(max-width:1000px){.plant-hero .mh-inner{grid-template-columns:1fr;}}
+.ph-nav{display:flex;align-items:center;gap:14px;font-size:12.5px;}
+.ph-nav a{color:var(--red);font-weight:700;}
+.ph-nav b{font-weight:800;}
+.ph-stats{display:flex;flex-wrap:wrap;gap:6px 22px;font-size:12.5px;color:var(--sub);margin-bottom:8px;}
+.ph-stats b{color:var(--black);}
