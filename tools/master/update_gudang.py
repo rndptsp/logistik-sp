@@ -13,7 +13,7 @@ import openpyxl
 
 BASE = Path(os.environ.get('MASTER_HOME') or '.')
 OUT = BASE / 'data' / 'gudang.csv.gz'
-COLS = ['KODE_TOKO', 'LAT', 'LON', 'KECAMATAN']
+COLS = ['KODE_TOKO', 'LAT', 'LON', 'KECAMATAN', 'SUMBER']   # SUMBER: manual here; geocode_gudang.py fills the rest
 
 
 def coord(v, lo, hi):
@@ -43,7 +43,7 @@ def main():
     cur = {}
     if OUT.exists():
         with gzip.open(OUT, 'rt', encoding='utf-8') as f:
-            cur = {r['KODE_TOKO']: r for r in csv.DictReader(f)}
+            cur = {r['KODE_TOKO']: {c: r.get(c, '') for c in COLS} for r in csv.DictReader(f)}
     n = bad = 0
     for r in rows:
         kode = str(r[ix['KODE_TOKO']] or '').strip().split('.')[0]
@@ -56,7 +56,7 @@ def main():
             bad += 1; lat = lon = None
         kec = str(r[ix['KECAMATAN']] or '').strip().upper() if 'KECAMATAN' in ix else ''
         new = {'KODE_TOKO': kode, 'LAT': lat if lat is not None else old['LAT'], 'LON': lon if lon is not None else old['LON'],
-               'KECAMATAN': kec or old['KECAMATAN']}
+               'KECAMATAN': kec or old['KECAMATAN'], 'SUMBER': 'manual' if lat is not None else old['SUMBER']}
         if new['LAT'] or new['KECAMATAN']:
             cur[kode] = new; n += 1
     OUT.parent.mkdir(parents=True, exist_ok=True)

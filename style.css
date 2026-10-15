@@ -545,3 +545,5 @@ table.tree td.name small{display:block;color:var(--sub);font-weight:400;font-siz
 .kmap .toko-pin{stroke:#0F1A21;}
 @media(max-width:1000px){.mh-page .mh-inner{grid-template-columns:1fr;padding:22px 18px;}.mh-page .mh-map{order:-1;}}
 @media(max-width:560px){.mh-page .mh-inner{padding:16px 14px;}.mh-page .mh-h{font-size:17px;}.mh-page .mh-chips{grid-template-columns:1fr 1fr;}}
+.kmap .kec-lbl{fill:#fff;stroke:rgba(0,0,0,.6);}
+.kmap .map-region.live{cursor:default;}

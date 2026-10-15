@@ -52,5 +52,6 @@ def main():
     for n, args in steps:
         if not run(args, env):
             print('\nBERHENTI di langkah', n, '- data store tidak dipublikasikan.'); sys.exit(1)
+    run(['geocode_gudang.py'], env)   # best effort: a failed lookup never blocks the data update
     print('\nSELESAI (master)')
 if __name__ == '__main__': main()

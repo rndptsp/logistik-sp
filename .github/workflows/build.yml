@@ -19,6 +19,7 @@ jobs:
       TZ: Asia/Jakarta            # H-1 rule: "today" must be Indonesian today, not UTC
       ADMIN_URL: ${{ secrets.ADMIN_URL }}
       BUILD_TOKEN: ${{ secrets.BUILD_TOKEN }}
+      GOOGLE_MAPS_KEY: ${{ secrets.GOOGLE_MAPS_KEY }}   # optional: ship-to geocoding (tools/master/geocode_gudang.py)
       RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
     steps:
       - uses: actions/checkout@v4
