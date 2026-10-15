@@ -5,7 +5,7 @@ because the sources are not reachable from every network. Needs no extra package
 
   python3 tools/make_kecamatan.py
 
-Sources (open data, CC BY 4.0): geoBoundaries IDN ADM3 (kecamatan) and ADM2 (kabupaten/kota, the same file as
+Sources: geoBoundaries IDN ADM3 (kecamatan, gbHumanitarian = OCHA/BPS layer) and ADM2 (kabupaten/kota, the same file as
 assets/districts.js, so district names match). Each kecamatan goes to the district that contains its centroid.
 Coordinates use the same projection as districts.js (200 px/degree).
 """
@@ -14,7 +14,6 @@ import json, os, re, sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from make_districts import ADM2, PROV, PROV_NAME, SUMATRA, ROOT, fetch, polys, area, centroid, inside, simplify, proj
 
-API = "https://www.geoboundaries.org/api/current/gbOpen/IDN/ADM3/"
 TOL = 0.0025       # degrees (~280 m): finer than the province map, the district map is zoomed in
 MIN_AREA = 0.00015
 
@@ -43,10 +42,11 @@ def shapes(features, tol, min_area):
     return out
 
 
-ADM3_URLS = [   # tried in order; the API answer names the current file
-    lambda: fetch(API)["simplifiedGeometryGeoJSON"],
-    lambda: "https://media.githubusercontent.com/media/wmgeolab/geoBoundaries/main/releaseData/gbOpen/IDN/ADM3/geoBoundaries-IDN-ADM3_simplified.geojson",
-    lambda: "https://raw.githubusercontent.com/wmgeolab/geoBoundaries/main/releaseData/gbOpen/IDN/ADM3/geoBoundaries-IDN-ADM3_simplified.geojson",
+ADM3_URLS = [   # tried in order. gbOpen has no IDN ADM3; gbHumanitarian carries the OCHA/BPS kecamatan layer
+    lambda: "https://media.githubusercontent.com/media/wmgeolab/geoBoundaries/main/releaseData/gbHumanitarian/IDN/ADM3/geoBoundaries-IDN-ADM3_simplified.geojson",
+    lambda: "https://raw.githubusercontent.com/wmgeolab/geoBoundaries/main/releaseData/gbHumanitarian/IDN/ADM3/geoBoundaries-IDN-ADM3_simplified.geojson",
+    lambda: "https://media.githubusercontent.com/media/wmgeolab/geoBoundaries/main/releaseData/gbAuthoritative/IDN/ADM3/geoBoundaries-IDN-ADM3_simplified.geojson",
+    lambda: fetch("https://www.geoboundaries.org/api/current/gbHumanitarian/IDN/ADM3/")["simplifiedGeometryGeoJSON"],
 ]
 
 
