@@ -7,9 +7,11 @@ tools/bg_photos.json maps a page key to a Commons file and a caption:
 Keys: prov-<province slug>, plant-indarung, moda-darat, moda-laut, moda-kontainer (see pageBgKey in app.js).
 Only freely licensed files are accepted (CC0 / public domain / CC BY / CC BY-SA); author and licence are read from
 Commons and shown on the site (#/kredit), as the licences require. Images are cropped to a wide band and saved as
-WebP (~1600 px, quality 70) so they stay light on phones. Needs Pillow and network access to *.wikimedia.org.
+WebP (~1600 px, quality 70) so they stay light on phones. Needs Pillow and network access to id.wikipedia.org and
+upload.wikimedia.org. Metadata is read through id.wikipedia.org (which serves Commons files too) because
+commons.wikimedia.org often rate-limits shared cloud IPs; images come from the standard 1920 px thumbnail.
 """
-import io, json, os, re, sys, time, urllib.parse, urllib.request
+import hashlib, io, json, os, re, sys, time, urllib.parse, urllib.request
 
 from PIL import Image
 
@@ -34,12 +36,21 @@ def get(url):
 
 def info(title):
     q = urllib.parse.urlencode({"action": "query", "format": "json", "titles": title, "prop": "imageinfo",
-                                "iiprop": "url|size|extmetadata", "iiurlwidth": W * 1.25})
-    page = next(iter(json.loads(get("https://commons.wikimedia.org/w/api.php?" + q))["query"]["pages"].values()))
+                                "iiprop": "url|size|extmetadata"})
+    page = next(iter(json.loads(get("https://id.wikipedia.org/w/api.php?" + q))["query"]["pages"].values()))
     ii = page["imageinfo"][0]
     md = ii.get("extmetadata", {})
     clean = lambda k: re.sub(r"\s+", " ", re.sub("<[^>]+>", "", md.get(k, {}).get("value", ""))).strip()
     return ii, clean("LicenseShortName"), clean("Artist") or "tidak diketahui"
+
+
+def thumb(ii):
+    """Standard-size thumbnail URL (Wikimedia only serves fixed widths); the original when it is small already."""
+    if ii["width"] <= 1920:
+        return ii["url"].split("?")[0]
+    n = ii["url"].split("?")[0].rsplit("/", 1)[1]
+    h = hashlib.md5(urllib.parse.unquote(n).encode()).hexdigest()
+    return f"https://upload.wikimedia.org/wikipedia/commons/thumb/{h[0]}/{h[:2]}/{n}/1920px-{n}"
 
 
 def main():
@@ -51,7 +62,7 @@ def main():
         if not OK.match(lic):
             print(f"  LEWATI {key}: lisensi {lic!r} tidak bebas")
             continue
-        im = Image.open(io.BytesIO(get(ii.get("thumburl") or ii["url"]))).convert("RGB")
+        im = Image.open(io.BytesIO(get(thumb(ii)))).convert("RGB")
         w, h = im.size
         th = int(w / RATIO)
         if th < h:   # crop a centred band (focus slightly above the middle, where landmarks usually are)

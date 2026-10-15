@@ -1,0 +1,14 @@
+{
+ "prov-aceh": ["Masjid Raya Baiturrahman", "Banda Aceh"],
+ "prov-sumatera-utara": ["Danau Toba", "Lake Toba"],
+ "prov-sumatera-barat": ["Jam Gadang", "Ngarai Sianok", "Rumah Gadang"],
+ "prov-riau-daratan": ["Istana Siak", "Pekanbaru"],
+ "prov-kepulauan-riau": ["Barelang Bridge", "Jembatan Barelang"],
+ "prov-jambi": ["Muaro Jambi", "Gentala Arasy"],
+ "prov-bengkulu": ["Fort Marlborough Bengkulu", "Benteng Marlborough"],
+ "prov-sumatera-selatan": ["Ampera Bridge", "Jembatan Ampera"],
+ "moda-darat": ["truck Sumatra road", "truk Indonesia", "Trans-Sumatra Toll Road"],
+ "moda-laut": ["Teluk Bayur", "cargo ship Indonesia port", "cement carrier ship"],
+ "moda-kontainer": ["container ship Indonesia", "container terminal Indonesia"],
+ "plant-indarung": ["Semen Padang", "Indarung", "cement plant Indonesia"]
+}

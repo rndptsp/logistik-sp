@@ -1,0 +1,39 @@
+# Page header photos from Wikimedia Commons (public, freely licensed images only; no company data involved).
+# Runs here because Wikimedia rate-limits shared cloud IPs.
+#   mode=search: tools/bg_queries.json -> tools/bg_candidates.json (preview list to choose from)
+#   mode=fetch:  tools/bg_photos.json  -> assets/bg/*.webp + assets/bg/bg.js (credits)
+name: Header photos
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        type: choice
+        options: [search, fetch]
+        default: search
+permissions:
+  contents: write
+concurrency:
+  group: build-site
+  cancel-in-progress: false
+jobs:
+  photos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -q pillow
+      - if: inputs.mode == 'search'
+        run: python3 tools/bg_search.py tools/bg_queries.json > tools/bg_candidates.json
+      - if: inputs.mode == 'fetch'
+        run: python3 tools/fetch_bg.py tools/bg_photos.json
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tools/bg_candidates.json assets/bg 2>/dev/null || true
+          git diff --cached --quiet && exit 0
+          git commit -m "Header photos: ${{ inputs.mode }}"
+          for i in 1 2 3; do git pull --rebase -q origin main && git push -q origin HEAD:main && exit 0; sleep 5; done; exit 1
