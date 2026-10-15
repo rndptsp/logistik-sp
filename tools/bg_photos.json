@@ -1,0 +1,62 @@
+{
+ "prov-aceh": {
+  "file": "File:Meuseujid Raya Bayturrahman.JPG",
+  "t": "Masjid Raya Baiturrahman, Banda Aceh",
+  "focus": 0.45
+ },
+ "prov-sumatera-utara": {
+  "file": "File:Danau Toba, Sumatera.jpg",
+  "t": "Danau Toba",
+  "focus": 0.45
+ },
+ "prov-sumatera-barat": {
+  "file": "File:Jam Gadang Okt 2020 1.jpg",
+  "t": "Jam Gadang, Bukittinggi",
+  "focus": 0.4
+ },
+ "prov-riau-daratan": {
+  "file": "File:Istana Kerajaan Siak (2).jpg",
+  "t": "Istana Siak Sri Indrapura",
+  "focus": 0.5
+ },
+ "prov-kepulauan-riau": {
+  "file": "File:Barelang Bridge in Indonesia.jpg",
+  "t": "Jembatan Barelang, Batam",
+  "focus": 0.5
+ },
+ "prov-jambi": {
+  "file": "File:Jembatan Gentala Arasy - Kota Jambi, JA (12 Agustus 2023).jpg",
+  "t": "Jembatan Gentala Arasy, Jambi",
+  "focus": 0.5
+ },
+ "prov-bengkulu": {
+  "file": "File:Bengkulu City and Fort Marlborough.jpg",
+  "t": "Kota Bengkulu dan Benteng Marlborough",
+  "focus": 0.5
+ },
+ "prov-sumatera-selatan": {
+  "file": "File:LRT Palembang Ampera Bridge.jpg",
+  "t": "Jembatan Ampera, Palembang",
+  "focus": 0.5
+ },
+ "moda-darat": {
+  "file": "File:Trans-Sumatran Toll Road South (Asian Highway 25), South Sumatra (December 2019) (20).jpg",
+  "t": "Jalan Tol Trans-Sumatra",
+  "focus": 0.6
+ },
+ "moda-laut": {
+  "file": "File:Teluk Bayur Harbour1.jpg",
+  "t": "Pelabuhan Teluk Bayur, Padang",
+  "focus": 0.55
+ },
+ "moda-kontainer": {
+  "file": "File:COSCO Indonesia IMO 9448786 C Hamburg 01-11-2021 (1).jpg",
+  "t": "Kapal kontainer",
+  "focus": 0.5
+ },
+ "plant-indarung": {
+  "file": "File:Semen Padang Disnakerin Kota Padang.jpg",
+  "t": "Pabrik Semen Padang, Indarung",
+  "focus": 0.35
+ }
+}
