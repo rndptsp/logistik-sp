@@ -3,7 +3,8 @@
 
   MASTER_HOME=<folder store> [GOOGLE_MAPS_KEY=...] python3 tools/master/geocode_gudang.py
 
-Sumber toko: data/rilis.csv.gz (KODE_TOKO, NAMA_TOKO, ALAMAT_TOKO, distrik, provinsi). Hasil: data/gudang.csv.gz
+Sumber toko: data/rilis.csv.gz (KODE_TOKO, NAMA_TOKO, ALAMAT_TOKO, distrik, provinsi); ALAMAT_LENGKAP yang diupload
+(slot gudang) dipakai bila ada, karena ALAMAT TOKO di Rilis terpotong 30 karakter. Hasil: data/gudang.csv.gz
 (kolom SUMBER: manual | google-tempat | google-alamat | osm | gagal:<penyedia>). Koordinat manual (upload admin) tidak
 pernah ditimpa; toko yang sudah dicari tidak dicari ulang kecuali penyedianya lebih baik (Google setelah OSM).
 Penyedia: Google Maps (Places Text Search, lalu Geocoding) bila GOOGLE_MAPS_KEY ada; selain itu OpenStreetMap Nominatim
@@ -17,7 +18,7 @@ from pathlib import Path
 BASE = Path(os.environ.get('MASTER_HOME') or '.')
 ROOT = Path(__file__).resolve().parents[2]
 OUT = BASE / 'data' / 'gudang.csv.gz'
-COLS = ['KODE_TOKO', 'LAT', 'LON', 'KECAMATAN', 'SUMBER']
+COLS = ['KODE_TOKO', 'LAT', 'LON', 'KECAMATAN', 'SUMBER', 'ALAMAT_LENGKAP']
 KEY = os.environ.get('GOOGLE_MAPS_KEY', '').strip()
 PROV = 'google' if KEY else 'osm'
 LIMIT = int(os.environ.get('GEO_MAX') or 3000)
@@ -153,7 +154,7 @@ def main():
         if src == 'manual' or src.startswith('google') or src == 'gagal:' + PROV or (src == 'osm' and PROV == 'osm'):
             continue
         prov, dist = c.most_common(1)[0][0]
-        todo.append({'kode': k, 'nama': meta[k][0], 'alamat': meta[k][1], 'prov': prov, 'dist': dist, 'n': sum(c.values())})
+        todo.append({'kode': k, 'nama': meta[k][0], 'alamat': o.get('ALAMAT_LENGKAP') or meta[k][1], 'prov': prov, 'dist': dist, 'n': sum(c.values())})
     todo.sort(key=lambda t: -t['n'])   # busiest ship-tos first
     found = failed = noshape = 0
     t0 = time.time()

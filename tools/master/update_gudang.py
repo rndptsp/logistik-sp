@@ -3,7 +3,9 @@
 
   MASTER_HOME=<folder store> python3 tools/master/update_gudang.py --input gudang.xlsx
 
-Sheet pertama, baris judul berisi minimal KODE_TOKO dan LAT + LON (atau KECAMATAN). Kolom lain diabaikan.
+Sheet pertama, baris judul berisi minimal KODE_TOKO dan salah satu dari: LAT + LON, KECAMATAN, ALAMAT_LENGKAP.
+ALAMAT_LENGKAP (alamat ship-to utuh dari master customer, mis. SAP/CSMS) dipakai geocode_gudang.py untuk mencari
+koordinat, menggantikan ALAMAT TOKO di Rilis yang terpotong 30 karakter. Kolom lain diabaikan.
 Upsert per KODE_TOKO: baris baru menimpa yang lama, toko yang tidak ada di file tetap tersimpan. Sel LAT/LON kosong
 tidak menghapus koordinat yang sudah ada. Hanya jumlah baris yang dicetak (log build terbaca publik).
 """
@@ -13,7 +15,8 @@ import openpyxl
 
 BASE = Path(os.environ.get('MASTER_HOME') or '.')
 OUT = BASE / 'data' / 'gudang.csv.gz'
-COLS = ['KODE_TOKO', 'LAT', 'LON', 'KECAMATAN', 'SUMBER']   # SUMBER: manual here; geocode_gudang.py fills the rest
+COLS = ['KODE_TOKO', 'LAT', 'LON', 'KECAMATAN', 'SUMBER', 'ALAMAT_LENGKAP']   # SUMBER: manual here; geocode_gudang.py fills the rest
+IN_COLS = ['KODE_TOKO', 'LAT', 'LON', 'KECAMATAN', 'ALAMAT_LENGKAP']
 
 
 def coord(v, lo, hi):
@@ -37,9 +40,9 @@ def main():
             head = names; break
     if not head:
         print('GAGAL: kolom KODE_TOKO tidak ditemukan di sheet pertama.'); sys.exit(1)
-    ix = {c: head.index(c) for c in COLS if c in head}
-    if not ('LAT' in ix and 'LON' in ix) and 'KECAMATAN' not in ix:
-        print('GAGAL: butuh kolom LAT dan LON (atau KECAMATAN).'); sys.exit(1)
+    ix = {c: head.index(c) for c in IN_COLS if c in head}
+    if not ('LAT' in ix and 'LON' in ix) and 'KECAMATAN' not in ix and 'ALAMAT_LENGKAP' not in ix:
+        print('GAGAL: butuh kolom LAT dan LON, KECAMATAN, atau ALAMAT_LENGKAP.'); sys.exit(1)
     cur = {}
     if OUT.exists():
         with gzip.open(OUT, 'rt', encoding='utf-8') as f:
@@ -55,9 +58,13 @@ def main():
         if lat is False or lon is False or (lat is None) != (lon is None):
             bad += 1; lat = lon = None
         kec = str(r[ix['KECAMATAN']] or '').strip().upper() if 'KECAMATAN' in ix else ''
+        full = re.sub(r'\s+', ' ', str(r[ix['ALAMAT_LENGKAP']] or '')).strip() if 'ALAMAT_LENGKAP' in ix else ''
         new = {'KODE_TOKO': kode, 'LAT': lat if lat is not None else old['LAT'], 'LON': lon if lon is not None else old['LON'],
-               'KECAMATAN': kec or old['KECAMATAN'], 'SUMBER': 'manual' if lat is not None else old['SUMBER']}
-        if new['LAT'] or new['KECAMATAN']:
+               'KECAMATAN': kec or old['KECAMATAN'], 'SUMBER': 'manual' if lat is not None else old['SUMBER'],
+               'ALAMAT_LENGKAP': full or old['ALAMAT_LENGKAP']}
+        if full and full != old['ALAMAT_LENGKAP'] and str(new['SUMBER']).startswith('gagal'):
+            new['SUMBER'] = ''   # a new full address: search this ship-to again
+        if new['LAT'] or new['KECAMATAN'] or new['ALAMAT_LENGKAP']:
             cur[kode] = new; n += 1
     OUT.parent.mkdir(parents=True, exist_ok=True)
     buf = io.StringIO(); w = csv.DictWriter(buf, COLS); w.writeheader(); w.writerows(cur[k] for k in sorted(cur))

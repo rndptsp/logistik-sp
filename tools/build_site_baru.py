@@ -233,7 +233,8 @@ def build(cfg):
     gpath = os.path.join(base, "data", "gudang.csv.gz")
     if os.path.exists(gpath):
         for r in read_store(gpath):
-            gudang[str(r.get("KODE_TOKO") or "").strip()] = (num(r.get("LAT")) or None, num(r.get("LON")) or None, up(r.get("KECAMATAN")))
+            gudang[str(r.get("KODE_TOKO") or "").strip()] = (num(r.get("LAT")) or None, num(r.get("LON")) or None, up(r.get("KECAMATAN")),
+                                                            str(r.get("ALAMAT_LENGKAP") or "").strip())
         print(f"  lokasi gudang: {len(gudang):,} toko")
 
     # ---------------- Realisasi (data/rilis.csv.gz) ----------------
@@ -373,7 +374,9 @@ def build(cfg):
     # ---------------- Assemble ----------------
     def toko_row(i):
         meta = toko_meta.get(i, ["", "", ""])
-        lat, lon, kc = gudang.get(meta[0], (None, None, ""))
+        lat, lon, kc, full = gudang.get(meta[0], (None, None, "", ""))
+        if full:
+            meta = meta[:2] + [full]   # full ship-to address replaces the 30-character Rilis one
         ki = kec(kc) if kc else (max(toko_kec[i], key=toko_kec[i].get) if toko_kec.get(i) else -1)
         return meta + [ki, lat, lon]
 

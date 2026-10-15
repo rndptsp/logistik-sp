@@ -547,3 +547,15 @@ table.tree td.name small{display:block;color:var(--sub);font-weight:400;font-siz
 @media(max-width:560px){.mh-page .mh-inner{padding:16px 14px;}.mh-page .mh-h{font-size:17px;}.mh-page .mh-chips{grid-template-columns:1fr 1fr;}}
 .kmap .kec-lbl{fill:#fff;stroke:rgba(0,0,0,.6);}
 .kmap .map-region.live{cursor:default;}
+.mh-page .mh-chips{grid-template-columns:repeat(3,1fr);}
+@media(max-width:560px){.mh-page .mh-chips{grid-template-columns:1fr 1fr;}}
+
+/* Region header: emblem instead of photo (applyPageBg / regionLogo) */
+.dp-head.has-logo{position:relative;overflow:hidden;min-height:120px;align-items:center;padding:22px 26px 26px;border-radius:2px;
+  background:linear-gradient(90deg,#fff 0%,#fff 45%,rgba(255,255,255,.82) 100%),var(--logo) right 40px center/auto 190% no-repeat,#fff;border-bottom:3px solid var(--red);}
+.dp-head.has-logo>div:first-of-type{flex:1;}
+.dp-logo{width:72px;height:72px;object-fit:contain;flex:none;margin-right:18px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.15));}
+.dp-head.has-logo .bg-credit{color:#8C9293;}
+.dp-head.has-logo .bg-credit:hover{color:#000;}
+@media(max-width:700px){.dp-head.has-logo{background-size:auto,auto 150%;background-position:0 0,right -30px center;padding:18px 16px 24px;}.dp-logo{width:52px;height:52px;margin-right:12px;}}
+.mh-left .eyebrow a{color:#fff;text-decoration:underline;text-underline-offset:2px;}

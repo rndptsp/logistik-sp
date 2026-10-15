@@ -4,13 +4,14 @@
 #   mode=search: tools/bg_queries.json -> tools/bg_candidates.json (preview list to choose from)
 #   mode=fetch:  tools/bg_photos.json  -> assets/bg/*.webp + assets/bg/bg.js (credits)
 #   mode=kecamatan: geoBoundaries ADM3 -> assets/kec/<province>.js
+#   mode=logos: regional emblems from Commons -> assets/logo/*.png + logo.js
 name: Header photos & map data
 on:
   workflow_dispatch:
     inputs:
       mode:
         type: choice
-        options: [search, fetch, kecamatan]
+        options: [search, fetch, kecamatan, logos]
         default: search
 permissions:
   contents: write
@@ -33,6 +34,8 @@ jobs:
         run: python3 tools/fetch_bg.py tools/bg_photos.json
       - if: inputs.mode == 'kecamatan'
         run: python3 tools/make_kecamatan.py
+      - if: inputs.mode == 'logos'
+        run: python3 tools/fetch_logos.py
       - name: Commit
         run: |
           git config user.name "github-actions[bot]"
