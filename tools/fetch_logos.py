@@ -44,19 +44,27 @@ def get(url):
     raise RuntimeError("429")
 
 
+EN = {"Sumatera Barat": ["West Sumatra"], "Sumatera Utara": ["North Sumatra"], "Sumatera Selatan": ["South Sumatra"],
+      "Kepulauan Riau": ["Riau Islands"], "Kepulauan Bangka Belitung": ["Bangka Belitung Islands", "Bangka Belitung"],
+      "Labuhan Batu": ["Labuhanbatu"], "Banyu Asin": ["Banyuasin"], "Sawah Lunto": ["Sawahlunto"], "Tulangbawang": ["Tulang Bawang"]}
+
+
 def words(s):
     return [w for w in re.sub(r"[^a-z0-9 ]", " ", s.lower()).split() if w not in ("kota", "kabupaten", "provinsi", "kab", "file", "berkas")]
 
 
 def pick(files, kind, name):
     """Best emblem among the files used on the region's Wikipedia article."""
-    need, best = words(name), None
+    best = None
     for f in files:
         tl = re.sub(r"[_\-]", " ", f.lower())
         if not EMB.search(tl) or BAD.search(tl):
             continue
-        if not all(w in words(tl) for w in need):   # the file must name this region
+        joined = "".join(words(tl))
+        if not any("".join(words(n)) in joined for n in [name] + EN.get(name, [])):   # the file must name this region (spacing-insensitive)
             continue
+        if kind != "Provinsi" and re.search(r"islands|province|provinsi|kepulauan", tl) and "kepulauan" not in name.lower():
+            continue   # e.g. "Bangka" must not take the Bangka Belitung province emblem
         if kind == "Provinsi" and re.search(r"kabupaten|\bkota\b", tl) or kind == "Kabupaten" and re.search(r"\bkota\b", tl) and "kabupaten" not in tl:
             continue
         score = (3 if "lambang" in tl else 2) + (1 if tl.endswith(".svg") else 0)
