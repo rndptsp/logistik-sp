@@ -99,6 +99,15 @@ window.LOGO = {
 "p": "ACEH",
 "n": "Aceh Timur"
 },
+"dist-aceh-aceh-utara": {
+"f": "dist-aceh-aceh-utara.png",
+"t": "Lambang Kabupaten Aceh Utara",
+"a": "Pemerintah daerah",
+"l": "Public domain",
+"u": "https://commons.wikimedia.org/wiki/File:Lambang_kab_acehutara.png",
+"p": "ACEH",
+"n": "Aceh Utara"
+},
 "dist-aceh-bener-meriah": {
 "f": "dist-aceh-bener-meriah.png",
 "t": "Lambang Kabupaten Bener Meriah",
@@ -198,12 +207,21 @@ window.LOGO = {
 "p": "ACEH",
 "n": "Simeulue"
 },
-"dist-bangka-belitung-bangka": {
-"f": "dist-bangka-belitung-bangka.png",
-"t": "Lambang Kabupaten Bangka",
+"prov-bangka-belitung": {
+"f": "prov-bangka-belitung.png",
+"t": "Lambang Provinsi Kepulauan Bangka Belitung",
 "a": "Bangka Belitung",
 "l": "Public domain",
 "u": "https://commons.wikimedia.org/wiki/File:Coat_of_arms_of_Bangka_Belitung_Islands.svg",
+"p": "BANGKA BELITUNG",
+"n": null
+},
+"dist-bangka-belitung-bangka": {
+"f": "dist-bangka-belitung-bangka.png",
+"t": "Lambang Kabupaten Bangka",
+"a": "Regency Government of Bangka Government of Indonesia",
+"l": "Public domain",
+"u": "https://commons.wikimedia.org/wiki/File:Lambang_Kabupaten_Bangka.png",
 "p": "BANGKA BELITUNG",
 "n": "Bangka"
 },
@@ -237,9 +255,9 @@ window.LOGO = {
 "dist-bangka-belitung-belitung": {
 "f": "dist-bangka-belitung-belitung.png",
 "t": "Lambang Kabupaten Belitung",
-"a": "Bangka Belitung",
+"a": "Government of Indonesia;",
 "l": "Public domain",
-"u": "https://commons.wikimedia.org/wiki/File:Coat_of_arms_of_Bangka_Belitung_Islands.svg",
+"u": "https://commons.wikimedia.org/wiki/File:Lambang_Kabupaten_Belitung.png",
 "p": "BANGKA BELITUNG",
 "n": "Belitung"
 },
@@ -251,6 +269,15 @@ window.LOGO = {
 "u": "https://commons.wikimedia.org/wiki/File:Lambang_Kabupaten_Belitung_Timur.jpeg",
 "p": "BANGKA BELITUNG",
 "n": "Belitung Timur"
+},
+"dist-bangka-belitung-kota-pangkal-pinang": {
+"f": "dist-bangka-belitung-kota-pangkal-pinang.png",
+"t": "Lambang Kota Pangkal Pinang",
+"a": "Bangka Belitung Provincial Government",
+"l": "Public domain",
+"u": "https://commons.wikimedia.org/wiki/File:Lambang_Kota_Pangkalpinang.png",
+"p": "BANGKA BELITUNG",
+"n": "Kota Pangkal Pinang"
 },
 "prov-bengkulu": {
 "f": "prov-bengkulu.png",
@@ -395,6 +422,15 @@ window.LOGO = {
 "u": "https://commons.wikimedia.org/wiki/File:Logo_Kabupaten_Tebo_(Serentak_Gajah_Serengkuh_Dayung).png",
 "p": "JAMBI",
 "n": "Tebo"
+},
+"prov-kepulauan-riau": {
+"f": "prov-kepulauan-riau.png",
+"t": "Lambang Provinsi Kepulauan Riau",
+"a": "Government of Riau Islands, Indonesia. Vector by RaFaDa20631",
+"l": "Public domain",
+"u": "https://commons.wikimedia.org/wiki/File:Coat_of_arms_of_Riau_Islands.svg",
+"p": "KEPULAUAN RIAU",
+"n": null
 },
 "dist-kepulauan-riau-bintan": {
 "f": "dist-kepulauan-riau-bintan.png",
@@ -585,6 +621,15 @@ window.LOGO = {
 "p": "LAMPUNG",
 "n": "Tulang Bawang Barat"
 },
+"dist-lampung-tulangbawang": {
+"f": "dist-lampung-tulangbawang.png",
+"t": "Lambang Kabupaten Tulangbawang",
+"a": "Copyright © 2024 KOLEKSI LOGO",
+"l": "Public domain",
+"u": "https://commons.wikimedia.org/wiki/File:LOGO_KABUPATEN_TULANG_BAWANG.png",
+"p": "LAMPUNG",
+"n": "Tulangbawang"
+},
 "dist-lampung-way-kanan": {
 "f": "dist-lampung-way-kanan.png",
 "t": "Lambang Kabupaten Way Kanan",
@@ -702,6 +747,15 @@ window.LOGO = {
 "p": "RIAU DARATAN",
 "n": "Siak"
 },
+"prov-sumatera-barat": {
+"f": "prov-sumatera-barat.png",
+"t": "Lambang Provinsi Sumatera Barat",
+"a": "User:MartijnL",
+"l": "Public domain",
+"u": "https://commons.wikimedia.org/wiki/File:Coat_of_arms_of_West_Sumatra.svg",
+"p": "SUMATERA BARAT",
+"n": null
+},
 "dist-sumatera-barat-agam": {
 "f": "dist-sumatera-barat-agam.png",
 "t": "Lambang Kabupaten Agam",
@@ -738,6 +792,15 @@ window.LOGO = {
 "p": "SUMATERA BARAT",
 "n": "Kota Padang"
 },
+"dist-sumatera-barat-kota-padang-panjang": {
+"f": "dist-sumatera-barat-kota-padang-panjang.png",
+"t": "Lambang Kota Padang Panjang",
+"a": "Dhimam Prahara Khan",
+"l": "Public domain",
+"u": "https://commons.wikimedia.org/wiki/File:Logopadangpanjang.png",
+"p": "SUMATERA BARAT",
+"n": "Kota Padang Panjang"
+},
 "dist-sumatera-barat-kota-pariaman": {
 "f": "dist-sumatera-barat-kota-pariaman.png",
 "t": "Lambang Kota Pariaman",
@@ -755,6 +818,15 @@ window.LOGO = {
 "u": "https://commons.wikimedia.org/wiki/File:Lambang_Kota_Payakumbuh.png",
 "p": "SUMATERA BARAT",
 "n": "Kota Payakumbuh"
+},
+"dist-sumatera-barat-kota-sawah-lunto": {
+"f": "dist-sumatera-barat-kota-sawah-lunto.png",
+"t": "Lambang Kota Sawah Lunto",
+"a": "Merekayangpeduli",
+"l": "Public domain",
+"u": "https://commons.wikimedia.org/wiki/File:Lambang_Kota_Sawahlunto.png",
+"p": "SUMATERA BARAT",
+"n": "Kota Sawah Lunto"
 },
 "dist-sumatera-barat-kota-solok": {
 "f": "dist-sumatera-barat-kota-solok.png",
@@ -836,6 +908,15 @@ window.LOGO = {
 "u": "https://commons.wikimedia.org/wiki/File:Lambang_Kabupaten_Tanah_Datar.png",
 "p": "SUMATERA BARAT",
 "n": "Tanah Datar"
+},
+"prov-sumatera-selatan": {
+"f": "prov-sumatera-selatan.png",
+"t": "Lambang Provinsi Sumatera Selatan",
+"a": "Gunkarta",
+"l": "Public domain",
+"u": "https://commons.wikimedia.org/wiki/File:Coat_of_arms_of_South_Sumatra.svg",
+"p": "SUMATERA SELATAN",
+"n": null
 },
 "dist-sumatera-selatan-empat-lawang": {
 "f": "dist-sumatera-selatan-empat-lawang.png",
@@ -927,6 +1008,24 @@ window.LOGO = {
 "p": "SUMATERA SELATAN",
 "n": "Ogan Komering Ilir"
 },
+"dist-sumatera-selatan-ogan-komering-ulu": {
+"f": "dist-sumatera-selatan-ogan-komering-ulu.png",
+"t": "Lambang Kabupaten Ogan Komering Ulu",
+"a": "Government of Indonesia",
+"l": "Public domain",
+"u": "https://commons.wikimedia.org/wiki/File:Lambang_Kabupaten_Ogan_Komering_Ulu.png",
+"p": "SUMATERA SELATAN",
+"n": "Ogan Komering Ulu"
+},
+"prov-sumatera-utara": {
+"f": "prov-sumatera-utara.png",
+"t": "Lambang Provinsi Sumatera Utara",
+"a": "Gunawan Kartapranata redrawed from official emblem from Government of Indonesia",
+"l": "Public domain",
+"u": "https://commons.wikimedia.org/wiki/File:Coat_of_arms_of_North_Sumatra.svg",
+"p": "SUMATERA UTARA",
+"n": null
+},
 "dist-sumatera-utara-asahan": {
 "f": "dist-sumatera-utara-asahan.png",
 "t": "Lambang Kabupaten Asahan",
@@ -935,6 +1034,15 @@ window.LOGO = {
 "u": "https://commons.wikimedia.org/wiki/File:Logo_kabupaten_asahan.gif",
 "p": "SUMATERA UTARA",
 "n": "Asahan"
+},
+"dist-sumatera-utara-batu-bara": {
+"f": "dist-sumatera-utara-batu-bara.png",
+"t": "Lambang Kabupaten Batu Bara",
+"a": "Pemerintah daerah",
+"l": "Public domain",
+"u": "https://commons.wikimedia.org/wiki/File:Lambang_Kabupaten_Batubara.png",
+"p": "SUMATERA UTARA",
+"n": "Batu Bara"
 },
 "dist-sumatera-utara-dairi": {
 "f": "dist-sumatera-utara-dairi.png",
@@ -972,6 +1080,15 @@ window.LOGO = {
 "p": "SUMATERA UTARA",
 "n": "Karo"
 },
+"dist-sumatera-utara-kota-binjai": {
+"f": "dist-sumatera-utara-kota-binjai.png",
+"t": "Lambang Kota Binjai",
+"a": "City of Binjai",
+"l": "Public domain",
+"u": "https://commons.wikimedia.org/wiki/File:Logobinjai.jpg",
+"p": "SUMATERA UTARA",
+"n": "Kota Binjai"
+},
 "dist-sumatera-utara-kota-gunungsitoli": {
 "f": "dist-sumatera-utara-kota-gunungsitoli.png",
 "t": "Lambang Kota Gunungsitoli",
@@ -990,6 +1107,24 @@ window.LOGO = {
 "p": "SUMATERA UTARA",
 "n": "Kota Medan"
 },
+"dist-sumatera-utara-kota-pematang-siantar": {
+"f": "dist-sumatera-utara-kota-pematang-siantar.png",
+"t": "Lambang Kota Pematang Siantar",
+"a": "(pembuat)",
+"l": "Fair use",
+"u": "https://id.wikipedia.org/wiki/Berkas:Logo_kota_pematangsiantar.jpg",
+"p": "SUMATERA UTARA",
+"n": "Kota Pematang Siantar"
+},
+"dist-sumatera-utara-kota-sibolga": {
+"f": "dist-sumatera-utara-kota-sibolga.png",
+"t": "Lambang Kota Sibolga",
+"a": "City of Sibolga",
+"l": "Public domain",
+"u": "https://commons.wikimedia.org/wiki/File:Lambang_Kota_Sibolga.png",
+"p": "SUMATERA UTARA",
+"n": "Kota Sibolga"
+},
 "dist-sumatera-utara-kota-tanjung-balai": {
 "f": "dist-sumatera-utara-kota-tanjung-balai.png",
 "t": "Lambang Kota Tanjung Balai",
@@ -998,6 +1133,24 @@ window.LOGO = {
 "u": "https://commons.wikimedia.org/wiki/File:LOGO_KOTA_TANJUNG_BALAI.png",
 "p": "SUMATERA UTARA",
 "n": "Kota Tanjung Balai"
+},
+"dist-sumatera-utara-labuhan-batu-selatan": {
+"f": "dist-sumatera-utara-labuhan-batu-selatan.png",
+"t": "Lambang Kabupaten Labuhan Batu Selatan",
+"a": "Indonesia",
+"l": "Public domain",
+"u": "https://commons.wikimedia.org/wiki/File:Lambang_Kabupaten_Labuhanbatu_Selatan.jpg",
+"p": "SUMATERA UTARA",
+"n": "Labuhan Batu Selatan"
+},
+"dist-sumatera-utara-labuhan-batu-utara": {
+"f": "dist-sumatera-utara-labuhan-batu-utara.png",
+"t": "Lambang Kabupaten Labuhan Batu Utara",
+"a": "Indonesia",
+"l": "Public domain",
+"u": "https://commons.wikimedia.org/wiki/File:Lambang_Labuhanbatu_Utara.jpg",
+"p": "SUMATERA UTARA",
+"n": "Labuhan Batu Utara"
 },
 "dist-sumatera-utara-langkat": {
 "f": "dist-sumatera-utara-langkat.png",
@@ -1062,6 +1215,15 @@ window.LOGO = {
 "p": "SUMATERA UTARA",
 "n": "Padang Lawas Utara"
 },
+"dist-sumatera-utara-pakpak-bharat": {
+"f": "dist-sumatera-utara-pakpak-bharat.png",
+"t": "Lambang Kabupaten Pakpak Bharat",
+"a": "Indonesia",
+"l": "Public domain",
+"u": "https://commons.wikimedia.org/wiki/File:Lambang_Kabupaten_Pakpak_Bharat.jpg",
+"p": "SUMATERA UTARA",
+"n": "Pakpak Bharat"
+},
 "dist-sumatera-utara-samosir": {
 "f": "dist-sumatera-utara-samosir.png",
 "t": "Lambang Kabupaten Samosir",
@@ -1079,6 +1241,15 @@ window.LOGO = {
 "u": "https://commons.wikimedia.org/wiki/File:Lambang_Kabupaten_Serdang_Bedagai.png",
 "p": "SUMATERA UTARA",
 "n": "Serdang Bedagai"
+},
+"dist-sumatera-utara-simalungun": {
+"f": "dist-sumatera-utara-simalungun.png",
+"t": "Lambang Kabupaten Simalungun",
+"a": "Government of Simalungun, Indonesia",
+"l": "Public domain",
+"u": "https://commons.wikimedia.org/wiki/File:Lambang_Kabupaten_Simalungun.png",
+"p": "SUMATERA UTARA",
+"n": "Simalungun"
 },
 "dist-sumatera-utara-tapanuli-selatan": {
 "f": "dist-sumatera-utara-tapanuli-selatan.png",
