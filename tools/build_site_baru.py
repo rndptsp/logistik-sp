@@ -221,6 +221,15 @@ def build(cfg):
     print(f"Membaca master baru: {base}")
     prov, dist, eksp, src, distr, truck, toko = Dict(), Dict(), Dict(), Dict(), Dict(), Dict(), Dict()
     kem_d = Dict()
+    # Area (SNOP AREA DETAIL): "Area 1" = AP1, anything else (Area 2, Corsales Holding) = NON AP1. Optional column
+    # AREA in rilis / SO / target; empty = AP1 (counted in the quality page so gaps stay visible).
+    area_d = Dict(); area_d("AP1"); area_d("NON AP1")
+    def area(v, what):
+        a = re.sub(r"[^A-Z0-9]", "", up(v))
+        if not a:
+            check[f"{what} tanpa AREA (dianggap AP1)"] += 1
+            return 0
+        return 0 if a in ("AREA1", "AP1", "AREAPENJUALAN1") else 1
     kem_d("ZAK"); kem_d("CURAH"); kem_d("JUMBO BAG")
     KEM_ALIAS = {"SAK": "ZAK", "JUMBO": "JUMBO BAG", "JUMBO 1 TON": "JUMBO BAG", "JUMBOBAG": "JUMBO BAG"}
     kemasan = lambda v: kem_d(KEM_ALIAS.get(up(v), up(v)) or "ZAK")
@@ -276,7 +285,8 @@ def build(cfg):
         dwell = r.get("DWELL_TIME_JAM")
         ok_dwell = dwell not in (None, "") and not r.get("DWELL_WAITING_FLAG") and 0 <= num(dwell) <= 48
         kem = kemasan(r.get("KEMASAN"))
-        f = facts[(d.isoformat(), inc, s, p, di, e, kem)]
+        ar = area(r.get("AREA"), "realisasi")
+        f = facts[(d.isoformat(), inc, s, p, di, e, kem, ar)]
         f[0] += ton; f[1] += 1
         if ok_dwell:
             f[2] += num(dwell); f[3] += 1
@@ -284,11 +294,11 @@ def build(cfg):
         ti = toko(kt)
         if kt and ti not in toko_meta:
             toko_meta[ti] = [kt, str(r.get("NAMA_TOKO") or "").strip(), str(r.get("ALAMAT_TOKO") or "").strip()]
-        g = ship[(d.isoformat(), inc, s, p, di, distr(up(r.get("DISTRIBUTOR"))), e, ti, kem)]
+        g = ship[(d.isoformat(), inc, s, p, di, distr(up(r.get("DISTRIBUTOR"))), e, ti, kem, ar)]
         g[0] += ton; g[1] += 1
         nopol = up(r.get("NOPOL"))
         if nopol:
-            tk = trucks[(d.isoformat(), truck(nopol), inc, e, s, p, kem)]
+            tk = trucks[(d.isoformat(), truck(nopol), inc, e, s, p, kem, ar)]
             tk[0] += 1; tk[1] += ton
             if ok_dwell:
                 tk[2] += num(dwell); tk[3] += 1
@@ -312,10 +322,11 @@ def build(cfg):
         s = src(up(r.get("SOURCE_PLANT")))
         ton = round(num(r.get("TARGET_TON_BULAN")), 3)
         kem = kemasan(r.get("KEMASAN"))   # optional column; empty = ZAK
+        ar = area(r.get("AREA"), "target")
         if inc.startswith("FRC"):
-            targets.append([month, p, di, eksp(code), s, ton, daily, INCOTERMS.index(inc), -1, kem])
+            targets.append([month, p, di, eksp(code), s, ton, daily, INCOTERMS.index(inc), -1, kem, ar])
         else:   # distributor target: EXPEDITUR_KODE holds the distributor
-            targets.append([month, p, di, eksp(""), s, ton, daily, INCOTERMS.index(inc), distr(code), kem])
+            targets.append([month, p, di, eksp(""), s, ton, daily, INCOTERMS.index(inc), distr(code), kem, ar])
     print(f"  target rows: {len(targets):,} ({', '.join(sorted({t[0] for t in targets}))}); kemasan: "
           f"{', '.join(sorted({kem_d.items[t[9]] for t in targets}))}")
 
@@ -329,7 +340,7 @@ def build(cfg):
             continue
         p, di = prov(up(r.get("PROPINSI"))), dist(up(r.get("NAMA_DISTRIK")))
         dist_prov.setdefault(di, p)
-        sod[(dk.isoformat(), p, di, eksp(up(r.get("EXPEDITUR_KODE"))), kemasan(r.get("KEMASAN")))] += num(r.get("TON_SO"))
+        sod[(dk.isoformat(), p, di, eksp(up(r.get("EXPEDITUR_KODE"))), kemasan(r.get("KEMASAN")), area(r.get("AREA"), "SO"))] += num(r.get("TON_SO"))
     print(f"  SO groups: {len(sod):,} per tgl kirim (SOCC)")
 
     # Provinsi non-kinerja (config MASTER BARU/settings.json): target 0 per kombinasi yang punya realisasi -> tampil 100%
@@ -340,11 +351,11 @@ def build(cfg):
         nonkin = []
     zero = set()
     tgt_kem = {t[9] for t in targets} or {kem_d("ZAK")}   # only kemasan that have targets elsewhere
-    for (day, inc_, s_, p_, di_, e_, k_) in facts:
+    for (day, inc_, s_, p_, di_, e_, k_, a_) in facts:
         if p_ in nonkin and k_ in tgt_kem:
-            zero.add((day[:7], p_, di_, e_, s_, INCOTERMS.index(inc_), k_))
-    for m_, p_, di_, e_, s_, ii, k_ in sorted(zero):
-        targets.append([m_, p_, di_, e_, s_, 0.0, [0.0] * 31, ii, -1 if INCOTERMS[ii].startswith("FRC") else distr(""), k_])
+            zero.add((day[:7], p_, di_, e_, s_, INCOTERMS.index(inc_), k_, a_))
+    for m_, p_, di_, e_, s_, ii, k_, a_ in sorted(zero):
+        targets.append([m_, p_, di_, e_, s_, 0.0, [0.0] * 31, ii, -1 if INCOTERMS[ii].startswith("FRC") else distr(""), k_, a_])
     print(f"  provinsi non-kinerja: {[prov.items[i] for i in nonkin]}; target 0: {len(zero)} baris")
 
     try:
@@ -368,21 +379,21 @@ def build(cfg):
         "asOf": days[-1] if days else None,
         "lastDay": last_day,
         "dims": {"inc": INCOTERMS, "prov": prov.items, "dist": dist.items, "eksp": eksp.items, "src": src.items,
-                 "distr": distr.items, "truck": truck.items, "nonKin": nonkin, "kem": kem_d.items, "ekspNama": [kamus.get(n, "") for n in eksp.items],
+                 "distr": distr.items, "truck": truck.items, "nonKin": nonkin, "kem": kem_d.items, "area": area_d.items, "ekspNama": [kamus.get(n, "") for n in eksp.items],
                  "toko": [toko_meta.get(i, ["", "", ""]) for i in range(len(toko.items))],
                  "distProv": [dist_prov.get(i, -1) for i in range(len(dist.items))]},
         "days": days,
         "facts": [[day_idx[k[0]], INCOTERMS.index(k[1]), k[2], k[3], k[4], k[5],
-                   round(v[0], 2), v[1], round(v[2], 2), v[3], k[6]] for k, v in facts.items()],
+                   round(v[0], 2), v[1], round(v[2], 2), v[3], k[6], k[7]] for k, v in facts.items()],
         # one row per day x incoterm x source x province x district x distributor x ekspeditur x ship-to
-        "ship": [[day_idx[k[0]], INCOTERMS.index(k[1]), k[2], k[3], k[4], k[5], k[6], k[7], round(v[0], 2), v[1], k[8]]
+        "ship": [[day_idx[k[0]], INCOTERMS.index(k[1]), k[2], k[3], k[4], k[5], k[6], k[7], round(v[0], 2), v[1], k[8], k[9]]
                  for k, v in ship.items()],
         # per day, so any date range can be cut exactly: [day, truck, inc, eksp, src, prov, trips, ton, dwellSum, dwellN]
-        "trucks": [[day_idx[k[0]], k[1], INCOTERMS.index(k[2]), k[3], k[4], k[5], v[0], round(v[1], 2), round(v[2], 2), v[3], k[6]]
+        "trucks": [[day_idx[k[0]], k[1], INCOTERMS.index(k[2]), k[3], k[4], k[5], v[0], round(v[1], 2), round(v[2], 2), v[3], k[6], k[7]]
                    for k, v in trucks.items()],
         "targets": targets,
         "so": [[k[0], k[1], k[2], k[3], round(v, 2)] for k, v in so.items() if v],
-        "sod": [[k[0], k[1], k[2], k[3], round(v, 2), k[4]] for k, v in sod.items() if v],
+        "sod": [[k[0], k[1], k[2], k[3], round(v, 2), k[4], k[5]] for k, v in sod.items() if v],
         "prog": {"date": "", "time": "", "fields": [], "rows": []},
         "soh": [],
         "quality": {"checks": sorted(check.items()), "toko": [[k[0], k[1], v[0], v[1]] for k, v in sorted(toko_q.items())]},
