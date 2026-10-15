@@ -21,7 +21,7 @@ OUT = BASE / 'data' / 'gudang.csv.gz'
 COLS = ['KODE_TOKO', 'LAT', 'LON', 'KECAMATAN', 'SUMBER', 'ALAMAT_LENGKAP']
 KEY = os.environ.get('GOOGLE_MAPS_KEY', '').strip()
 PROV = 'google' if KEY else 'osm'
-LIMIT = int(os.environ.get('GEO_MAX') or 3000)
+LIMIT = int(os.environ.get('GEO_MAX') or 1200)   # ship-tos per build; Google: <= 2 calls each, so <= 2,400 calls per build (well inside the free tier)
 BUDGET = float(os.environ.get('GEO_SECONDS') or 8 * 60)   # time budget per build (OSM: ~1-2 s per ship-to); the rest waits for the next build
 UA = {'User-Agent': 'logistik-sp-dashboard/1.0 (internal company dashboard; geocoding ship-to addresses)'}
 ALIAS = {'RIAU KEPULAUAN': 'KEPULAUAN RIAU'}
