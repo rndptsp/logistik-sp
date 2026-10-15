@@ -1835,7 +1835,7 @@ function setTxt(set, dims, unit){
 }
 /* Voyages: the source has no voyage number, so loading days of one ship at one plant with gaps of at most
    VOY_GAP days form one voyage. Rows = ship rows of that ship. */
-const VOY_GAP = 2;
+const VOY_GAP = 3;
 function voyagesOf(rows){
   const bySrc = new Map();
   rows.forEach(r => { (bySrc.get(r[2]) || bySrc.set(r[2], []).get(r[2])).push(r); });
