@@ -7,7 +7,7 @@ Needs ADMIN_URL, BUILD_TOKEN. Data only ever lands in the folders given (the run
 import json, os, sys, urllib.request, urllib.error
 
 URL = os.environ["ADMIN_URL"].rstrip("/") + "/api/build/"
-H = {"authorization": "Bearer " + os.environ["BUILD_TOKEN"]}
+H = {"authorization": "Bearer " + os.environ["BUILD_TOKEN"], "user-agent": "logistik-sp-build/1.0 (GitHub Actions)"}
 PUSH = ["data/rilis.csv.gz", "data/so.csv.gz", "data/target_ekspeditur.csv.gz", "data/target_distributor.csv.gz", "config/ekspeditur_map.json"]
 
 def call(path, method="GET", data=None, ctype=None, timeout=600):

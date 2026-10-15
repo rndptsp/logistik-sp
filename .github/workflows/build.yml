@@ -33,7 +33,7 @@ jobs:
       - name: Report running
         run: python3 tools/ci_report.py running
       - name: Download master store + uploaded files
-        run: python3 tools/ci_store.py pull "$MASTER_HOME" "$INBOX" > "$RUNNER_TEMP/build.log" 2>&1
+        run: python3 tools/ci_store.py pull "$MASTER_HOME" "$INBOX" > "$RUNNER_TEMP/build.log" 2>&1 || { grep -E "^GAGAL" "$RUNNER_TEMP/build.log" | head -n 3; exit 1; }
       - name: Update master (log goes to the admin page)
         run: python3 tools/master/run_web.py --inbox "$INBOX" >> "$RUNNER_TEMP/build.log" 2>&1
       - name: Build site (log goes to the admin page)

@@ -13,7 +13,7 @@ if state != "running":
         meta = json.load(open(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "data", "meta.json")))
         body.update(asOf=meta.get("asOf"), build=meta.get("build"))
 req = urllib.request.Request(os.environ["ADMIN_URL"].rstrip("/") + "/api/build/report", data=json.dumps(body).encode(),
-                             headers={"authorization": "Bearer " + os.environ["BUILD_TOKEN"], "content-type": "application/json"})
+                             headers={"authorization": "Bearer " + os.environ["BUILD_TOKEN"], "content-type": "application/json", "user-agent": "logistik-sp-build/1.0 (GitHub Actions)"})
 try:
     urllib.request.urlopen(req, timeout=30).read()
     print("status dikirim ke halaman admin:", state)
