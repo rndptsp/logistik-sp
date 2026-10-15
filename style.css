@@ -618,3 +618,4 @@ table.tree td.name small{display:block;color:var(--sub);font-weight:400;font-siz
 .filter-strip .qrep + .edit{margin-left:8px;}
 .filter-strip .qrep.on{background:var(--red);color:#fff;}
 .filter-strip.open .qrep:not(.on){background:#fff;color:var(--red);}
+.pc-panel{margin-bottom:22px;} .bars.hours .bval,.bars .bval{white-space:nowrap;}

@@ -393,10 +393,10 @@ function deltaHTML(a, b){
   const p = (a / b - 1) * 100;
   return '<div class="bcmp" style="color:' + (p >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (p >= 0 ? '▲' : '▼') + Math.abs(Math.round(p)) + '%</div>';
 }
-function barsHTML(id, data){
+function barsHTML(id, data, opt){
   const hasC = data.some(d => d.c);
   const max = Math.max(1, ...data.map(d => Math.max(d.vol, d.tgt || 0, d.c ? d.c.vol : 0)));
-  return '<div class="bars' + (hasC ? ' pair' : '') + (data.length > 16 ? ' dense' : '') + '">' + data.map((d, i) => {
+  return '<div class="bars' + (hasC ? ' pair' : '') + (data.length > 16 && !(opt && opt.labels) ? ' dense' : '') + '">' + data.map((d, i) => {
     const h = Math.max(2, d.vol / max * 100);
     const th = d.tgt != null ? Math.min(100, d.tgt / max * 100) : null;
     const c = d.pct != null ? tierColor(d.pct) : 'var(--black)';
@@ -1609,10 +1609,10 @@ function plantHourSection(){
   const stats = '<div class="ph-stats"><span>Total <b>' + fmt(tot) + ' t</b> · ' + fmt(trips) + ' trip</span><span>Rata-rata <b>' + fmt(tot / 24) + ' t/jam</b></span>' +
     (tgtDay ? '<span>Target ' + tgtLbl() + ' <b>' + fmt(tgtDay / 24) + ' t/jam</b> · capaian hari ini <b style="color:' + tierColor(pctOf(tot, tgtDay)) + '">' + pctTxt(pctOf(tot, tgtDay)) + '</b></span>' : '') +
     '<span>Puncak <b>jam ' + pad2(peak.i) + '</b> (' + fmt(peak.v) + ' t)</span><span>Jam tanpa rilis <b>' + idle + '</b></span></div>';
-  const legend = R.incs.map(i => '<span><i style="background:' + incColor(i) + '"></i>' + esc(incLbl(INCS()[i])) + '</span>').join('') +
-    (tgtDay ? '<span><i class="ln tgt"></i>target ' + tgtLbl() + ' / jam</span>' : '') + '<span><i class="ln avg"></i>rata-rata (total ÷ 24)</span>' + (R.prevDay != null ? '<span><i class="ln prev"></i>hari sebelumnya</span>' : '');
+  const hData = bs.map((b, h) => { const t = tgtDay ? tgtDay / 24 : null; return {label: pad2(h), long: dayLabel(ds) + ' · jam ' + pad2(h) + '.00–' + pad2(h) + '.59 · ' + fmt(b.trips) + ' trip' + [...b.inc.entries()].map(([i, v]) => ' · ' + incLbl(INCS()[i]) + ' ' + fmt(v) + ' t').join(''), vol: b.tot, tgt: t, pct: t ? pctOf(b.tot, t) : null}; });
+  TRENDS.ph = {id: 'ph', data: hData, click: () => {}};
   return '<div id="plantHours"><div class="section-head"><div class="section-title">Rilis per jam (ton) · jam truk keluar</div>' + nav + '</div>' +
-    '<div class="dp-panel pc-panel">' + stats + '<div class="pc-legend">' + legend + '</div>' + plantChart(R) + '</div></div>';
+    '<div class="dp-panel pc-panel">' + stats + barsHTML('ph', hData, {labels: true}) + '<div class="trend-legend"><span><i style="background:var(--green)"></i>&ge;100% target/jam</span><span><i style="background:var(--amber)"></i>85–99%</span><span><i style="background:var(--red)"></i>&lt;85%</span>' + (tgtDay ? '<span><i class="dash"></i>target ' + tgtLbl() + ' / jam</span>' : '') + '</div></div></div>';
 }
 function pagePlant(name){
   const si = B.dims.src.indexOf(name);
@@ -1647,14 +1647,11 @@ function pagePlant(name){
   const hero = '<section class="map-hero mh-page plant-hero"><div class="mh-bg"' + (bg ? ' style="background-image:linear-gradient(90deg,rgba(15,26,33,.96) 0%,rgba(15,26,33,.88) 50%,rgba(15,26,33,.7) 100%),url(&quot;assets/bg/' + bg.f + '&quot;)"' : '') + '></div><div class="mh-inner">' +
     '<div class="mh-left"><div class="eyebrow">Kinerja rilis · ' + esc(m.sub) + '</div><h2 class="mh-h">' + head + '</h2><div class="mh-chips">' + chips.join('') + '</div></div>' +
     '<div class="ph-cards"><div class="mh-lh"><span>KPI per incoterm · SNOP &amp; Internal</span></div>' + cards + '</div></div></section>';
-  // chart
-  const legend = R.incs.map(i => '<span><i style="background:' + incColor(i) + '"></i>' + esc(incLbl(INCS()[i])) + '</span>').join('') +
-    '<span><i class="ln tgt"></i>target ' + tgtLbl() + '</span><span><i class="ln avg"></i>rata-rata</span>' + (R.monthly ? '' : '<span><i class="ln prev"></i>bulan lalu (tgl sama)</span>');
-  const toggle = '<a href="#" class="pc-toggle" data-plantinc>' + (plantAllInc ? 'Ikuti filter incoterm (' + esc(incName()) + ')' : 'Tampilkan semua incoterm') + '</a>';
+  // daily trend: the standard trend panel (tier-coloured bars, % and value, target ticks, MTD/harian/mingguan/bulanan)
   const sla = plantSla(R);
-  const chart = '<div class="section-head"><div class="section-title">Rilis per ' + (R.monthly ? 'bulan' : 'hari') + ' (ton)</div>' + toggle + '</div>' +
-    '<div class="dp-panel pc-panel"><div class="pc-legend">' + legend + '</div>' + plantChart(R) +
-    (sla ? '<div class="pc-sub">SLA per ' + (R.monthly ? 'bulan' : 'hari') + ' (jam, masuk → keluar pabrik)</div>' + sla : '') + '</div>';
+  const chart = '<div class="section-head"><div class="section-title">Tren realisasi</div></div>' +
+    '<div class="main-chart">' + trendPanel(sc, 'harian', 'Tren realisasi ' + name) + '</div>' +
+    (sla ? '<div class="dp-panel pc-panel" style="margin-top:14px"><div class="pt">SLA per ' + (R.monthly ? 'bulan' : 'hari') + ' (jam, masuk → keluar pabrik)</div>' + sla + '</div>' : '');
   // comparison table per incoterm
   const rows = R.I.map(o => ({n: o.i, vol: o.vol, tgt: o.tgt, ps: o.tgt ? pctOf(o.az, o.tgt) : null, pi: o.tgt ? pctOf(o.az, o.tgt * TGT_INTERNAL) : null, gap: o.az - o.tgt, prev: o.prev, chg: o.prev ? (o.vol / o.prev - 1) * 100 : null, trips: o.trips, sla: o.dwN ? o.dwS / o.dwN : null}));
   const pc = p => p == null ? '–' : '<b style="color:' + tierColor(p) + '">' + pctTxt(p) + '</b>';
