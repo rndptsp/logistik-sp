@@ -1436,31 +1436,182 @@ function pagePlantList(){
     (rows.length ? table(cols, rows, {go: r => plantHref(r.n)}) : '<div class="dp-review">Tidak ada data untuk filter ini.</div>') +
     '</div>', 'plant');
 }
+/* ===================== Plant review (kinerja rilis) ===================== */
+/* Incoterm colours: fixed per incoterm (colour follows the entity), validated categorical set (CVD-safe adjacent pairs). */
+const INC_COLOR = {'FOT': '#2a78d6', 'FRC': '#eb6834', 'FOB': '#6250d6', 'FAS': '#1baf7a', 'FRC CONTAINER': '#eda100', 'FRC KAPAL': '#e87ba4', 'FOT CONTAINER': '#008300'};
+const incColor = i => INC_COLOR[INCS()[i]] || '#888';
+let plantAllInc = false;   // plant page: all incoterms instead of the incoterm filter (toggle on the page)
+/** Daily (or monthly, for long periods) release, targets, SLA and trucks of one plant, per incoterm. */
+function plantReview(si, per, all){
+  const incs = INCS().map((n, i) => i).filter(i => all || incOk(i)), inSet = new Set(incs);
+  const monthly = per.days > 62;
+  const bk = s => monthly ? s.slice(0, 7) : s;
+  const keys = [];
+  if(monthly){ for(let mm = per.from.slice(0, 7); mm <= per.to.slice(0, 7); mm = nextMonth(mm)) keys.push(mm); }
+  else { const end = per.kind === 'month' ? per.month + '-' + pad2(dim(per.month)) : per.to; for(let s = per.from; s <= end; s = addDays(s, 1)) keys.push(s); }
+  const blankB = () => ({inc: new Map(), tot: 0, trips: 0, dwS: 0, dwN: 0, tgt: 0, prev: null, trucks: new Set()});
+  const Bk = new Map(keys.map(k => [k, blankB()]));
+  const I = new Map(incs.map(i => [i, {i, vol: 0, az: 0, trips: 0, dwS: 0, dwN: 0, tgt: 0, tgtFull: 0, prev: 0}]));
+  const pp = prevPer(per);
+  B.facts.forEach(f => {
+    if(f[2] !== si || !inSet.has(f[1]) || !kemOk(f[10]) || !areaProvOk(f[3])) return;
+    const ds = B.days[f[0]], o = I.get(f[1]);
+    if(ds >= per.from && ds <= per.to){
+      const b = Bk.get(bk(ds)); if(!b) return;
+      b.inc.set(f[1], (b.inc.get(f[1]) || 0) + f[6]); b.tot += f[6]; b.trips += f[7]; b.dwS += f[8]; b.dwN += f[9];
+      o.vol += f[6]; o.trips += f[7]; o.dwS += f[8]; o.dwN += f[9];
+      if(achKem(f[10]) && !NKP().has(f[3])) o.az += f[6];
+    } else if(ds >= pp.from && ds <= pp.to){
+      o.prev += f[6];
+      if(!monthly && per.kind === 'month'){ const b = Bk.get(per.month + ds.slice(7)); if(b) b.prev = (b.prev || 0) + f[6]; }
+    }
+  });
+  B.trucks.forEach(t => {
+    if(t[4] !== si || !inSet.has(t[2]) || !kemOk(t[10]) || !areaProvOk(t[5])) return;
+    const ds = B.days[t[0]]; if(ds < per.from || ds > per.to) return;
+    const b = Bk.get(bk(ds)); if(b) b.trucks.add(t[1]);
+  });
+  const lastKey = keys[keys.length - 1], chartTo = monthly ? lastKey + '-' + pad2(dim(lastKey)) : lastKey;
+  B.targets.forEach(t => {
+    if(t[4] !== si || !inSet.has(tInc(t)) || !kemOk(tKem(t)) || !areaProvOk(t[1])) return;
+    const o = I.get(tInc(t));
+    o.tgt += targetBetween(t, per.from, per.tgtTo) / tgtK();   // SNOP basis; Internal = x TGT_INTERNAL
+    o.tgtFull += targetBetween(t, per.from, chartTo) / tgtK();
+    const n = dim(t[0]);
+    for(let d = 1; d <= n; d++){
+      const ds = t[0] + '-' + pad2(d); if(ds < per.from || ds > chartTo) continue;
+      const b = Bk.get(bk(ds)); if(b) b.tgt += t[6] ? (t[6][d - 1] || 0) : t[5] / n;
+    }
+  });
+  const list = [...I.values()].filter(o => o.vol > 0 || o.tgt > 0 || o.prev > 0);
+  return {incs: list.map(o => o.i), keys, Bk, I: list, monthly, pp};
+}
+/** Stacked release bars per incoterm with the SNOP target line, the average and last month (same day) as a line. */
+function plantChart(R){
+  const W = 1100, H = 330, L = 52, Rm = 12, T = 26, Bm = 28, n = R.keys.length;
+  const bs = R.keys.map(k => R.Bk.get(k)), withData = bs.filter(b => b.tot > 0);
+  const avg = withData.length ? withData.reduce((a, b) => a + b.tot, 0) / withData.length : 0;
+  const max = Math.max(1, ...bs.map(b => Math.max(b.tot, b.tgt * tgtK(), b.prev || 0))) * 1.1;
+  const step = (W - L - Rm) / n, bw = Math.min(30, step * 0.68), y = v => T + (H - T - Bm) * (1 - v / max);
+  const nice = v => { const p = Math.pow(10, Math.floor(Math.log10(v))); return [1, 2, 2.5, 5, 10].map(x => x * p).find(x => v / x <= 5); };
+  const gs = nice(max), grid = [];
+  for(let g = 0; g <= max; g += gs) grid.push('<line x1="' + L + '" x2="' + (W - Rm) + '" y1="' + y(g).toFixed(1) + '" y2="' + y(g).toFixed(1) + '" class="pc-grid"/><text x="' + (L - 6) + '" y="' + (y(g) + 3.5).toFixed(1) + '" class="pc-ax" text-anchor="end">' + fmt(g) + '</text>');
+  let bars = '', labels = '', hits = '', xl = '';
+  const order = R.incs.slice().sort((a, b) => ['FOT', 'FOT CONTAINER', 'FRC', 'FRC CONTAINER', 'FRC KAPAL', 'FOB', 'FAS'].indexOf(INCS()[a]) - ['FOT', 'FOT CONTAINER', 'FRC', 'FRC CONTAINER', 'FRC KAPAL', 'FOB', 'FAS'].indexOf(INCS()[b]));
+  bs.forEach((b, i) => {
+    const cx = L + step * (i + 0.5), x0 = cx - bw / 2;
+    let acc = 0;
+    const segs = order.filter(ii => b.inc.get(ii) > 0);
+    segs.forEach((ii, j) => {
+      const v = b.inc.get(ii), y1 = y(acc + v), y0 = y(acc), top = j === segs.length - 1;
+      bars += top ? '<path d="M' + x0.toFixed(1) + ',' + y0.toFixed(1) + 'V' + (y1 + 3).toFixed(1) + 'q0,-3 3,-3H' + (x0 + bw - 3).toFixed(1) + 'q3,0 3,3V' + y0.toFixed(1) + 'Z" fill="' + incColor(ii) + '"/>'
+                  : '<rect x="' + x0.toFixed(1) + '" y="' + y1.toFixed(1) + '" width="' + bw.toFixed(1) + '" height="' + Math.max(0, y0 - y1 - 1.5).toFixed(1) + '" fill="' + incColor(ii) + '"/>';
+      acc += v;
+    });
+    if(b.tot > 0 && (n <= 16 || i % 1 === 0)) labels += '<text x="' + cx.toFixed(1) + '" y="' + (y(b.tot) - 5).toFixed(1) + '" class="pc-val" text-anchor="middle">' + (b.tot >= 1000 ? (b.tot / 1000).toFixed(1).replace('.', ',') + 'k' : fmt(b.tot)) + '</text>';
+    const k = R.keys[i], lab = R.monthly ? monthShort(k) : (+k.slice(8) === 1 || i % (n > 20 ? 1 : 1) === 0 ? String(+k.slice(8)) : '');
+    xl += '<text x="' + cx.toFixed(1) + '" y="' + (H - 10) + '" class="pc-ax" text-anchor="middle">' + lab + '</text>';
+    const tip = (R.monthly ? monthLabel(k) : dayLabel(k)) + '|' + (b.tot ? 'Rilis ' + fmt(b.tot) + ' t · ' + fmt(b.trips) + ' trip · ' + b.trucks.size + ' truk' : 'Belum ada rilis') +
+      segs.slice().reverse().map(ii => '|' + incLbl(INCS()[ii]) + ': ' + fmt(b.inc.get(ii)) + ' t').join('') +
+      (b.tgt ? '|Target ' + tgtLbl() + ' ' + fmt(b.tgt * tgtK()) + ' t' + (b.tot ? ' · capaian ' + pctTxt(pctOf(b.tot, b.tgt * tgtK())) : '') : '') + (b.prev != null ? '|Bulan lalu (tgl sama) ' + fmt(b.prev) + ' t' : '') + (b.dwN ? '|SLA ' + fmt1(b.dwS / b.dwN) + ' jam' : '');
+    hits += '<rect x="' + (cx - step / 2).toFixed(1) + '" y="' + T + '" width="' + step.toFixed(1) + '" height="' + (H - T - Bm) + '" class="pc-hit" data-tip="' + esc(tip) + '"/>';
+  });
+  const pts = (f) => bs.map((b, i) => f(b) == null ? null : [L + step * (i + 0.5), y(f(b))]);
+  const path = ps => { let d = '', pen = false; ps.forEach(p => { if(!p){ pen = false; return; } d += (pen ? 'L' : 'M') + p[0].toFixed(1) + ',' + p[1].toFixed(1); pen = true; }); return d; };
+  const tgtLine = '<path d="' + path(pts(b => b.tgt ? b.tgt * tgtK() : null)) + '" class="pc-tgt"/>';
+  const prevPts = pts(b => b.prev != null && b.prev > 0 ? b.prev : null);
+  const prevLine = R.monthly ? '' : '<path d="' + path(prevPts) + '" class="pc-prev"/>' + prevPts.filter(Boolean).map(p => '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="2.6" class="pc-prevdot"/>').join('');
+  const avgLine = avg ? '<line x1="' + L + '" x2="' + (W - Rm) + '" y1="' + y(avg).toFixed(1) + '" y2="' + y(avg).toFixed(1) + '" class="pc-avg"/><text x="' + (W - Rm) + '" y="' + (y(avg) - 4).toFixed(1) + '" class="pc-avgl" text-anchor="end">rata-rata ' + fmt(avg) + ' t</text>' : '';
+  return '<svg class="pc-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Rilis per ' + (R.monthly ? 'bulan' : 'hari') + ' per incoterm">' + grid.join('') + bars + avgLine + tgtLine + prevLine + labels + xl + hits + '</svg>';
+}
+/** SLA (masuk -> keluar pabrik) per day: its own small chart (one measure per axis). */
+function plantSla(R){
+  const W = 1100, H = 120, L = 52, Rm = 12, T = 16, Bm = 20, n = R.keys.length, bs = R.keys.map(k => R.Bk.get(k));
+  const v = bs.map(b => b.dwN ? b.dwS / b.dwN : null), vals = v.filter(x => x != null);
+  if(!vals.length) return '';
+  const max = Math.max(4, ...vals) * 1.15, step = (W - L - Rm) / n, y = x => T + (H - T - Bm) * (1 - x / max);
+  const ps = v.map((x, i) => x == null ? null : [L + step * (i + 0.5), y(x)]);
+  let d = '', pen = false; ps.forEach(p => { if(!p){ pen = false; return; } d += (pen ? 'L' : 'M') + p[0].toFixed(1) + ',' + p[1].toFixed(1); pen = true; });
+  const avg = vals.reduce((a, x) => a + x, 0) / vals.length;
+  return '<svg class="pc-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="SLA per hari">' +
+    [0, Math.round(max / 2), Math.floor(max)].map(g => '<line x1="' + L + '" x2="' + (W - Rm) + '" y1="' + y(g).toFixed(1) + '" y2="' + y(g).toFixed(1) + '" class="pc-grid"/><text x="' + (L - 6) + '" y="' + (y(g) + 3.5).toFixed(1) + '" class="pc-ax" text-anchor="end">' + g + ' j</text>').join('') +
+    '<line x1="' + L + '" x2="' + (W - Rm) + '" y1="' + y(avg).toFixed(1) + '" y2="' + y(avg).toFixed(1) + '" class="pc-avg"/>' +
+    '<path d="' + d + '" class="pc-sla"/>' + ps.map((p, i) => p ? '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="3.2" class="pc-sladot" data-tip="' + esc((R.monthly ? monthLabel(R.keys[i]) : dayLabel(R.keys[i])) + '|SLA rata-rata ' + fmt1(v[i]) + ' jam') + '"/>' : '').join('') +
+    '<text x="' + (W - Rm) + '" y="' + (y(avg) - 4).toFixed(1) + '" class="pc-avgl" text-anchor="end">rata-rata ' + fmt1(avg) + ' jam</text></svg>';
+}
+const nextMonth = m => { const y = +m.slice(0, 4), mo = +m.slice(5); return mo === 12 ? (y + 1) + '-01' : y + '-' + pad2(mo + 1); };
 function pagePlant(name){
   const si = B.dims.src.indexOf(name);
   if(si < 0 || !name) return notFound('Plant ' + name);
-  const m = PER(), sc = {src: si}, me = total(m, sc);
-  const incs = plantIncRows(m, sc);
+  const m = PER(), sc = {src: si};
+  const R = plantReview(si, m, plantAllInc);
+  const sum = f => R.I.reduce((a, o) => a + f(o), 0);
+  const vol = sum(o => o.vol), az = sum(o => o.tgt ? o.az : 0), tgt = sum(o => o.tgt), prev = sum(o => o.prev), trips = sum(o => o.trips);
+  const dwS = sum(o => o.dwS), dwN = sum(o => o.dwN), tI = tgt * TGT_INTERNAL;
+  const pS = tgt ? pctOf(az, tgt) : null, pI = tgt ? pctOf(az, tI) : null, chg = prev ? (vol / prev - 1) * 100 : null;
+  const dayKeys = R.keys.filter(k => R.Bk.get(k).tot > 0), lastK = dayKeys[dayKeys.length - 1];
+  const avg = dayKeys.length ? vol / dayKeys.length : 0;
+  const scopeTxt = plantAllInc ? 'semua incoterm' : incName();
+  // headline
+  const head = vol ? 'Rilis <b>' + fmt(vol) + ' t</b> ' + esc(scopeTxt) + (tgt ? ', <b class="' + (pS >= 100 ? 'ok' : 'bad') + '">' + pctTxt(pS) + '</b> dari target ' + tgtLbl() + ' (' + signed(az - tgt) + ' t)' : '') +
+    (avg && !R.monthly ? '; rata-rata ' + fmt(avg) + ' t/hari' : '') + (chg != null ? ', <b class="' + (chg >= 0 ? 'ok' : 'bad') + '">' + (chg >= 0 ? '▲ ' : '▼ ') + Math.abs(Math.round(chg * 10) / 10).toString().replace('.', ',') + '%</b> vs periode sama ' + (m.kind === 'month' ? 'bulan lalu' : 'sebelumnya') : '') + '.'
+    : 'Belum ada rilis dari ' + esc(name) + ' untuk filter ini.';
+  const chips = [
+    heroChip('Realisasi', fmt(vol) + ' <small>t</small>', fmt(trips) + ' trip'),
+    heroChip('Target SNOP', tgt ? fmt(tgt) + ' <small>t</small>' : '–', tgt ? 'capaian <b style="color:' + heroTier(pctOf(az, tgt)) + '">' + pctTxt(pctOf(az, tgt)) + '</b> · ' + signed(az - tgt) + ' t' : 'tidak ada target'),
+    heroChip('Target Internal', tgt ? fmt(tI) + ' <small>t</small>' : '–', tgt ? 'capaian <b style="color:' + heroTier(pI) + '">' + pctTxt(pI) + '</b> · ' + signed(az - tI) + ' t' : '115% SNOP'),
+    heroChip(R.monthly ? 'Rata-rata / bulan' : 'Rata-rata / hari', fmt(R.monthly ? vol / Math.max(1, dayKeys.length) : avg) + ' <small>t</small>', lastK ? (R.monthly ? monthShort(lastK) : shortDate(lastK)) + ': ' + fmt(R.Bk.get(lastK).tot) + ' t' : ''),
+    heroChip(m.kind === 'month' ? 'vs bulan lalu' : 'vs periode lalu', chg == null ? '–' : (chg >= 0 ? '▲ ' : '▼ ') + fmt1(Math.abs(chg)) + '%', prev ? fmt(prev) + ' t · ' + shortDate(R.pp.from) + '–' + shortDate(R.pp.to) : '', chg == null ? null : chg >= 0 ? '#5FD08F' : '#FF6B74'),
+    heroChip('SLA rata-rata', dwN ? fmt1(dwS / dwN) + ' <small>jam</small>' : '–', 'masuk → keluar pabrik')];
+  const cards = R.I.map(o => {
+    const n = INCS()[o.i], ps = o.tgt ? pctOf(o.az, o.tgt) : null, pi = o.tgt ? pctOf(o.az, o.tgt * TGT_INTERNAL) : null;
+    return '<div class="ph-card" style="--c:' + incColor(o.i) + '"><div class="ph-n">' + esc(incLbl(n)) + '</div><div class="ph-v">' + fmt(o.vol) + ' <small>t</small></div>' +
+      '<div class="ph-k"><span>SNOP</span><b style="color:' + heroTier(ps) + '">' + (o.tgt ? pctTxt(ps) : '–') + '</b><small>' + (o.tgt ? 'T ' + fmt(o.tgt) : 'tanpa target') + '</small></div>' +
+      '<div class="ph-k"><span>Internal</span><b style="color:' + heroTier(pi) + '">' + (o.tgt ? pctTxt(pi) : '–') + '</b><small>' + (o.tgt ? 'T ' + fmt(o.tgt * TGT_INTERNAL) : '') + '</small></div></div>';
+  }).join('') || '<div class="mh-miss">Tidak ada incoterm dengan rilis atau target.</div>';
+  const bg = (window.BG || {})[plantBg(name)];
+  const hero = '<section class="map-hero mh-page plant-hero"><div class="mh-bg"' + (bg ? ' style="background-image:linear-gradient(90deg,rgba(15,26,33,.96) 0%,rgba(15,26,33,.88) 50%,rgba(15,26,33,.7) 100%),url(&quot;assets/bg/' + bg.f + '&quot;)"' : '') + '></div><div class="mh-inner">' +
+    '<div class="mh-left"><div class="eyebrow">Kinerja rilis · ' + esc(m.sub) + '</div><h2 class="mh-h">' + head + '</h2><div class="mh-chips">' + chips.join('') + '</div></div>' +
+    '<div class="ph-cards"><div class="mh-lh"><span>KPI per incoterm · SNOP &amp; Internal</span></div>' + cards + '</div></div></section>';
+  // chart
+  const legend = R.incs.map(i => '<span><i style="background:' + incColor(i) + '"></i>' + esc(incLbl(INCS()[i])) + '</span>').join('') +
+    '<span><i class="ln tgt"></i>target ' + tgtLbl() + '</span><span><i class="ln avg"></i>rata-rata</span>' + (R.monthly ? '' : '<span><i class="ln prev"></i>bulan lalu (tgl sama)</span>');
+  const toggle = '<a href="#" class="pc-toggle" data-plantinc>' + (plantAllInc ? 'Ikuti filter incoterm (' + esc(incName()) + ')' : 'Tampilkan semua incoterm') + '</a>';
+  const sla = plantSla(R);
+  const chart = '<div class="section-head"><div class="section-title">Rilis per ' + (R.monthly ? 'bulan' : 'hari') + ' (ton)</div>' + toggle + '</div>' +
+    '<div class="dp-panel pc-panel"><div class="pc-legend">' + legend + '</div>' + plantChart(R) +
+    (sla ? '<div class="pc-sub">SLA per ' + (R.monthly ? 'bulan' : 'hari') + ' (jam, masuk → keluar pabrik)</div>' + sla : '') + '</div>';
+  // comparison table per incoterm
+  const rows = R.I.map(o => ({n: o.i, vol: o.vol, tgt: o.tgt, ps: o.tgt ? pctOf(o.az, o.tgt) : null, pi: o.tgt ? pctOf(o.az, o.tgt * TGT_INTERNAL) : null, gap: o.az - o.tgt, prev: o.prev, chg: o.prev ? (o.vol / o.prev - 1) * 100 : null, trips: o.trips, sla: o.dwN ? o.dwS / o.dwN : null}));
+  const pc = p => p == null ? '–' : '<b style="color:' + tierColor(p) + '">' + pctTxt(p) + '</b>';
+  const cols = [{h:'Incoterm', cls:'name', val: r => incLbl(INCS()[r.n]), html: r => '<span class="inc-dot" style="background:' + incColor(r.n) + '"></span>' + esc(incLbl(INCS()[r.n]))},
+    {h:'Realisasi (t)', num:true, val: r => r.vol, html: r => fmt(r.vol)},
+    {h:'Target SNOP (t)', num:true, val: r => r.tgt, html: r => r.tgt ? fmt(r.tgt) : '–'},
+    {h:'vs SNOP', num:true, val: r => r.ps == null ? -1 : r.ps, html: r => pc(r.ps)},
+    {h:'vs Internal', num:true, val: r => r.pi == null ? -1 : r.pi, html: r => pc(r.pi)},
+    {h:'Gap SNOP (t)', num:true, val: r => r.tgt ? r.gap : 0, html: r => r.tgt ? '<span style="color:' + (r.gap < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(r.gap) + '</span>' : '–'},
+    {h:(m.kind === 'month' ? 'Bulan lalu' : 'Periode lalu') + ' (t)', num:true, val: r => r.prev, html: r => r.prev ? fmt(r.prev) : '–'},
+    {h:'Δ', num:true, val: r => r.chg == null ? -999 : r.chg, html: r => r.chg == null ? '–' : '<span style="color:' + (r.chg >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (r.chg >= 0 ? '+' : '−') + fmt1(Math.abs(r.chg)) + '%</span>'},
+    {h:'Trip', num:true, val: r => r.trips}, {h:'SLA (jam)', num:true, val: r => r.sla == null ? -1 : r.sla, html: r => r.sla == null ? '–' : fmt1(r.sla)}];
+  if(rows.length > 1){
+    cols[0].total = '<b>Total</b>'; cols[1].total = '<b>' + fmt(vol) + '</b>'; cols[2].total = tgt ? '<b>' + fmt(tgt) + '</b>' : '–'; cols[3].total = pc(pS); cols[4].total = pc(pI);
+    cols[5].total = tgt ? signed(az - tgt) : '–'; cols[6].total = prev ? fmt(prev) : '–'; cols[7].total = chg == null ? '–' : (chg >= 0 ? '+' : '−') + fmt1(Math.abs(chg)) + '%'; cols[8].total = fmt(trips); cols[9].total = dwN ? fmt1(dwS / dwN) : '–';
+  }
+  const cmp = '<div class="section-head"><div class="section-title">Perbandingan per incoterm</div><div class="section-sub">' + esc(m.sub) + ' vs ' + shortDate(R.pp.from) + '–' + shortDate(R.pp.to) + '</div></div>' +
+    (rows.length ? table(cols, rows, {total: rows.length > 1}) : '<div class="dp-review">Tidak ada data untuk filter ini.</div>');
+  // destinations (filter-driven, as before)
   const provs = [...summarize('prov', m, sc).values()].filter(o => o.vol > 0 || o.tgt > 0).sort((a, b) => b.vol - a.vol);
   const eks = [...summarize('eksp', m, sc).values()].filter(o => (o.vol > 0 || o.tgt > 0) && o.key !== D.eksEmpty).sort((a, b) => b.vol - a.vol);
   const DT = distrTable(m, sc, 60);
-  const incCols = [{h:'Incoterm', cls:'name', val: r => incLbl(r.n)}, C.vol(), C.tgt, C.pct, C.gap, C.trips];
   page('<div class="wrap">' + crumb([['Plant', '#/plant'], [name]]) +
-    '<div class="dp-head"><div><div class="nm">' + esc(name) + '</div><div class="sub">Plant / packing plant asal pengiriman · ' + incName() + ' · ' + periodSub() + '</div></div><div class="badges"><div class="dp-badge ' + tierClass(me.pct) + '">' + pctTxt(me.pct) + ' dari target</div></div></div>' +
+    '<div class="dp-head"><div><div class="nm">' + esc(name) + '</div><div class="sub">Plant / packing plant asal pengiriman · ' + esc(scopeTxt) + ' · ' + periodSub() + '</div></div></div>' +
     (F.srcOff.has(name) ? '<div class="dp-review">Plant ini tidak dicentang di filter plant: halaman ini tetap menampilkan datanya, tetapi Ringkasan dan halaman lain tidak menghitungnya sampai dicentang.</div>' : '') +
-    '<div class="dp-grid4">' +
-      kpi('check', 'var(--green)', 'Realisasi', fmt(me.vol) + ' <small>ton</small>', {hint: fmt(me.trips) + ' trip'}) +
-      kpi('target', 'var(--black)', 'Target MTD', me.hasTgt ? fmt(me.tgt) + ' <small>ton</small>' : '–', {hint: me.hasTgt ? 'bulan penuh ' + fmt(me.tgtFull) + ' t' : 'tidak ada target untuk filter ini'}) +
-      kpi('gap', me.gap < 0 ? 'var(--red)' : 'var(--green)', me.gap < 0 ? 'Sisa ke target' : 'Lebih dari target', me.hasTgt ? fmt(Math.abs(me.gap)) + ' <small>ton</small>' : '–') +
-      kpi('pin', 'var(--amber)', 'Provinsi tujuan', fmt(provs.filter(o => o.vol > 0).length), {hint: fmt(DT.list.filter(o => o.vol > 0).length) + ' distributor'}) +
-    '</div>' +
-    '<div class="section-head"><div class="section-title">Per incoterm</div></div>' +
-    (incs.length ? table(incCols, incs, {}) : '<div class="dp-review">Tidak ada data untuk filter ini.</div>') +
-    '<div class="dp-cols">' + trendPanel(sc, 'mingguan') +
-      '<div class="dp-panel"><div class="pt">Provinsi tujuan<span class="pt-sub">capaian target</span></div>' + (provs.length ? provs.map(o => rateRow(tc(B.dims.prov[o.key]) + ' · ' + fmt(o.vol) + ' t', o.pct, '#/provinsi/' + enc(B.dims.prov[o.key]), o.hasTgt ? 'target ' + fmt(o.tgt) + ' t' : 'tanpa target')).join('') : '<div class="empty">Tidak ada data.</div>') + '</div>' +
+    hero + chart + cmp +
+    '<div class="dp-cols">' +
+      '<div class="dp-panel"><div class="pt">Provinsi tujuan<span class="pt-sub">capaian target · ' + esc(incName()) + '</span></div>' + (provs.length ? provs.map(o => rateRow(tc(B.dims.prov[o.key]) + ' · ' + fmt(o.vol) + ' t', o.pct, '#/provinsi/' + enc(B.dims.prov[o.key]), o.hasTgt ? 'target ' + fmt(o.tgt) + ' t' : 'tanpa target')).join('') : '<div class="empty">Tidak ada data.</div>') + '</div>' +
+      '<div class="dp-panel"><div class="pt">Ekspeditur / pengangkut<span class="pt-sub">' + esc(incName()) + '</span></div>' + (eks.length ? eks.map(o => rateRow(B.dims.eksp[o.key] + ' · ' + fmt(o.vol) + ' t', o.pct, '#/ekspeditur/' + enc(B.dims.eksp[o.key]), o.hasTgt ? 'target ' + fmt(o.tgt) + ' t' : 'tanpa target')).join('') : '<div class="empty">Tidak ada data.</div>') + '</div>' +
     '</div>' +
     '<div class="section-head"><div class="section-title">Distributor dari plant ini</div><a class="section-link" href="#/distributor">Semua distributor &rsaquo;</a></div>' + DT.html +
-    (eks.length ? '<div class="section-head"><div class="section-title">Ekspeditur / pengangkut dari plant ini</div></div><div class="dp-panel">' + eks.map(o => rateRow(B.dims.eksp[o.key] + ' · ' + fmt(o.vol) + ' t', o.pct, '#/ekspeditur/' + enc(B.dims.eksp[o.key]), o.hasTgt ? 'target ' + fmt(o.tgt) + ' t' : 'tanpa target')).join('') + '</div>' : '') +
     '</div>', 'plant');
 }
 
@@ -1865,6 +2016,7 @@ function bindEvents(){
     if(trow && !e.target.closest('.t-go')){ treeToggle(trow); return; }
     const sort = e.target.closest('[data-sort]');
     if(sort){ const [id, i] = sort.dataset.sort.split(':'); const T = TABLES[id]; if(T.sort === +i) T.dir = -T.dir; else { T.sort = +i; T.dir = T.cols[+i].num ? -1 : 1; } $('#' + id).innerHTML = tableInner(id); return; }
+    if(e.target.closest('[data-plantinc]')){ e.preventDefault(); plantAllInc = !plantAllInc; route(); return; }
     const go = e.target.closest('[data-href]');
     if(go && go.dataset.href && go.dataset.href !== 'null'){ location.hash = go.dataset.href; return; }
     if(!e.target.closest('#mainNav')) closeNav();

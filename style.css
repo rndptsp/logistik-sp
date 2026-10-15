@@ -561,3 +561,40 @@ table.tree td.name small{display:block;color:var(--sub);font-weight:400;font-siz
 .mh-left .eyebrow a{color:#fff;text-decoration:underline;text-underline-offset:2px;}
 .section-sub{font-size:12px;color:var(--sub);}
 .mega-list a.off{opacity:.55;}
+
+/* Plant review (pagePlant): hero with KPI cards per incoterm, release chart, SLA strip */
+.plant-hero .mh-inner{grid-template-columns:minmax(0,1.35fr) minmax(300px,1fr);align-items:start;}
+.plant-hero .mh-h b.ok{color:#5FD08F;} .plant-hero .mh-h b.bad{color:#FF6B74;}
+.ph-cards{display:flex;flex-direction:column;gap:8px;}
+.ph-cards .mh-lh{border-top:none;padding-top:0;}
+.ph-card{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:4px 12px;align-items:center;background:rgba(15,26,33,.72);border:1px solid rgba(255,255,255,.1);border-left:4px solid var(--c);padding:10px 12px;border-radius:3px;}
+.ph-n{grid-column:1;font-size:11px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:#C9D3D9;}
+.ph-v{grid-column:1;grid-row:2;font-size:18px;font-weight:800;}
+.ph-v small{font-size:11px;color:#9FB0BA;font-weight:400;}
+.ph-k{grid-row:1/3;display:flex;flex-direction:column;}
+.ph-k span{font-size:9.5px;text-transform:uppercase;letter-spacing:.06em;color:#7F8E97;}
+.ph-k b{font-size:17px;font-weight:800;}
+.ph-k small{font-size:10.5px;color:#9FB0BA;}
+.pc-panel{padding:16px 18px 10px;}
+.pc-legend{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:12px;color:var(--sub);margin-bottom:6px;}
+.pc-legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px;}
+.pc-legend i.ln{height:0;width:16px;border-radius:0;border-top:2px dashed #111;vertical-align:3px;}
+.pc-legend i.ln.avg{border-top:2px dotted #8C9293;}
+.pc-legend i.ln.prev{border-top:2px solid #9AA5AB;}
+.pc-svg{width:100%;height:auto;display:block;}
+.pc-grid{stroke:#ECEEEF;stroke-width:1;}
+.pc-ax{font-size:10.5px;fill:#8C9293;}
+.pc-val{font-size:10px;font-weight:700;fill:#111;}
+.pc-tgt{fill:none;stroke:#111;stroke-width:2;stroke-dasharray:6 4;}
+.pc-avg{stroke:#8C9293;stroke-width:1.5;stroke-dasharray:2 4;}
+.pc-avgl{font-size:10.5px;fill:#6B7376;font-weight:600;}
+.pc-prev{fill:none;stroke:#9AA5AB;stroke-width:2;}
+.pc-prevdot{fill:#fff;stroke:#9AA5AB;stroke-width:1.6;}
+.pc-hit{fill:transparent;cursor:default;}
+.pc-hit:hover{fill:rgba(0,0,0,.04);}
+.pc-sub{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--sub);margin:12px 0 2px;}
+.pc-sla{fill:none;stroke:#2a78d6;stroke-width:2;}
+.pc-sladot{fill:#fff;stroke:#2a78d6;stroke-width:2;}
+.pc-toggle{font-size:12px;font-weight:700;color:var(--red);}
+.inc-dot{display:inline-block;width:9px;height:9px;border-radius:2px;margin-right:8px;vertical-align:0;}
+@media(max-width:1000px){.plant-hero .mh-inner{grid-template-columns:1fr;}}
