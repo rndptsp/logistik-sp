@@ -1833,10 +1833,18 @@ function setTxt(set, dims, unit){
   const nm = [...set].map(i => tc(dims[i]) || '–'); if(!nm.length) return '–';
   return '<span title="' + esc(nm.join(', ')) + '">' + esc(nm[0]) + (nm.length > 1 ? ' <small>+' + (nm.length - 1) + ' ' + unit + '</small>' : '') + '</span>';
 }
-/* Voyages: the source has no voyage number, so loading days of one ship at one plant with gaps of at most
-   VOY_GAP days form one voyage. Rows = ship rows of that ship. */
-const VOY_GAP = 3;
+/* Voyages: the source has no voyage number. Two rules (agreed with Rendy):
+   - regular/feeder ships (e.g. Padang–Mentawai), average load < VOY_SMALL t per loading day over all data: every
+     loading day is its own voyage;
+   - cargo ships: loading days of one ship at one plant with gaps of at most VOY_GAP days form one voyage. */
+const VOY_GAP = 3, VOY_SMALL = 150;
+const shipKind = e => {   // 'reguler' | 'kargo', from the ship's whole history (stable across filters)
+  const c = B._shipKind || (B._shipKind = new Map());
+  if(!c.has(e)){ const d = new Set(); let t = 0; B.ship.forEach(r => { if(r[6] === e){ d.add(r[0]); t += r[8]; } }); c.set(e, d.size && t / d.size < VOY_SMALL ? 'reguler' : 'kargo'); }
+  return c.get(e);
+};
 function voyagesOf(rows){
+  const gap = rows.length && shipKind(rows[0][6]) === 'reguler' ? 0 : VOY_GAP;
   const bySrc = new Map();
   rows.forEach(r => { (bySrc.get(r[2]) || bySrc.set(r[2], []).get(r[2])).push(r); });
   const out = [];
@@ -1845,7 +1853,7 @@ function voyagesOf(rows){
     let v = null;
     rs.forEach(r => {
       const ds = B.days[r[0]];
-      if(!v || (parseISO(ds) - parseISO(B.days[v.d1])) / 864e5 > VOY_GAP){
+      if(!v || (parseISO(ds) - parseISO(B.days[v.d1])) / 864e5 > gap){
         v = {src, d0: r[0], d1: r[0], vol: 0, trips: 0, days: new Set(), inc: new Set(), distr: new Map(), prov: new Set(), dist: new Set()}; out.push(v);
       }
       v.d1 = Math.max(v.d1, r[0]); v.vol += r[8]; v.trips += r[9]; v.days.add(r[0]); v.inc.add(INCS()[r[1]]);
@@ -1872,9 +1880,9 @@ function pageKapalDetail(name){
     {h:'Tujuan', val: v => v.prov.size, html: v => setTxt(v.dist, B.dims.dist, 'distrik') + '<small>' + esc([...v.prov].map(p => tc(B.dims.prov[p])).join(', ')) + '</small>'}];
   vs.forEach((v, i) => v.n = i + 1);
   page('<div class="wrap">' + crumb([['Kapal', '#/kapal'], [name]]) +
-    '<div class="dp-head"><div><div class="nm">' + esc(name) + '</div><div class="sub">Kapal · moda laut · ' + periodSub() + '</div></div></div>' +
+    '<div class="dp-head"><div><div class="nm">' + esc(name) + '</div><div class="sub">Kapal ' + (rows.length ? shipKind(rows[0][6]) : '') + ' · moda laut · ' + periodSub() + '</div></div></div>' +
     '<div class="dp-grid4">' +
-      kpi('truck', 'var(--black)', 'Voyage', fmt(vs.length), {hint: 'hari muat berurutan (jeda ≤ ' + VOY_GAP + ' hari) = 1 voyage'}) +
+      kpi('truck', 'var(--black)', 'Voyage', fmt(vs.length), {hint: rows.length && shipKind(rows[0][6]) === 'reguler' ? 'kapal reguler (rata-rata < ' + VOY_SMALL + ' t/hari muat): tiap hari muat = 1 voyage' : 'kapal kargo: hari muat berjeda ≤ ' + VOY_GAP + ' hari = 1 voyage'}) +
       kpi('box', 'var(--black)', 'Tonase', fmt(vol) + ' <small>ton</small>', {hint: vs.length ? 'rata-rata ' + fmt(vol / vs.length) + ' t / voyage' : ''}) +
       kpi('clock', 'var(--amber)', 'Hari muat', fmt(days.size), {hint: fmt(trips) + ' SPJ (muat truk ke kapal)'}) +
       kpi('pin', 'var(--black)', 'Distributor', fmt(distr.size), {hint: [...distr.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2).map(([d]) => tc(B.dims.distr[d])).join(', ')}) +
@@ -1905,7 +1913,7 @@ function pageKapal(){
     cols[2].total = fmt(list.reduce((a, o) => a + (o.voy || 0), 0)); cols[3].total = fmt(tot);
     const named = list.filter(o => o.k !== '\u0000'), unk = by.get('\u0000');
     page('<div class="wrap">' + crumb([['Kapal']]) +
-      '<div class="dp-head"><div><div class="nm">Kapal · moda laut</div><div class="sub">' + fmt(named.length) + ' kapal · voyage = hari muat berurutan (jeda ≤ ' + VOY_GAP + ' hari) · ' + periodSub() + '</div></div></div>' +
+      '<div class="dp-head"><div><div class="nm">Kapal · moda laut</div><div class="sub">' + fmt(named.length) + ' kapal · voyage: kapal reguler (rata-rata < ' + VOY_SMALL + ' t/hari muat) = tiap hari muat; kapal kargo = hari muat berjeda ≤ ' + VOY_GAP + ' hari · ' + periodSub() + '</div></div></div>' +
       '<div class="dp-hint" style="font-size:12px;color:var(--sub);margin:-6px 0 14px">Filter aktif: ' + srcTxt() + ' · kemasan <b>' + (F.kem === 'ALL' ? 'semua' : esc(F.kem)) + '</b> · <a class="section-link" data-act="openfilter" style="cursor:pointer;color:var(--red);font-weight:700">ubah filter</a></div>' +
       (unk && tot ? '<div class="dp-review">' + pctTxt(pctOf(unk.vol, tot)) + ' tonase laut periode ini (' + fmt(unk.vol) + ' t) belum punya nama kapal di sumber Rilis. Yang tercatat nama kapalnya baru FOB; FAS, kontainer, FRC KAPAL, FRC KONTAINER dan FOB KAPAL (polysling) menunggu data tambahan.</div>' : '') +
       (list.length ? table(cols, list, {total: true, limit: 400, go: o => o.k === '\u0000' ? null : '#/kapal/' + enc(o.nm)}) : '<div class="dp-review">Tidak ada pengiriman laut pada filter ini (plant, kemasan, periode).</div>') + '</div>', 'armada');
