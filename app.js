@@ -76,8 +76,8 @@ const soTip = o => o.so > 0 ? '|SO ' + fmt(o.so) + ' t · Real/SO ' + pctTxt(o.o
 /* ===================== State ===================== */
 let B = null;            // decrypted bundle
 let D = null;            // derived indexes
-const F = { per: null, inc: 'FRC', moda: 'DARAT', area: 'AP1', srcOff: new Set(), tgt: 'SNOP', kem: 'ZAK' };   // per: {kind:'month',month} | {kind:'ytd'} | {kind:'range',from,to}
-const DEFAULT_SRC = 'CP INDARUNG';   // default view: Franco from CP Indarung; other plants are switched on in the filter
+const F = { per: null, inc: 'ALL', moda: 'ALL', area: 'ALL', srcOff: new Set(), tgt: 'SNOP', kem: 'ZAK' };   // per: {kind:'month',month} | {kind:'ytd'} | {kind:'range',from,to}
+const DEFAULT_SRC = 'CP INDARUNG';   // the main plant (labels only); default view = every plant, moda & incoterm, kemasan ZAK, SNOP, area Semua
 let DEFAULT_SRC_OFF = [];
 
 function prepare(){
@@ -99,7 +99,7 @@ function prepare(){
   F.per = {kind: 'month', month: months[months.length - 1]};
   D.tgtKem = new Set(B.targets.map(tKem));
   D.nfTgt = B.targets.some(t => t[7] >= 1);   // builds without sheet SNOP: FRC targets only
-  DEFAULT_SRC_OFF = sources.includes(DEFAULT_SRC) ? sources.filter(s => s !== DEFAULT_SRC) : [];
+  DEFAULT_SRC_OFF = [];   // all plants on by default
   F.srcOff = new Set(DEFAULT_SRC_OFF);
 }
 const srcOk = i => i === D.srcEmpty || !F.srcOff.has(B.dims.src[i]);
@@ -141,7 +141,7 @@ const achKem = k => !KEMS().length || D.tgtKem.has(k);
 const soOn = () => F.inc === 'FRC' || (F.inc === 'ALL' && F.moda !== 'LAUT');   // SO is FRC TRUK only
 const incName = () => F.inc === 'ALL' ? 'semua incoterm' + (F.moda === 'ALL' ? '' : ' ' + MODA_LBL[F.moda].toLowerCase()) : incLbl(F.inc);
 const setInc = (inc, moda) => { F.inc = inc; F.moda = moda || (inc === 'ALL' ? F.moda : modaOf(inc)); };
-const saveFilter = () => { try { sessionStorage.setItem('osp_f2', JSON.stringify({per: F.per, inc: F.inc, moda: F.moda, kem: F.kem, area: F.area, srcOff: [...F.srcOff], tgt: F.tgt})); } catch(e) {} };
+const saveFilter = () => { try { sessionStorage.setItem('osp_f3', JSON.stringify({per: F.per, inc: F.inc, moda: F.moda, kem: F.kem, area: F.area, srcOff: [...F.srcOff], tgt: F.tgt})); } catch(e) {} };
 
 /* ===================== Periods ===================== */
 /* Every page works on a period {from, to} (ISO dates). A "month" is just one kind of period.
@@ -187,7 +187,7 @@ const inPer = (dayIdx, per) => { const s = B.days[dayIdx]; return s >= per.from 
    (target 0 = 100%) tetapi tidak masuk total, ekspeditur, source, armada maupun capaian keseluruhan. */
 const NKP = () => B._nk || (B._nk = new Set(B.dims.nonKin || []));
 /* Area: AP1 = the provinces in the daily Realisasi report (all except the non-kinerja ones, e.g. Sumatera Selatan);
-   NON AP1 = the non-kinerja provinces (shown without target). Default AP1, so totals equal the report. A province's own
+   NON AP1 = the non-kinerja provinces (shown without target). Default Semua (both); AP1 matches the daily report. A province's own
    page always shows its data. Non-AP1 realisasi never counts toward achievement. */
 const areaOn = () => NKP().size > 0;
 const areaProvOk = p => !areaOn() || F.area === 'ALL' || (F.area === 'AP1') !== NKP().has(p);
@@ -618,7 +618,7 @@ function renderFilterPanel(){
   const inc = modaIncs(draft.moda).map(x => [x, incLbl(x)]).concat([['ALL', draft.moda === 'ALL' ? 'Semua' : 'Semua ' + MODA_LBL[draft.moda].toLowerCase()]]).map(x => '<span data-inc="' + x[0] + '" class="' + (draft.inc === x[0] ? 'on' : '') + '">' + x[1] + '</span>').join('');
   const kem = (KEMS().length ? KEMS().map(x => [x, x]).concat([['ALL', 'Semua']]) : []).map(x => '<span data-kem="' + x[0] + '" class="' + (draft.kem === x[0] ? 'on' : '') + '">' + x[1] + '</span>').join('');
   const tgt = [['SNOP','SNOP'],['INTERNAL','Internal (115% SNOP)']].map(x => '<span data-tgt="' + x[0] + '" class="' + (draft.tgt === x[0] ? 'on' : '') + '">' + x[1] + '</span>').join('');
-  const src = D.sources.map(s2 => '<label class="fp-check"><input type="checkbox" data-src="' + esc(s2) + '"' + (draft.srcOff.has(s2) ? '' : ' checked') + '> ' + esc(s2.toUpperCase()) + (s2 === DEFAULT_SRC ? ' <small>(default)</small>' : '') + '</label>').join('');
+  const src = D.sources.map(s2 => '<label class="fp-check"><input type="checkbox" data-src="' + esc(s2) + '"' + (draft.srcOff.has(s2) ? '' : ' checked') + '> ' + esc(s2.toUpperCase()) + '' + '</label>').join('');
   const tip = (t, r) => '<span class="fp-info' + (r ? ' r' : '') + '" tabindex="0" data-info="' + esc(t) + '">i</span>';
   const AREA_OPT = [['AP1', 'AP1'], ['NON', 'Non AP1'], ['ALL', 'Semua']];
   const area = areaOn() ? AREA_OPT.map(x => '<span data-area="' + x[0] + '" class="' + (draft.area === x[0] ? 'on' : '') + '">' + x[1] + '</span>').join('') : '';
@@ -672,7 +672,7 @@ function applyFilter(){
   if(k === 'range'){ let a = draft.from || B.days[0], b = draft.to || B.asOf; if(a > b) [a, b] = [b, a]; F.per = {kind: 'range', from: a, to: b}; }
   else if(k === 'ytd') F.per = {kind: 'ytd'};
   else F.per = {kind: 'month', month: draft.per.month || D.months[D.months.length - 1]};
-  F.inc = draft.inc; F.moda = draft.moda || 'DARAT'; F.kem = draft.kem || 'ZAK'; F.area = draft.area || 'AP1'; F.srcOff = new Set(draft.srcOff); F.tgt = draft.tgt || 'SNOP';
+  F.inc = draft.inc; F.moda = draft.moda || 'ALL'; F.kem = draft.kem || 'ZAK'; F.area = draft.area || 'ALL'; F.srcOff = new Set(draft.srcOff); F.tgt = draft.tgt || 'SNOP';
   saveFilter();
   closeNav(); closeFilter(); buildNav(); filterStrip(); route();
 }
@@ -686,8 +686,8 @@ function openFilter(){
 }
 function restoreFilter(){
   try {
-    const s = JSON.parse(sessionStorage.getItem('osp_f2') || 'null');
-    if(s && s.per && (s.per.kind !== 'month' || D.months.includes(s.per.month))){ F.per = s.per; F.inc = s.inc; F.moda = s.moda || (s.inc === 'ALL' ? 'ALL' : modaOf(s.inc)); F.kem = s.kem || 'ZAK'; F.area = s.area || 'AP1'; F.srcOff = new Set(s.srcOff); F.tgt = s.tgt === 'INTERNAL' ? 'INTERNAL' : 'SNOP'; }
+    const s = JSON.parse(sessionStorage.getItem('osp_f3') || 'null');
+    if(s && s.per && (s.per.kind !== 'month' || D.months.includes(s.per.month))){ F.per = s.per; F.inc = s.inc; F.moda = s.moda || (s.inc === 'ALL' ? 'ALL' : modaOf(s.inc)); F.kem = s.kem || 'ZAK'; F.area = s.area || 'ALL'; F.srcOff = new Set(s.srcOff); F.tgt = s.tgt === 'INTERNAL' ? 'INTERNAL' : 'SNOP'; }
   } catch(e) {}
 }
 
@@ -2088,7 +2088,7 @@ function bindEvents(){
     if(act){
       const a = act.dataset.act;
       if(a === 'apply') applyFilter();
-      if(a === 'reset'){ draft = {per: {kind: 'month', month: D.months[D.months.length - 1]}, inc: 'FRC', moda: 'DARAT', kem: 'ZAK', area: 'AP1', srcOff: new Set(DEFAULT_SRC_OFF), tgt: 'SNOP'}; applyFilter(); }
+      if(a === 'reset'){ draft = {per: {kind: 'month', month: D.months[D.months.length - 1]}, inc: 'ALL', moda: 'ALL', kem: 'ZAK', area: 'ALL', srcOff: new Set(DEFAULT_SRC_OFF), tgt: 'SNOP'}; applyFilter(); }
       if(a === 'openfilter'){ e.stopPropagation(); openFilter(); }
       if(a === 'logout'){ logout(); }
       if(a === 'closemodal'){ closeModal(); }
