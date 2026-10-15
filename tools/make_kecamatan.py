@@ -43,9 +43,29 @@ def shapes(features, tol, min_area):
     return out
 
 
+ADM3_URLS = [   # tried in order; the API answer names the current file
+    lambda: fetch(API)["simplifiedGeometryGeoJSON"],
+    lambda: "https://media.githubusercontent.com/media/wmgeolab/geoBoundaries/main/releaseData/gbOpen/IDN/ADM3/geoBoundaries-IDN-ADM3_simplified.geojson",
+    lambda: "https://raw.githubusercontent.com/wmgeolab/geoBoundaries/main/releaseData/gbOpen/IDN/ADM3/geoBoundaries-IDN-ADM3_simplified.geojson",
+]
+
+
+def load_adm3():
+    errs = []
+    for get_url in ADM3_URLS:
+        try:
+            data = fetch(get_url())
+            if data.get("features"):
+                return data["features"]
+            errs.append("no features")
+        except Exception as e:   # noqa: BLE001 - report every source, then give up
+            errs.append(f"{type(e).__name__}: {e}"[:200])
+    print("::error::ADM3 tidak bisa diunduh: " + " | ".join(errs))
+    sys.exit(1)
+
+
 def main():
-    meta = fetch(API)
-    adm3 = fetch(meta["simplifiedGeometryGeoJSON"])["features"]
+    adm3 = load_adm3()
     adm2 = [f for f in fetch(ADM2)["features"] if not f["properties"]["shapeName"].startswith("Danau")]
     provs = []
     for f in fetch(PROV)["features"]:
@@ -105,4 +125,8 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:   # surface the reason as a run annotation (job logs are not always readable)
+        print(f"::error::{type(e).__name__}: {str(e)[:300]}")
+        raise
