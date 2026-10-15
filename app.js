@@ -452,7 +452,7 @@ const DIM_LBL = {prov: 'Provinsi', dist: 'Distrik', eksp: 'Ekspeditur', src: 'So
 function dimName(dim, k){
   if(dim === 'prov') return tc(B.dims.prov[k]);
   if(dim === 'dist') return tc(B.dims.dist[k]);
-  if(dim === 'eksp') return B.dims.eksp[k] || '(tanpa ekspeditur / FOT)';
+  if(dim === 'eksp') return B.dims.eksp[k] || 'Angkut sendiri (distributor)';
   return tc(B.dims.src[k] || '(tanpa plant)');
 }
 function dimHref(dim, k){
@@ -1101,7 +1101,7 @@ function nodeLabel(n){
   if(n.lv === 'prov') return esc(tc(B.dims.prov[n.key]));
   if(n.lv === 'dist') return esc(tc(B.dims.dist[n.key]));
   if(n.lv === 'distr') return esc(tc(B.dims.distr[n.key]) || '(tanpa distributor)');
-  if(n.lv === 'eksp') return esc(B.dims.eksp[n.key] || 'FOT (angkut sendiri)');
+  if(n.lv === 'eksp') return esc(B.dims.eksp[n.key] || 'Angkut sendiri (distributor)');
   const t = B.dims.toko[n.key];
   if(!t || !t[0]) return '<span class="t-unk">Toko belum tercatat</span><small>data tujuan tidak tersedia untuk periode ini</small>';
   return esc(t[1] || t[0]) + '<small>' + esc([t[2], t[0]].filter(Boolean).join(' · ')) + '</small>';
@@ -1256,7 +1256,7 @@ function pageDistr(name){
     '<div class="section-head"><div class="section-title">Target &amp; realisasi per incoterm</div><div class="section-sub">' + incName() + ' · ' + periodSub() + '</div></div>' +
     (incRows.length ? table(incCols, incRows, {total: incRows.length > 1}) : '<div class="dp-review">Tidak ada realisasi maupun target untuk periode ini.</div>') +
     '<div class="dp-cols"><div class="dp-panel"><div class="pt">Volume bulanan (ton)<span class="pt-sub">' + (data.some(d => d.tgt) ? 'garis = target distributor' : '') + '</span></div>' + barsHTML('dm', data) + '<div class="trend-detail">Klik batang untuk tujuan kirim bulan itu.</div></div>' +
-    '<div class="dp-panel"><div class="pt">Diangkut oleh<span class="pt-sub">' + fmt(ekspTree.filter(n => B.dims.eksp[n.key]).length) + ' ekspeditur</span></div>' + (ekspTree.length ? ekspTree.map(n => '<a class="rate-row" ' + (nodeHref(n) ? 'href="' + nodeHref(n) + '"' : '') + '><div class="rl">' + esc(B.dims.eksp[n.key] || 'FOT (angkut sendiri)') + '</div><div class="rtrack"><div class="rfill" style="width:' + (n.vol / ekspTree[0].vol * 100) + '%;background:var(--black)"></div></div><div class="rv">' + fmt(n.vol) + '</div></a>').join('') : '<div class="empty">Tidak ada pengiriman untuk filter ini.</div>') + '</div></div>' +
+    '<div class="dp-panel"><div class="pt">Diangkut oleh<span class="pt-sub">' + fmt(ekspTree.filter(n => B.dims.eksp[n.key]).length) + ' ekspeditur</span></div>' + (ekspTree.length ? ekspTree.map(n => '<a class="rate-row" ' + (nodeHref(n) ? 'href="' + nodeHref(n) + '"' : '') + '><div class="rl">' + esc(B.dims.eksp[n.key] || 'Angkut sendiri (distributor)') + '</div><div class="rtrack"><div class="rfill" style="width:' + (n.vol / ekspTree[0].vol * 100) + '%;background:var(--black)"></div></div><div class="rv">' + fmt(n.vol) + '</div></a>').join('') : '<div class="empty">Tidak ada pengiriman untuk filter ini.</div>') + '</div></div>' +
     '<div class="section-head"><div class="section-title">Tujuan pengiriman</div></div>' +
     (rows.length ? treeHTML(buildTree(rows, ['prov', 'dist', 'toko']), ['prov', 'dist', 'toko']) : '<div class="dp-review">Tidak ada pengiriman untuk filter ini.</div>') +
     '</div>', 'wilayah');
@@ -1958,7 +1958,7 @@ function trucksByEksp(cols, trucks){
   trucks.forEach(r => { const e = [...r.eksp.entries()].sort((a, b) => b[1] - a[1])[0][0]; (g.get(e) || g.set(e, []).get(e)).push(r); });
   const groups = [...g.entries()].map(([e, rows]) => ({e, rows: rows.sort((a, b) => b.trips - a.trips || b.ton - a.ton), trips: rows.reduce((a, r) => a + r.trips, 0), ton: rows.reduce((a, r) => a + r.ton, 0),
     dS: rows.reduce((a, r) => a + r.dwS, 0), dN: rows.reduce((a, r) => a + r.dwN, 0)})).sort((a, b) => b.ton - a.ton);
-  return groups.map((x, i) => '<details class="trk-grp"' + (i === 0 ? ' open' : '') + '><summary><span class="gn">' + esc(B.dims.eksp[x.e] || 'FOT (distributor)') + '</span>' +
+  return groups.map((x, i) => '<details class="trk-grp"' + (i === 0 ? ' open' : '') + '><summary><span class="gn">' + esc(B.dims.eksp[x.e] || 'Angkut sendiri (distributor)') + '</span>' +
     '<span class="gs"><b>' + fmt(x.rows.length) + '</b> truk</span><span class="gs"><b>' + fmt(x.trips) + '</b> trip</span><span class="gs"><b>' + fmt(x.ton) + '</b> t</span><span class="gs">SLA <b>' + (x.dN ? fmt1(x.dS / x.dN) : '–') + '</b> jam</span></summary>' +
     table(cols, x.rows, {limit: 400}) + '</details>').join('');
 }
@@ -1982,7 +1982,7 @@ function pageArmada(){
     B.facts.forEach(f => { if(inPer(f[0], m) && D.dayDow[f[0]] === wd && incOk(f[1]) && srcOk(f[2]) && kemOk(f[10]) && areaProvOk(f[3])){ const o = per.get(f[5]) || {key: f[5], s: 0, n: 0, trips: 0, vol: 0}; o.s += f[8]; o.n += f[9]; o.trips += f[7]; o.vol += f[6]; per.set(f[5], o); } });
     const rows = [...per.values()].filter(o => o.n).map(o => Object.assign(o, {dw: o.s / o.n}));
     openModal('SLA hari ' + DAYS[wd], esc(periodSub()) + ' · per ekspeditur',
-      table([{h:'Ekspeditur', cls:'name', val: o => B.dims.eksp[o.key] || 'FOT (distributor)'}, {h:'Rata-rata SLA (jam)', num:true, cls:'pc', val: o => o.dw, html: o => fmt1(o.dw), style: o => 'color:' + slaColor(o.dw)}, {h:'Trip', num:true, val: o => o.trips}, {h:'Tonase', num:true, val: o => o.vol, html: o => fmt(o.vol)}], rows, {go: o => B.dims.eksp[o.key] ? '#/ekspeditur/' + enc(B.dims.eksp[o.key]) : null, sort: 1}));
+      table([{h:'Ekspeditur', cls:'name', val: o => B.dims.eksp[o.key] || 'Angkut sendiri (distributor)'}, {h:'Rata-rata SLA (jam)', num:true, cls:'pc', val: o => o.dw, html: o => fmt1(o.dw), style: o => 'color:' + slaColor(o.dw)}, {h:'Trip', num:true, val: o => o.trips}, {h:'Tonase', num:true, val: o => o.vol, html: o => fmt(o.vol)}], rows, {go: o => B.dims.eksp[o.key] ? '#/ekspeditur/' + enc(B.dims.eksp[o.key]) : null, sort: 1}));
   }};
   const dwellBars = barsHTML('ad', dow);
   const one = trucks.filter(x => x.trips === 1).length;
