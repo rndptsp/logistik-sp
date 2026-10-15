@@ -7,7 +7,7 @@ Sumber toko: data/rilis.csv.gz (KODE_TOKO, NAMA_TOKO, ALAMAT_TOKO, distrik, prov
 (kolom SUMBER: manual | google-tempat | google-alamat | osm | gagal:<penyedia>). Koordinat manual (upload admin) tidak
 pernah ditimpa; toko yang sudah dicari tidak dicari ulang kecuali penyedianya lebih baik (Google setelah OSM).
 Penyedia: Google Maps (Places Text Search, lalu Geocoding) bila GOOGLE_MAPS_KEY ada; selain itu OpenStreetMap Nominatim
-(gratis, 1 permintaan/detik, dibatasi per build). Setiap hasil harus jatuh DI DALAM batas kabupaten/kota toko itu
+(gratis, 1 permintaan/detik, dibatasi waktu per build). Setiap hasil harus jatuh DI DALAM batas kabupaten/kota toko itu
 (assets/districts.js), kalau tidak ditolak. Hasil yang hanya menunjuk pusat kota/kabupaten juga ditolak.
 Hanya jumlah yang dicetak.
 """
@@ -20,7 +20,8 @@ OUT = BASE / 'data' / 'gudang.csv.gz'
 COLS = ['KODE_TOKO', 'LAT', 'LON', 'KECAMATAN', 'SUMBER']
 KEY = os.environ.get('GOOGLE_MAPS_KEY', '').strip()
 PROV = 'google' if KEY else 'osm'
-LIMIT = int(os.environ.get('GEO_MAX') or (3000 if KEY else 250))   # per build: OSM ~1 s each
+LIMIT = int(os.environ.get('GEO_MAX') or 3000)
+BUDGET = float(os.environ.get('GEO_SECONDS') or 35 * 60)   # time budget per build (OSM: ~1-2 s per ship-to); the rest waits for the next build
 UA = {'User-Agent': 'logistik-sp-dashboard/1.0 (internal company dashboard; geocoding ship-to addresses)'}
 ALIAS = {'RIAU KEPULAUAN': 'KEPULAUAN RIAU'}
 ABBR = {'TANJ': 'TANJUNG', 'TJ': 'TANJUNG', 'BRT': 'BARAT', 'TIM': 'TIMUR', 'TMR': 'TIMUR', 'SEL': 'SELATAN', 'SLT': 'SELATAN',
@@ -155,7 +156,10 @@ def main():
         todo.append({'kode': k, 'nama': meta[k][0], 'alamat': meta[k][1], 'prov': prov, 'dist': dist, 'n': sum(c.values())})
     todo.sort(key=lambda t: -t['n'])   # busiest ship-tos first
     found = failed = noshape = 0
+    t0 = time.time()
     for t in todo[:LIMIT]:
+        if time.time() - t0 > BUDGET:
+            print('geocode: batas waktu build tercapai, sisanya dilanjutkan build berikutnya'); break
         g = find_shape(D, t['prov'], t['dist'])
         if not g:
             noshape += 1; continue
