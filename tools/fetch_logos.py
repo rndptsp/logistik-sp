@@ -13,7 +13,7 @@ import io, json, os, re, time, urllib.parse, urllib.request
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUT = os.path.join(ROOT, "assets", "logo")
 UA = {"User-Agent": "logistik-sp-dashboard/1.0 (internal company dashboard)"}
-BAD = re.compile(r"kecamatan|desa|nagari|dprd|polres|polda|kodim|partai|universitas|sekolah|rsud|pkk|korpri|bpbd|\bold\b|\blama\b|flag|bendera|\bmap\b|\bpeta\b|locator|location|\b1[89]\d\d\b|kolonial|hindia", re.I)
+BAD = re.compile(r"kecamatan|desa|nagari|dprd|polres|polda|kodim|partai|universitas|sekolah|rsud|pkk|korpri|bpbd|\bold\b|\blama\b|flag|bendera|\bmap\b|\bpeta\b|locator|location|\b1[89]\d\d\b|kolonial|hindia|oosthaven", re.I)
 EMB = re.compile(r"lambang|logo|coat.of.arms|seal|emblem", re.I)
 
 

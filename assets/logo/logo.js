@@ -495,15 +495,6 @@ window.LOGO = {
 "p": "KEPULAUAN RIAU",
 "n": "Natuna"
 },
-"prov-lampung": {
-"f": "prov-lampung.png",
-"t": "Lambang Provinsi Lampung",
-"a": "Aldontknow W3C-unspecified Gambar vektor ini dibuat menggunakan Inkscape .",
-"l": "CC BY-SA 4.0",
-"u": "https://commons.wikimedia.org/wiki/File:Coat_of_Arms_of_Lampung_(1920s).svg",
-"p": "LAMPUNG",
-"n": null
-},
 "dist-lampung-kota-bandar-lampung": {
 "f": "dist-lampung-kota-bandar-lampung.png",
 "t": "Lambang Kota Bandar Lampung",
