@@ -137,6 +137,7 @@ def cmd_rilis(a):
     log('== RILIS',a.input,dt.datetime.now().strftime('%Y-%m-%d %H:%M'))
     recs,seen,tot=read_rilis(a.input,sheets);log('baris file (semua provinsi, sheet terbaca): %d | dalam cakupan 7 provinsi: %d'%(tot,len(recs)))
     inc_rows={};errs=[];warns=[];dup=C.Counter()
+    unk=C.defaultdict(lambda:[0,0.0,set()])
     for code,rec in recs:
         row=rilis_row(rec,code);k=row['NO_SPJ'];dup[k]+=1;inc_rows[k]=row
         ton=num(row['TONASE']);d=pdate(row['TGL_SPJ'])
@@ -144,7 +145,9 @@ def cmd_rilis(a):
         elif ton>SET['max_tonase_baris']: warns.append('tonase > %d SPJ %s: %s'%(SET['max_tonase_baris'],k,ton))
         if d is None: errs.append('tanggal tidak terbaca SPJ %s'%k)
         elif d<TMIN or d>dt.datetime.now()+dt.timedelta(days=1): errs.append('tanggal di luar rentang SPJ %s: %s'%(k,row['TGL_SPJ']))
-        if code not in PLANTS: warns.append('kode plant tidak dikenal: %s (SPJ %s)'%(code,k))
+        if code not in PLANTS: unk[code][0]+=1; unk[code][1]+=(ton or 0); unk[code][2].add(str(row['NAMA_PROPINSI']))
+    for c,(n,tn,pv) in sorted(unk.items()):
+        errs.append('KODE PLANT TIDAK DIKENAL: %s (%d baris, %.1f t, provinsi: %s). Tambahkan ke settings.json "plants" (kode -> nama plant), lalu upload ulang.'%(c,n,tn,', '.join(sorted(pv))))
     for k,n in dup.items():
         if n>1: errs.append('SPJ duplikat di file: %s (%dx)'%(k,n))
     store=load_store(DATA/'rilis.csv.gz',RCOLS)

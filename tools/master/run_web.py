@@ -29,6 +29,9 @@ def main():
     if not home or not (Path(home) / 'data' / 'rilis.csv.gz').exists():
         print('GAGAL: store master (MASTER_HOME/data/rilis.csv.gz) tidak ada. Muat master awal lewat halaman admin dulu.'); sys.exit(1)
     for d in ('logs', 'data/backup'): (Path(home) / d).mkdir(parents=True, exist_ok=True)
+    cfg = HERE / 'settings.json'   # config in the repo wins over the R2 copy (plant map etc.)
+    if cfg.exists():
+        (Path(home) / 'config').mkdir(parents=True, exist_ok=True); (Path(home) / 'config' / 'settings.json').write_bytes(cfg.read_bytes())
     env = dict(os.environ)
     inbox = Path(a.inbox); f = {k: inbox / (k + '.xlsx') for k in ('rilis', 'so', 'tactical', 'snop', 'monitoring')}
     have = {k: p.exists() for k, p in f.items()}

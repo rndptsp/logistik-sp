@@ -1,0 +1,96 @@
+{
+ "provinsi_scope": [
+  "ACEH",
+  "BENGKULU",
+  "JAMBI",
+  "RIAU DARATAN",
+  "RIAU KEPULAUAN",
+  "SUMATERA BARAT",
+  "SUMATERA UTARA",
+  "SUMATERA SELATAN"
+ ],
+ "plants": {
+  "7912": "CP INDARUNG",
+  "7913": "PP TELUK BAYUR",
+  "7914": "PP Batam SP",
+  "7917": "PP Malahayati SP",
+  "7918": "PP LHOKSEUMAWE",
+  "7919": "GP DUMAI",
+  "7921": "PP BENGKULU",
+  "7930": "DC Pekanbaru SP",
+  "7948": "DC Dumai SP",
+  "7995": "PP Dumai SBI",
+  "79B1": "CP Narogong SBI",
+  "79B4": "PP BELAWAN SBA",
+  "79B5": "PP Batam SBA",
+  "79B7": "PP Lhokseumawe SBA",
+  "79B9": "CP Lhoknga SBA",
+  "79D2": "VP Transhpmnt Pdg SP",
+  "79H7": "CP BATURAJA SMBR",
+  "79H8": "DC Palembang SMBR",
+  "79P7": "PP Palembang SMBR",
+  "7934": "PP TELUK BAYUR",
+  "79A2": "PP BELAWAN SBA",
+  "79K5": "PP Lhokseumawe SBA",
+  "79K4": "CP Lhoknga SBA",
+  "7992": "PP Batam SBA",
+  "79B8": "CP Narogong SBI"
+ },
+ "tanggal_min": "2026-01-01",
+ "silog_sampai": "2026-04-09",
+ "angkut_sendiri_plants": [
+  "79B4",
+  "79H7"
+ ],
+ "max_tonase_baris": 1000,
+ "row_drop_pct": 10,
+ "outlier_x": 10,
+ "tanpa_plant": {
+  "FOB": "7913",
+  "FRC": "7912",
+  "FOT CONTAINER": "7913",
+  "FOT_override_distrik": {
+   "101004": "7913"
+  },
+  "FOT_sumut": "79B4"
+ },
+ "plants_snop_nama": {
+  "7912": "CP Indarung SP",
+  "7913": "PP Teluk Bayur SP",
+  "7919": "GP Dumai SP",
+  "7921": "PP Bengkulu SP",
+  "79B4": "PP Belawan SBA"
+ },
+ "target_alias_plant": {
+  "CP Indarung SP": "CP INDARUNG",
+  "PP Belawan SBA": "PP BELAWAN SBA",
+  "GP Dumai SP": "GP DUMAI",
+  "PP Bengkulu SP": "PP BENGKULU",
+  "CP Baturaja SMBR": "CP BATURAJA SMBR",
+  "PP Teluk Bayur SP": "PP TELUK BAYUR",
+  "PP Lhokseumawe SP": "PP LHOKSEUMAWE"
+ },
+ "prov_alias": {
+  "SUMUT": "SUMATERA UTARA",
+  "RIDAR": "RIAU DARATAN",
+  "SUMBAR": "SUMATERA BARAT",
+  "RIKEP": "RIAU KEPULAUAN"
+ },
+ "target_min_bulan_aturan": 7,
+ "provinsi_plant_batas": {
+  "SUMATERA SELATAN": [
+   "7912"
+  ]
+ },
+ "provinsi_non_kinerja": [
+  "SUMATERA SELATAN"
+ ],
+ "so_distrik_provinsi": {
+  "KOTA LUBUK LINGGAU": "SUMATERA SELATAN",
+  "KAB. MUSI BANYUASIN": "SUMATERA SELATAN"
+ },
+ "so_keterangan": "AP1",
+ "so_buang_tersimpan_provinsi": [
+  "SUMATERA SELATAN"
+ ]
+}
