@@ -174,8 +174,12 @@ $('#slots').addEventListener('click', async e => {
 });
 $('#go').addEventListener('click', async () => {
   const msg = $('#upMsg'); $('#go').disabled = true; msg.style.color = 'var(--sub)'; msg.textContent = 'Memulai…';
-  const r = await api('start', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify({month: +$('#month').value, force: $('#force').checked, rebuild: !S.inbox.length})});
-  const j = await r.json();
+  const body = {month: +$('#month').value, force: $('#force').checked, rebuild: !S.inbox.length};
+  let r = await api('start', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(body)});
+  let j = await r.json();
+  if(r.status === 409 && j.busy && confirm('Status menunjukkan masih ada build berjalan. Jika build sebelumnya sudah gagal/macet di GitHub (tab Actions tidak ada yang berjalan), lanjut paksa mulai build baru?')){
+    r = await api('start', {method: 'POST', headers: {'content-type': 'application/json'}, body: JSON.stringify(Object.assign({unlock: true}, body))}); j = await r.json();
+  }
   if(r.ok){ msg.style.color = 'var(--green)'; msg.textContent = 'Build dimulai — status di bawah diperbarui otomatis.'; $('#force').checked = false; }
   else { msg.style.color = 'var(--red)'; msg.textContent = 'Gagal: ' + (j.error || r.status); }
   load();

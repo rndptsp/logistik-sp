@@ -5,8 +5,8 @@ import {json, listAll, readJSON, writeJSON, startBuild} from '../../../lib/admin
 export async function onRequestPost({request, env, data}){
   const b = await request.json().catch(() => ({}));
   const cur = await readJSON(env, 'state/build.json', {});
-  if(cur.state === 'queued' || cur.state === 'running'){
-    if(Date.now() - Date.parse(cur.updated || cur.at) < 40 * 60e3) return json({error: 'Masih ada build berjalan. Tunggu selesai.'}, 409);
+  if(!b.unlock && (cur.state === 'queued' || cur.state === 'running')){
+    if(Date.now() - Date.parse(cur.updated || cur.at) < 40 * 60e3) return json({error: 'Masih ada build berjalan. Tunggu selesai.', busy: true}, 409);
   }
   if(!await env.MASTER.head('store/current/data/rilis.csv.gz')) return json({error: 'Master awal belum dimuat (bagian 0).'}, 409);
   const inbox = (await listAll(env, 'inbox/')).map(o => o.key.slice(6).replace(/\.xlsx$/, ''));
