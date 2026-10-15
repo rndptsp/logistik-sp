@@ -47,7 +47,7 @@ jobs:
           git config user.name "logistik-sp admin build"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           for i in 1 2 3; do
-            git fetch -q origin main && git checkout -q -B main origin/main
+            git fetch -q origin main && git checkout -q -f -B main origin/main   # -f: outputs are saved in RUNNER_TEMP; code pushed meanwhile must not block
             cp "$RUNNER_TEMP/out/site.enc" "$RUNNER_TEMP/out/meta.json" data/
             sed -E -i "s/(style\.css|app\.js|sumatra\.js)\?v=[^\"]*/\1?v=$BUILD/g" index.html
             git add data/site.enc data/meta.json index.html
