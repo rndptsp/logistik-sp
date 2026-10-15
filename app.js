@@ -633,7 +633,7 @@ function renderFilterPanel(){
     '<div class="fp-group"><label class="fl">Target' + tip('SNOP = target resmi. Internal = 115% dari SNOP.', true) + '</label><div class="fp-chips">' + tgt + '</div></div></div>' +
     (area ? '<div class="fp-row"><div class="fp-group"><label class="fl">Area' + tip(areaTip) + '</label><div class="fp-chips">' + area + '</div></div><div class="fp-group"></div></div>' : '') +
     '<div class="fp-group" style="margin-bottom:18px"><label class="fl">Source plant' + tip(srcTip) + '<span class="fp-all"><a data-srcall="1">Centang semua</a><a data-srcall="0">Hapus semua</a></span></label><div class="fp-cols">' + src + '</div></div>' +
-    '<div class="fp-foot"><div class="fp-reset" data-act="reset">Reset filter</div><div class="fp-apply" data-act="apply">Terapkan</div></div>';
+    '<div class="fp-foot"><div class="fp-reset" data-act="reset">Reset filter</div><div class="fp-reset" data-act="laporan">Tampilan laporan harian</div><div class="fp-apply" data-act="apply">Terapkan</div></div>';
 }
 function filterStrip(){
   const per = PER();
@@ -644,7 +644,16 @@ function filterStrip(){
     (areaOn() ? '<span class="tag qk" data-qk="area" title="Ganti area"><b>' + areaName() + '</b> &#9662;</span>' : '') +
     '<span class="tag">target <b>' + (F.tgt === 'INTERNAL' ? 'Internal 115%' : 'SNOP') + '</b></span>' +
     '<span class="tag">' + srcTxt() + '</span>' +
+    '<span class="edit qrep' + (isReportView() ? ' on' : '') + '" data-act="laporan" title="' + (isReportView() ? 'Kembali ke tampilan lengkap (semua moda, incoterm, plant & area)' : 'Sama dengan laporan Realisasi harian: AP1 · FRC TRUK · ZAK · CP Indarung · SNOP · bulan berjalan') + '">' + (isReportView() ? '&#10003; Laporan harian' : 'Laporan harian') + '</span>' +
     '<span class="edit" data-act="openfilter">Ubah filter &#9662;</span>';
+}
+/* "Laporan harian" quick view = the daily Realisasi report: AP1, FRC truk, ZAK, CP Indarung, SNOP, current month. */
+const REPORT_VIEW = () => ({per: {kind: 'month', month: D.months[D.months.length - 1]}, inc: 'FRC', moda: 'DARAT', kem: 'ZAK', area: 'AP1', srcOff: new Set(D.sources.filter(x => x !== DEFAULT_SRC)), tgt: 'SNOP'});
+const DEFAULT_VIEW = () => ({per: {kind: 'month', month: D.months[D.months.length - 1]}, inc: 'ALL', moda: 'ALL', kem: 'ZAK', area: 'ALL', srcOff: new Set(DEFAULT_SRC_OFF), tgt: 'SNOP'});
+function isReportView(){
+  const r = REPORT_VIEW(), p = F.per || {kind: 'month', month: D.months[D.months.length - 1]};
+  return F.inc === r.inc && F.kem === r.kem && F.area === r.area && F.tgt === r.tgt && p.kind === 'month' && p.month === r.per.month &&
+    F.srcOff.size === r.srcOff.size && [...r.srcOff].every(x => F.srcOff.has(x));
 }
 /* Quick switches under the header (moda / incoterm / kemasan) - same filters as the filter panel, one click. */
 function quickMenu(kind, anchor){
@@ -1315,7 +1324,7 @@ function pageHome(){
   page(
     mapHero(provRows, t, head, chg, isLatest) +
     '<div class="wrap"><div class="data-asof">Data realisasi s.d. ' + dayLabel(B.asOf) + (prog.date ? ' · snapshot Prognosa ' + dayLabel(prog.date) + ' ' + esc(prog.time) : '') + ' · ' + esc(B.build || '') + '</div>' +
-    attn +
+    attn + incPerf(m, {}) +
     '<div class="section-head"><div class="section-title">Capaian ' + esc(m.label) + '</div></div>' +
     '<div class="main-chart">' + trendPanel({}, 'harian', 'Realisasi vs target ' + tgtLbl(), {grans: ['harian', 'mingguan', 'bulanan'], noCmp: true}) + '</div>' +
     '<div class="section-head"><div class="section-title">Ringkasan operasional</div><a class="section-link" href="#/armada">Armada &rsaquo;</a></div>' +
@@ -1354,6 +1363,19 @@ function mapHero(provRows, t, head, chg, isLatest){
   '</div></section>';
 }
 
+/* Per-incoterm performance (cards) for a scope, shown whenever the filter has more than one incoterm active. */
+function incPerf(m, sc){
+  const act = INCS().map((n, i) => i).filter(i => incOk(i));
+  if(act.length < 2) return '';
+  const rows = act.map(i => withInc({incFix: INCS()[i]}, () => Object.assign({i}, total(m, sc || {})))).filter(o => o.vol > 0 || o.tgt > 0);
+  if(rows.length < 2) return '';
+  const cards = rows.map(o => '<div class="ip-card" style="--c:' + incColor(o.i) + '"><div class="ip-n">' + esc(incLbl(INCS()[o.i])) + '</div>' +
+    '<div class="ip-v">' + fmt(o.vol) + ' <small>t</small></div>' +
+    '<div class="ip-bar"><i style="width:' + (o.pct == null ? 0 : Math.min(100, o.pct)) + '%;background:' + tierColor(o.pct) + '"></i></div>' +
+    '<div class="ip-m">' + (o.hasTgt ? '<b style="color:' + tierColor(o.pct) + '">' + pctTxt(o.pct) + '</b> dari target ' + fmt(o.tgt) + ' t · <span style="color:' + (o.gap < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(o.gap) + '</span>' : 'tanpa target ' + tgtLbl()) + '</div>' +
+    '<div class="ip-s">' + fmt(o.trips) + ' trip' + (o.of != null ? ' · Real/SO ' + pctTxt(o.of) : '') + '</div></div>').join('');
+  return '<div class="section-head"><div class="section-title">Kinerja per incoterm</div><div class="section-sub">' + esc(incName()) + ' · ' + periodSub() + '</div></div><div class="ip-grid">' + cards + '</div>';
+}
 function pageProvList(){
   const rows = ranked(summarize('prov', PER()));
   const t = total(PER());
@@ -1361,6 +1383,7 @@ function pageProvList(){
   cols[2].total = fmt(t.vol); cols[3].total = fmt(t.tgt); cols[4].total = pctTxt(t.pct); cols[5].total = signed(t.gap); cols[6].total = fmt(t.so); cols[7].total = pctTxt(t.of); cols[8].total = fmt(t.trips);
   page('<div class="wrap">' + crumb([['Wilayah'], ['Semua provinsi']]) +
     '<div class="dp-head"><div><div class="nm">Semua Provinsi</div><div class="sub">Capaian tonase &amp; rank · ' + periodSub() + '</div></div><div class="badges"><div class="dp-badge ' + tierClass(t.pct) + '">Total ' + pctTxt(t.pct) + ' dari target</div></div></div>' +
+    incPerf(PER(), {}) +
     table(cols, rows, {go: r => '#/provinsi/' + enc(B.dims.prov[r.key]), total: true}) +
     '<div class="dp-cols even">' + trendPanel({}, 'mingguan', 'Tren seluruh provinsi') + sourcePanel({}) + '</div>' +
     '</div>', 'wilayah');
@@ -1408,7 +1431,7 @@ function pageProv(name){
       kpi('gap', me.gap < 0 ? 'var(--red)' : 'var(--green)', me.gap < 0 ? 'Sisa ke target' : 'Lebih dari target', me.hasTgt ? fmt(Math.abs(me.gap)) + ' <small>ton</small>' : '–') +
       kpi('box', 'var(--amber)', 'SO / Real÷SO', me.so ? fmt(me.so) + ' <small>t · ' + pctTxt(me.of) + '</small>' : '–') +
     '</div>'
-    )) +
+    )) + incPerf(m, sc) +
     '<div class="dp-cols">' + trendPanel(sc, 'mingguan') +
       '<div class="dp-panel"><div class="pt">Ekspeditur di provinsi ini<span class="pt-sub">capaian target · Real/SO</span></div>' + (eks.length ? eks.map(o => rateRow(B.dims.eksp[o.key] + ' · ' + fmt(o.vol) + ' t', o.pct, '#/ekspeditur/' + enc(B.dims.eksp[o.key]), o.hasTgt ? 'target ' + fmt(o.tgt) + ' t' : 'tanpa target', o.of)).join('') : '<div class="empty">' + (nfOn() ? incName() + ' diambil langsung oleh distributor — lihat halaman Distributor.' : 'Tidak ada data.') + '</div>') + '</div>' +
     '</div>' +
@@ -1687,7 +1710,7 @@ function pageDist(name){
       kpi('gap', me.gap < 0 ? 'var(--red)' : 'var(--green)', 'Gap', me.hasTgt ? signed(me.gap) + ' <small>ton</small>' : '–') +
       kpi('box', 'var(--amber)', 'SO / Real÷SO', me.so ? fmt(me.so) + ' <small>t · ' + pctTxt(me.of) + '</small>' : '–') +
     '</div>' +
-    mapS)) +
+    mapS)) + incPerf(m, sc) +
     '<div class="dp-cols">' + trendPanel(sc, 'harian') + '</div>' +
     '<div class="section-head"><div class="section-title">Tujuan pengiriman: distributor &rsaquo; toko / gudang</div></div>' +
     treeHTML(buildTree(shipRows(m, sc), ['distr', 'toko']), ['distr', 'toko']) +
@@ -1742,7 +1765,7 @@ function pageEksp(code){
       kpi('target', 'var(--black)', 'Target MTD', me.hasTgt ? fmt(me.tgt) + ' <small>ton</small>' : '–', {hint: me.hasTgt ? 'bulan penuh ' + fmt(me.tgtFull) + ' t' : ''}) +
       kpi('truck', 'var(--black)', 'Truk aktif', fmt(trucks.length), {hint: fmt1(me.trips / Math.max(1, trucks.length)) + ' trip / truk'}) +
       kpi('clock', 'var(--amber)', 'Rata-rata SLA', me.dwell == null ? '–' : fmt1(me.dwell) + ' <small>jam</small>', {hint: me.so ? 'Real/SO ' + pctTxt(me.of) : ''}) +
-    '</div>' +
+    '</div>' + incPerf(m, sc) +
     '<div class="dp-cols">' + trendPanel(sc, 'mingguan') +
       '<div class="dp-panel"><div class="pt">Capaian per provinsi<span class="pt-sub">capaian target · Real/SO</span></div>' + (provs.length ? provs.map(o => rateRow(tc(B.dims.prov[o.key]) + ' · ' + fmt(o.vol) + ' t', o.pct, '#/provinsi/' + enc(B.dims.prov[o.key]), o.hasTgt ? 'target ' + fmt(o.tgt) + ' t' : '', o.of)).join('') : '<div class="empty">Tidak ada data untuk filter ini.</div>') + '</div>' +
     '</div>' +
@@ -2088,7 +2111,8 @@ function bindEvents(){
     if(act){
       const a = act.dataset.act;
       if(a === 'apply') applyFilter();
-      if(a === 'reset'){ draft = {per: {kind: 'month', month: D.months[D.months.length - 1]}, inc: 'ALL', moda: 'ALL', kem: 'ZAK', area: 'ALL', srcOff: new Set(DEFAULT_SRC_OFF), tgt: 'SNOP'}; applyFilter(); }
+      if(a === 'reset'){ draft = DEFAULT_VIEW(); applyFilter(); }
+      if(a === 'laporan'){ e.stopPropagation(); draft = isReportView() ? DEFAULT_VIEW() : REPORT_VIEW(); applyFilter(); }
       if(a === 'openfilter'){ e.stopPropagation(); openFilter(); }
       if(a === 'logout'){ logout(); }
       if(a === 'closemodal'){ closeModal(); }
