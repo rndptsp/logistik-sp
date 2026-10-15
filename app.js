@@ -902,8 +902,9 @@ function mapPhoto(pname){
 /* ===================== Kecamatan map (district page) ===================== */
 /* Kecamatan borders come from assets/kec/<province>.js (window.KEC[PROVINSI][district shape name] = {vb, d:[{n,d,cx,cy,w,h}]}),
    loaded when a district page opens. Kecamatan are shaded by tonnage (there are no targets below district level).
-   Ship-to pins sit at the centre of the ship-to's kecamatan (B.dims.toko[i][3] -> B.dims.kec), spread out when several
-   share one kecamatan: an approximate location until the master has real coordinates. */
+   Ship-to location, best first: coordinates uploaded on the admin page (B.dims.toko[i][4..5] = lat, lon); else the centre
+   of its kecamatan (B.dims.toko[i][3] -> B.dims.kec, or a kecamatan name found in the ship-to name/address), spread out
+   when several share one kecamatan. */
 const kecLoading = {};   // file -> 'loading' | 'done'
 let kecPending = null;     // renders the section for the district page currently waiting on a file
 function loadKec(prov, done){
@@ -928,6 +929,16 @@ function matchKec(name, shapes){
   });
   return best;
 }
+/** Is (x, y) inside an SVG path made of "M x,y L x,y ... Z" rings (even-odd)? */
+function inPath(x, y, d){
+  let hit = false;
+  d.split('M').forEach(ring => {
+    const p = ring.replace(/Z/g, '').split('L').filter(Boolean).map(q => q.split(',').map(Number));
+    for(let i = 0, j = p.length - 1; i < p.length; j = i++)
+      if((p[i][1] > y) !== (p[j][1] > y) && x < (p[j][0] - p[i][0]) * (y - p[i][1]) / (p[j][1] - p[i][1]) + p[i][0]) hit = !hit;
+  });
+  return hit;
+}
 function kecMapSection(name, pname, m, di){
   const prov = mapProv(pname), back = () => distMapSection(pname, m, di);
   if(!window.DISTRICTS){   // districts.js first (its loader fills #dmapSlot), then the kecamatan file
@@ -950,14 +961,22 @@ function kecMapSection(name, pname, m, di){
     if(!o){ o = {ti: r[7], vol: 0, trips: 0, distr: new Set()}; per.set(r[7], o); }
     o.vol += r[8]; o.trips += r[9]; o.distr.add(r[5]);
   });
-  const kecNames = B.dims.kec || [], byKec = new Map(), noLoc = [];
+  const kecNames = B.dims.kec || [], byKec = new Map(), exact = [];
+  const words = s => ' ' + String(s || '').toUpperCase().replace(/[^A-Z]+/g, ' ') + ' ';
+  const byLen = K.d.map((g, i) => [words(g.n), i]).sort((a, b) => b[0].length - a[0].length);
   [...per.values()].forEach(o => {
     const t = B.dims.toko[o.ti] || [];
-    if(!t[0]){ noLoc.push(o); return; }
-    const ki = t[3] != null && t[3] >= 0 ? matchKec(kecNames[t[3]], K.d) : -1;
+    o.kec = -1;
+    if(!t[0]) return;
+    let ki = t[3] != null && t[3] >= 0 ? matchKec(kecNames[t[3]], K.d) : -1;
+    if(ki < 0){ const txt = words(t[1] + ' ' + t[2]), hit = byLen.find(([w]) => txt.includes(w)); if(hit) ki = hit[1]; }
     o.kec = ki;
-    if(ki < 0){ noLoc.push(o); return; }
-    (byKec.get(ki) || byKec.set(ki, []).get(ki)).push(o);
+    if(t[4] != null && t[5] != null){
+      o.x = (t[5] - 95) * 200; o.y = (6.2 - t[4]) * 200; exact.push(o);
+      const at = K.d.findIndex(g => inPath(o.x, o.y, g.d));   // the coordinate decides the kecamatan
+      if(at >= 0) ki = o.kec = at;
+    }
+    if(ki >= 0) (byKec.get(ki) || byKec.set(ki, []).get(ki)).push(o);
   });
   const [vx, vy, vw, vh] = K.vb, fs = Math.max(vw, vh) / 55, maxK = Math.max(1, ...[...byKec.values()].map(l => l.reduce((a, o) => a + o.vol, 0)));
   const shade = v => { const t = Math.sqrt(v / maxK); const c = (a, b) => Math.round(a + (b - a) * t); return 'rgb(' + c(214, 62) + ',' + c(224, 86) + ',' + c(229, 97) + ')'; };
@@ -970,27 +989,30 @@ function kecMapSection(name, pname, m, di){
       labels += '<text x="' + g.cx + '" y="' + (g.cy - fs * 0.9) + '" class="map-lbl kec-lbl' + (l && v / maxK > 0.35 ? '' : ' dim') + '" style="font-size:' + (fs * 0.85).toFixed(1) + 'px">' + esc(g.n) + '</text>';
   });
   const maxT = Math.max(1, ...[...per.values()].map(o => o.vol));
+  const pin = (o, x, y, approx) => {
+    const t = B.dims.toko[o.ti], r = fs * (0.32 + 0.38 * Math.sqrt(o.vol / maxT));
+    const tip = (t[1] || t[0]) + '|' + (t[2] ? t[2] + ' · ' : '') + (o.kec >= 0 ? 'Kec. ' + K.d[o.kec].n : '') + (approx ? ' (lokasi perkiraan)' : '') + '|' + fmt(o.vol) + ' t · ' + fmt(o.trips) + ' trip|' + [...o.distr].map(d => tc(B.dims.distr[d])).filter(Boolean).join(', ');
+    return '<circle class="toko-pin' + (approx ? ' approx' : '') + '" cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + r.toFixed(2) + '" stroke-width="1.2" vector-effect="non-scaling-stroke" data-tip="' + esc(tip) + '"/>';
+  };
   byKec.forEach((l, ki) => {
     const g = K.d[ki];
-    l.sort((a, b) => b.vol - a.vol).forEach((o, j) => {
+    l.filter(o => o.x == null).sort((a, b) => b.vol - a.vol).forEach((o, j) => {
       const a = j * 2.4, rr = j ? fs * 0.75 * Math.sqrt(j) : 0;   // sunflower spread around the kecamatan centre
-      const x = g.cx + rr * Math.cos(a), y = g.cy + rr * Math.sin(a), r = fs * (0.32 + 0.38 * Math.sqrt(o.vol / maxT));
-      const t = B.dims.toko[o.ti];
-      const tip = (t[1] || t[0]) + '|' + (t[2] ? t[2] + ' · ' : '') + 'Kec. ' + g.n + '|' + fmt(o.vol) + ' t · ' + fmt(o.trips) + ' trip|' + [...o.distr].map(d => tc(B.dims.distr[d])).filter(Boolean).join(', ');
-      pins += '<circle class="toko-pin" cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + r.toFixed(2) + '" fill="var(--red)" stroke="#fff" stroke-width="1.2" vector-effect="non-scaling-stroke" data-tip="' + esc(tip) + '"/>';
+      pins += pin(o, g.cx + rr * Math.cos(a), g.cy + rr * Math.sin(a), true);
     });
   });
+  exact.sort((a, b) => b.vol - a.vol).forEach(o => { pins += pin(o, o.x, o.y, false); });
   const svg = '<svg class="map-svg" viewBox="' + K.vb.join(' ') + '" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Peta kecamatan dan toko/gudang tujuan di ' + esc(tc(name)) + '">' +
     '<rect x="' + vx + '" y="' + vy + '" width="' + vw + '" height="' + vh + '" class="map-sea"/>' + shapes + labels + pins + '</svg>';
   const list = [...per.values()].filter(o => (B.dims.toko[o.ti] || [])[0]).sort((a, b) => b.vol - a.vol);
   const legend = '<div class="map-row map-head"><span class="dot"></span><span class="nm">Toko / gudang tujuan</span><span class="tn">Realisasi</span></div>' +
-    list.slice(0, 40).map((o, r) => { const t = B.dims.toko[o.ti]; return '<div class="map-row"><span class="dot" style="background:' + (o.kec >= 0 ? 'var(--red)' : '#C4CACD') + ';border-radius:50%"></span><span class="nm">#' + (r + 1) + ' ' + esc(t[1] || t[0]) + '<small>' + esc(o.kec >= 0 ? 'Kec. ' + K.d[o.kec].n : (t[2] || 'lokasi belum diketahui')) + '</small></span><span class="tn">' + fmt(o.vol) + ' t</span></div>'; }).join('') +
+    list.slice(0, 40).map((o, r) => { const t = B.dims.toko[o.ti]; return '<div class="map-row"><span class="dot" style="background:' + (o.x != null ? 'var(--red)' : o.kec >= 0 ? '#F08A90' : '#C4CACD') + ';border-radius:50%"></span><span class="nm">#' + (r + 1) + ' ' + esc(t[1] || t[0]) + '<small>' + esc(o.kec >= 0 ? 'Kec. ' + K.d[o.kec].n : (t[2] || 'lokasi belum diketahui')) + '</small></span><span class="tn">' + fmt(o.vol) + ' t</span></div>'; }).join('') +
     (list.length > 40 ? '<div class="map-row muted"><span class="dot"></span><span class="nm">+' + (list.length - 40) + ' toko/gudang lain (lihat tabel di bawah)</span></div>' : '') +
     (!list.length ? '<div class="map-row muted"><span class="dot"></span><span class="nm">Belum ada toko/gudang tujuan tercatat untuk filter ini.</span></div>' : '') +
-    '<div class="map-key"><span><i style="background:var(--red);border-radius:50%"></i>toko/gudang (ukuran = tonase)</span><span><i style="background:rgb(62,86,97)"></i>kecamatan, makin gelap makin banyak tonase</span></div>';
-  const placed = list.filter(o => o.kec >= 0).length;
-  const note = '<div class="dp-review map-note">Titik toko/gudang ditempatkan di <b>pusat kecamatannya</b> (perkiraan), karena master belum punya koordinat gudang. ' +
-    (list.length ? placed + ' dari ' + list.length + ' toko/gudang sudah terpetakan' + (placed < list.length ? '; sisanya belum punya data kecamatan yang cocok' : '') + '.' : '') + '</div>';
+    '<div class="map-key"><span><i style="background:var(--red);border-radius:50%"></i>koordinat gudang</span><span><i style="background:#F08A90;border-radius:50%"></i>perkiraan (pusat kecamatan)</span><span><i style="background:rgb(62,86,97)"></i>kecamatan: makin gelap makin banyak tonase</span></div>';
+  const nEx = list.filter(o => o.x != null).length, nAp = list.filter(o => o.x == null && o.kec >= 0).length, nNo = list.length - nEx - nAp;
+  const note = list.length ? '<div class="dp-review map-note">' + nEx + ' dari ' + list.length + ' toko/gudang punya koordinat; ' + nAp + ' ditaruh di pusat kecamatannya (perkiraan dari nama/alamat)' +
+    (nNo ? '; ' + nNo + ' belum bisa dipetakan (abu-abu di daftar)' : '') + '. Koordinat gudang bisa diupload di halaman admin (slot <i>Lokasi gudang / toko</i>).</div>' : '';
   return '<div class="section-head"><div class="section-title">Peta kecamatan &amp; toko/gudang tujuan</div><a class="section-link" href="#/provinsi/' + enc(pname) + '">Peta provinsi &rsaquo;</a></div>' +
     '<div class="map-wrap dmap kmap"' + mapPhoto(pname) + '>' + svg + '<div class="map-legend">' + legend + '</div></div>' + note;
 }

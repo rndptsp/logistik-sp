@@ -228,6 +228,13 @@ def build(cfg):
     kec = Dict()                                         # kecamatan names (NAMA_KEC_SUBDISTRIK), for the district map
     toko_kec = defaultdict(lambda: defaultdict(float))   # ship-to -> kecamatan -> ton; the main one places its map pin
     dist_prov = {}
+    # optional ship-to locations uploaded on the admin page (slot "gudang"): KODE_TOKO -> (lat, lon, kecamatan)
+    gudang = {}
+    gpath = os.path.join(base, "data", "gudang.csv.gz")
+    if os.path.exists(gpath):
+        for r in read_store(gpath):
+            gudang[str(r.get("KODE_TOKO") or "").strip()] = (num(r.get("LAT")) or None, num(r.get("LON")) or None, up(r.get("KECAMATAN")))
+        print(f"  lokasi gudang: {len(gudang):,} toko")
 
     # ---------------- Realisasi (data/rilis.csv.gz) ----------------
     facts = defaultdict(lambda: [0.0, 0, 0.0, 0])
@@ -364,6 +371,12 @@ def build(cfg):
 
 
     # ---------------- Assemble ----------------
+    def toko_row(i):
+        meta = toko_meta.get(i, ["", "", ""])
+        lat, lon, kc = gudang.get(meta[0], (None, None, ""))
+        ki = kec(kc) if kc else (max(toko_kec[i], key=toko_kec[i].get) if toko_kec.get(i) else -1)
+        return meta + [ki, lat, lon]
+
     days = sorted({k[0] for k in facts})
     day_idx = {d: i for i, d in enumerate(days)}
     bundle = {
@@ -374,9 +387,8 @@ def build(cfg):
         "lastDay": last_day,
         "dims": {"inc": INCOTERMS, "prov": prov.items, "dist": dist.items, "eksp": eksp.items, "src": src.items,
                  "distr": distr.items, "truck": truck.items, "nonKin": nonkin, "kem": kem_d.items, "ekspNama": [kamus.get(n, "") for n in eksp.items],
-                 # ship-to: [code, name, address, kecamatan index or -1]
-                 "toko": [toko_meta.get(i, ["", "", ""]) + [max(toko_kec[i], key=toko_kec[i].get) if toko_kec.get(i) else -1]
-                          for i in range(len(toko.items))],
+                 # ship-to: [code, name, address, kecamatan index or -1, lat, lon] (lat/lon null when unknown)
+                 "toko": [toko_row(i) for i in range(len(toko.items))],
                  "kec": kec.items,
                  "distProv": [dist_prov.get(i, -1) for i in range(len(dist.items))]},
         "days": days,

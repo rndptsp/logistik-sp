@@ -4,7 +4,7 @@
   MASTER_HOME=<folder store>  python3 tools/master/run_web.py --inbox <folder> [--month N] [--force]
 
 <folder store> berisi data/*.csv.gz dan config/*.json (diunduh dari R2, bukan dari repo).
-<folder inbox> berisi file upload (nama tetap per slot): rilis.xlsx, so.xlsx, tactical.xlsx, snop.xlsx, monitoring.xlsx.
+<folder inbox> berisi file upload (nama tetap per slot): rilis.xlsx, so.xlsx, tactical.xlsx, snop.xlsx, monitoring.xlsx, gudang.xlsx.
 Urutan: Target (jika tactical+snop+monitoring ada) -> tulis 01_TARGET.xlsx -> Rilis -> SO -> rapikan.
 Target harus lebih dulu: proporsi ekspeditur SO dibaca dari 01_TARGET.xlsx. Berhenti di langkah pertama yang gagal.
 Slot yang tidak diupload dilewati; tanpa satu pun slot, hanya menulis ulang 01_TARGET.xlsx (untuk build ulang / rollback).
@@ -33,7 +33,7 @@ def main():
     if cfg.exists():
         (Path(home) / 'config').mkdir(parents=True, exist_ok=True); (Path(home) / 'config' / 'settings.json').write_bytes(cfg.read_bytes())
     env = dict(os.environ)
-    inbox = Path(a.inbox); f = {k: inbox / (k + '.xlsx') for k in ('rilis', 'so', 'tactical', 'snop', 'monitoring')}
+    inbox = Path(a.inbox); f = {k: inbox / (k + '.xlsx') for k in ('rilis', 'so', 'tactical', 'snop', 'monitoring', 'gudang')}
     have = {k: p.exists() for k, p in f.items()}
     part = [k for k in ('tactical', 'snop', 'monitoring') if have[k]]
     if part and len(part) < 3:
@@ -47,6 +47,7 @@ def main():
     if have['rilis']: steps.append(('rilis', ['update_master.py', 'rilis', '--input', f['rilis']] + fr))
     if have['so']: steps.append(('so', ['update_master.py', 'so', '--input', f['so']] + fr))
     steps.append(('rapikan', ['update_master.py', 'rapikan']))
+    if have['gudang']: steps.append(('gudang', ['update_gudang.py', '--input', f['gudang']]))
     print('Rencana:', ' -> '.join(n for n, _ in steps), '| bulan target:', mn)
     for n, args in steps:
         if not run(args, env):

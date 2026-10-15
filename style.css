@@ -522,3 +522,5 @@ table.tree td.name small{display:block;color:var(--sub);font-weight:400;font-siz
 .toko-pin:hover{stroke:#000;}
 .map-row .nm small{display:block;font-size:10.5px;font-weight:500;color:var(--sub);margin-top:1px;}
 .map-note{margin-top:0;font-size:12px;}
+.toko-pin{fill:var(--red);stroke:#fff;}
+.toko-pin.approx{fill:#F08A90;}
