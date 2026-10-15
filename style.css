@@ -619,3 +619,7 @@ table.tree td.name small{display:block;color:var(--sub);font-weight:400;font-siz
 .filter-strip .qrep.on{background:var(--red);color:#fff;}
 .filter-strip.open .qrep:not(.on){background:#fff;color:var(--red);}
 .pc-panel{margin-bottom:22px;} .bars.hours .bval,.bars .bval{white-space:nowrap;}
+.bd-grp{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;margin:18px 0 8px;font-size:13px;}
+.bd-grp b{font-weight:800;}
+.bd-grp span:not(.inc-dot){color:var(--sub);font-size:12.5px;}
+.bd-grp .inc-dot{margin-right:0;}
