@@ -106,6 +106,9 @@ const srcOk = i => i === D.srcEmpty || !F.srcOff.has(B.dims.src[i]);
 const srcOkS = (i, sc) => sc && sc.src != null ? i === sc.src : srcOk(i);   // a plant page (sc.src) ignores the plant filter
 /* Target basis: master holds SNOP only; Internal = 115% of SNOP. Applied wherever a target is summed. */
 const TGT_INTERNAL = 1.15;
+/* SLA (truck in -> out of the plant): target 4 hours, the same for every truck. */
+const SLA_TARGET = 4;
+const slaColor = v => v == null ? 'var(--sub)' : Math.round(v * 10) / 10 <= SLA_TARGET ? 'var(--green)' : 'var(--red)';   // judged on the shown (1-decimal) value
 const tgtK = () => F.tgt === 'INTERNAL' ? TGT_INTERNAL : 1;
 const tgtLbl = () => F.tgt === 'INTERNAL' ? 'Internal' : 'SNOP';
 /* Incoterm codes: B.dims.inc (FRC, FOT, FOB, FAS); older builds have no list and only 0 = FRC, 1 = FOT. */
@@ -541,7 +544,7 @@ const C = {
   so: {h:'SO (t)', num:true, val: r => r.so || null, html: r => r.so ? fmt(r.so) : '–'},
   of: {h:'Real/SO', num:true, val: r => r.of, html: r => pctTxt(r.of)},   // neutral: SO is a whole month, realisasi is MTD
   trips: {h:'Trip', num:true, val: r => r.trips, html: r => fmt(r.trips)},
-  dwell: {h:'SLA (jam)', num:true, val: r => r.dwell, html: r => r.dwell == null ? '–' : fmt1(r.dwell)},
+  dwell: {h:'SLA (jam)', num:true, val: r => r.dwell, html: r => r.dwell == null ? '–' : '<span style="color:' + slaColor(r.dwell) + '">' + fmt1(r.dwell) + '</span>'},
   note: {h:'Catatan', cls:'note-c', val: r => reviewText(r.pct), sortVal: r => r.pct}
 };
 
@@ -1551,20 +1554,14 @@ function plantChart(R){
   const avgLine = avg ? '<line x1="' + L + '" x2="' + (W - Rm) + '" y1="' + y(avg).toFixed(1) + '" y2="' + y(avg).toFixed(1) + '" class="pc-avg"/><text x="' + (L + 4) + '" y="' + (y(avg) - 4).toFixed(1) + '" class="pc-avgl">rata-rata ' + fmt(avg) + ' t</text>' : '';
   return '<svg class="pc-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Rilis per ' + (R.monthly ? 'bulan' : 'hari') + ' per incoterm">' + grid.join('') + bars + avgLine + tgtLine + prevLine + labels + xl + hits + '</svg>';
 }
-/** SLA (masuk -> keluar pabrik) per day: its own small chart (one measure per axis). */
-function plantSla(R){
-  const W = 1100, H = 120, L = 52, Rm = 12, T = 16, Bm = 20, n = R.keys.length, bs = R.keys.map(k => R.Bk.get(k));
-  const v = bs.map(b => b.dwN ? b.dwS / b.dwN : null), vals = v.filter(x => x != null);
-  if(!vals.length) return '';
-  const max = Math.max(4, ...vals) * 1.15, step = (W - L - Rm) / n, y = x => T + (H - T - Bm) * (1 - x / max);
-  const ps = v.map((x, i) => x == null ? null : [L + step * (i + 0.5), y(x)]);
-  let d = '', pen = false; ps.forEach(p => { if(!p){ pen = false; return; } d += (pen ? 'L' : 'M') + p[0].toFixed(1) + ',' + p[1].toFixed(1); pen = true; });
-  const avg = vals.reduce((a, x) => a + x, 0) / vals.length;
-  return '<svg class="pc-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="SLA per hari">' +
-    [0, Math.round(max / 2), Math.floor(max)].map(g => '<line x1="' + L + '" x2="' + (W - Rm) + '" y1="' + y(g).toFixed(1) + '" y2="' + y(g).toFixed(1) + '" class="pc-grid"/><text x="' + (L - 6) + '" y="' + (y(g) + 3.5).toFixed(1) + '" class="pc-ax" text-anchor="end">' + g + ' j</text>').join('') +
-    '<line x1="' + L + '" x2="' + (W - Rm) + '" y1="' + y(avg).toFixed(1) + '" y2="' + y(avg).toFixed(1) + '" class="pc-avg"/>' +
-    '<path d="' + d + '" class="pc-sla"/>' + ps.map((p, i) => p ? '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="3.2" class="pc-sladot" data-tip="' + esc((R.monthly ? monthLabel(R.keys[i]) : dayLabel(R.keys[i])) + '|SLA rata-rata ' + fmt1(v[i]) + ' jam') + '"/>' : '').join('') +
-    '<text x="' + (W - Rm) + '" y="' + (y(avg) - 4).toFixed(1) + '" class="pc-avgl" text-anchor="end">rata-rata ' + fmt1(avg) + ' jam</text></svg>';
+/** SLA (masuk -> keluar pabrik) per day/month as bars in the trend style: green = within the 4-hour target. */
+function plantSla(R, per){
+  const keys = R.keys.filter(k => (R.monthly ? k + '-01' : k) <= per.to);
+  const data = keys.map(k => { const b = R.Bk.get(k), v = b.dwN ? b.dwS / b.dwN : null;
+    return {label: R.monthly ? monthShort(k) : String(+k.slice(8)), long: (R.monthly ? monthLabel(k) : dayLabel(k)) + (v == null ? ' · tidak ada data SLA' : ' · SLA ' + fmt1(v) + ' jam'), vol: v || 0, tgt: SLA_TARGET, pct: null, unit: 'jam', color: slaColor(v)}; });
+  if(!data.some(d => d.vol)) return '';
+  TRENDS.psla = {id: 'psla', data, click: () => {}};
+  return barsHTML('psla', data, {labels: data.length <= 31});
 }
 const nextMonth = m => { const y = +m.slice(0, 4), mo = +m.slice(5); return mo === 12 ? (y + 1) + '-01' : y + '-' + pad2(mo + 1); };
 /* Release per hour (truck exit time, bundle.hours: last 62 days) for one plant and day. */
@@ -1636,7 +1633,7 @@ function pagePlant(name){
     heroChip('Target Internal', tgt ? fmt(tI) + ' <small>t</small>' : '–', tgt ? 'capaian <b style="color:' + heroTier(pI) + '">' + pctTxt(pI) + '</b> · ' + signed(az - tI) + ' t' : '115% SNOP'),
     heroChip(R.monthly ? 'Rata-rata / bulan' : 'Rata-rata / hari', fmt(R.monthly ? vol / Math.max(1, dayKeys.length) : avg) + ' <small>t</small>', lastK ? (R.monthly ? monthShort(lastK) : shortDate(lastK)) + ': ' + fmt(R.Bk.get(lastK).tot) + ' t' : ''),
     heroChip(m.kind === 'month' ? 'vs bulan lalu' : 'vs periode lalu', chg == null ? '–' : (chg >= 0 ? '▲ ' : '▼ ') + fmt1(Math.abs(chg)) + '%', prev ? fmt(prev) + ' t · ' + shortDate(R.pp.from) + '–' + shortDate(R.pp.to) : '', chg == null ? null : chg >= 0 ? '#5FD08F' : '#FF6B74'),
-    heroChip('SLA rata-rata', dwN ? fmt1(dwS / dwN) + ' <small>jam</small>' : '–', 'masuk → keluar pabrik')];
+    heroChip('SLA rata-rata', dwN ? fmt1(dwS / dwN) + ' <small>jam</small>' : '–', 'target ' + SLA_TARGET + ' jam · masuk → keluar', dwN ? (dwS / dwN <= SLA_TARGET ? '#5FD08F' : '#FF6B74') : null)];
   const cards = R.I.map(o => {
     const n = INCS()[o.i], ps = o.tgt ? pctOf(o.az, o.tgt) : null, pi = o.tgt ? pctOf(o.az, o.tgt * TGT_INTERNAL) : null;
     return '<div class="ph-card" style="--c:' + incColor(o.i) + '"><div class="ph-n">' + esc(incLbl(n)) + '</div><div class="ph-v">' + fmt(o.vol) + ' <small>t</small></div>' +
@@ -1648,10 +1645,11 @@ function pagePlant(name){
     '<div class="mh-left"><div class="eyebrow">Kinerja rilis · ' + esc(m.sub) + '</div><h2 class="mh-h">' + head + '</h2><div class="mh-chips">' + chips.join('') + '</div></div>' +
     '<div class="ph-cards"><div class="mh-lh"><span>KPI per incoterm · SNOP &amp; Internal</span></div>' + cards + '</div></div></section>';
   // daily trend: the standard trend panel (tier-coloured bars, % and value, target ticks, MTD/harian/mingguan/bulanan)
-  const sla = plantSla(R);
+  const sla = plantSla(R, m), slaAvg = dwN ? dwS / dwN : null;
   const chart = '<div class="section-head"><div class="section-title">Tren realisasi</div></div>' +
     '<div class="main-chart">' + trendPanel(sc, 'harian', 'Tren realisasi ' + name) + '</div>' +
-    (sla ? '<div class="dp-panel pc-panel" style="margin-top:14px"><div class="pt">SLA per ' + (R.monthly ? 'bulan' : 'hari') + ' (jam, masuk → keluar pabrik)</div>' + sla + '</div>' : '');
+    (sla ? '<div class="dp-panel pc-panel" style="margin-top:14px"><div class="pt">SLA per ' + (R.monthly ? 'bulan' : 'hari') + ' (jam, masuk → keluar pabrik)<span class="pt-sub">rata-rata <b style="color:' + slaColor(slaAvg) + '">' + fmt1(slaAvg) + ' jam</b> · target ' + SLA_TARGET + ' jam</span></div>' + sla +
+      '<div class="trend-legend"><span><i style="background:var(--green)"></i>&le;' + SLA_TARGET + ' jam (memenuhi target)</span><span><i style="background:var(--red)"></i>&gt;' + SLA_TARGET + ' jam</span><span><i class="dash"></i>target ' + SLA_TARGET + ' jam</span></div></div>' : '');
   // comparison table per incoterm
   const rows = R.I.map(o => ({n: o.i, vol: o.vol, tgt: o.tgt, ps: o.tgt ? pctOf(o.az, o.tgt) : null, pi: o.tgt ? pctOf(o.az, o.tgt * TGT_INTERNAL) : null, gap: o.az - o.tgt, prev: o.prev, chg: o.prev ? (o.vol / o.prev - 1) * 100 : null, trips: o.trips, sla: o.dwN ? o.dwS / o.dwN : null}));
   const pc = p => p == null ? '–' : '<b style="color:' + tierColor(p) + '">' + pctTxt(p) + '</b>';
@@ -1959,7 +1957,7 @@ function pageArmada(){
     return {label: DAYS[d].slice(0, 3), long: DAYS[d], vol: n ? s / n : 0, tgt: null, pct: null, dec: true};
   });
   const dowNum = [1, 2, 3, 4, 5, 6, 0];
-  dow.forEach(d => { d.unit = 'jam'; d.color = d.vol <= 3.5 ? 'var(--green)' : d.vol <= 4.5 ? 'var(--amber)' : 'var(--red)'; });
+  dow.forEach(d => { d.unit = 'jam'; d.color = slaColor(d.vol); d.tgt = SLA_TARGET; });
   TRENDS.ab = {id: 'ab', data: bdata, click: i => {
     const b = buckets[i], list = trucks.filter(x => x.trips >= b[1] && x.trips <= b[2]);
     openModal('Truk dengan ' + b[0] + ' trip', fmt(list.length) + ' truk · ' + esc(periodSub()), table(cols, list, {limit: 500}));
@@ -1969,7 +1967,7 @@ function pageArmada(){
     B.facts.forEach(f => { if(inPer(f[0], m) && D.dayDow[f[0]] === wd && incOk(f[1]) && srcOk(f[2]) && kemOk(f[10]) && areaProvOk(f[3])){ const o = per.get(f[5]) || {key: f[5], s: 0, n: 0, trips: 0, vol: 0}; o.s += f[8]; o.n += f[9]; o.trips += f[7]; o.vol += f[6]; per.set(f[5], o); } });
     const rows = [...per.values()].filter(o => o.n).map(o => Object.assign(o, {dw: o.s / o.n}));
     openModal('SLA hari ' + DAYS[wd], esc(periodSub()) + ' · per ekspeditur',
-      table([{h:'Ekspeditur', cls:'name', val: o => B.dims.eksp[o.key] || 'FOT (distributor)'}, {h:'Rata-rata SLA (jam)', num:true, cls:'pc', val: o => o.dw, html: o => fmt1(o.dw), style: o => 'color:' + (o.dw <= 3.5 ? 'var(--green)' : o.dw <= 4.5 ? 'var(--amber)' : 'var(--red)')}, {h:'Trip', num:true, val: o => o.trips}, {h:'Tonase', num:true, val: o => o.vol, html: o => fmt(o.vol)}], rows, {go: o => B.dims.eksp[o.key] ? '#/ekspeditur/' + enc(B.dims.eksp[o.key]) : null, sort: 1}));
+      table([{h:'Ekspeditur', cls:'name', val: o => B.dims.eksp[o.key] || 'FOT (distributor)'}, {h:'Rata-rata SLA (jam)', num:true, cls:'pc', val: o => o.dw, html: o => fmt1(o.dw), style: o => 'color:' + slaColor(o.dw)}, {h:'Trip', num:true, val: o => o.trips}, {h:'Tonase', num:true, val: o => o.vol, html: o => fmt(o.vol)}], rows, {go: o => B.dims.eksp[o.key] ? '#/ekspeditur/' + enc(B.dims.eksp[o.key]) : null, sort: 1}));
   }};
   const dwellBars = barsHTML('ad', dow);
   const one = trucks.filter(x => x.trips === 1).length;
@@ -1986,7 +1984,7 @@ function pageArmada(){
       kpi('box', 'var(--black)', 'Ton / trip', fmt1(t.vol / Math.max(1, t.trips))) +
     '</div>' +
     '<div class="dp-cols even"><div class="dp-panel"><div class="pt">Sebaran trip per truk</div>' + barsHTML('ab', bdata) + '<div class="trend-detail" id="ab-d">Banyak truk 1 trip = armada tidak kontinu. Klik batang untuk daftar truknya.</div></div>' +
-    '<div class="dp-panel"><div class="pt">Rata-rata SLA per hari (jam) — makin rendah makin baik</div>' + dwellBars + '<div class="trend-legend"><span><i style="background:var(--green)"></i>&le;3,5 jam</span><span><i style="background:var(--amber)"></i>3,5–4,5</span><span><i style="background:var(--red)"></i>&gt;4,5</span><span>klik batang = SLA per ekspeditur</span></div></div></div>' +
+    '<div class="dp-panel"><div class="pt">Rata-rata SLA per hari (jam) — makin rendah makin baik</div>' + dwellBars + '<div class="trend-legend"><span><i style="background:var(--green)"></i>&le;' + SLA_TARGET + ' jam (memenuhi target)</span><span><i style="background:var(--red)"></i>&gt;' + SLA_TARGET + ' jam</span><span><i class="dash"></i>target ' + SLA_TARGET + ' jam</span><span>klik batang = SLA per ekspeditur</span></div></div></div>' +
     '<div class="section-head"><div class="section-title">Daftar truk per ekspeditur</div><div class="section-link"><a data-grp="1">Buka semua</a> · <a data-grp="0">Tutup semua</a></div></div>' + trucksByEksp(cols, trucks) +
     '</div>', 'armada');
 }
