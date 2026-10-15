@@ -1525,7 +1525,7 @@ function plantChart(R){
   const prevPts = pts(b => b.prev != null && b.prev > 0 ? b.prev : null);
   const prevLine = R.monthly || R.noPrev ? '' : '<path d="' + path(prevPts) + '" class="pc-prev"/>' + prevPts.filter(Boolean).map(p => '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="2.6" class="pc-prevdot"/>').join('');
   if(R.avgAll) avg = bs.reduce((a, b) => a + b.tot, 0) / n;   // per hour: the day's total spread over 24 hours
-  const avgLine = avg ? '<line x1="' + L + '" x2="' + (W - Rm) + '" y1="' + y(avg).toFixed(1) + '" y2="' + y(avg).toFixed(1) + '" class="pc-avg"/><text x="' + (W - Rm) + '" y="' + (y(avg) - 4).toFixed(1) + '" class="pc-avgl" text-anchor="end">rata-rata ' + fmt(avg) + ' t</text>' : '';
+  const avgLine = avg ? '<line x1="' + L + '" x2="' + (W - Rm) + '" y1="' + y(avg).toFixed(1) + '" y2="' + y(avg).toFixed(1) + '" class="pc-avg"/><text x="' + (L + 4) + '" y="' + (y(avg) - 4).toFixed(1) + '" class="pc-avgl">rata-rata ' + fmt(avg) + ' t</text>' : '';
   return '<svg class="pc-svg" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Rilis per ' + (R.monthly ? 'bulan' : 'hari') + ' per incoterm">' + grid.join('') + bars + avgLine + tgtLine + prevLine + labels + xl + hits + '</svg>';
 }
 /** SLA (masuk -> keluar pabrik) per day: its own small chart (one measure per axis). */
