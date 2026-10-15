@@ -472,15 +472,37 @@ function closeModal(){ const m = $('#modal'); if(m){ m.remove(); document.body.s
 function openBreakdown(T, i){
   const d = T.data[i];
   const dims = ['prov', 'dist', 'eksp', 'src'].filter(k => !(k === 'prov' && (T.sc.prov != null || T.sc.dist != null)) && !(k === 'dist' && T.sc.dist != null) && !(k === 'eksp' && T.sc.eksp != null));
-  MODAL = {T, d, dims, dim: dims[0]};
+  const actInc = withInc(T, () => INCS().filter((n, j) => incOk(j)));
+  if(actInc.length > 1) dims.unshift('inc');   // more than one incoterm: per-incoterm tab first, plus an incoterm switch
+  MODAL = {T, d, dims, dim: dims[0], inc: null, actInc};
   const range = d.from === d.to ? dayLabel(d.from) : dayLabel(d.from) + ' – ' + dayLabel(d.to);
   if(!T.sc) T.sc = {};
   openModal(scName(T.sc) + ' · ' + (d.long || d.label), esc(range) + ' · ' + esc(T.incFix || incName()), modalBody());
 }
 function modalBody(){
-  const {T, d, dims, dim} = MODAL;
+  const {T, d, dims, dim, inc, actInc} = MODAL;
   const pb = shiftBucket(d, T.gran);
-  return withInc(T, () => {
+  const incChips = actInc.length > 1 && dim !== 'inc' ? '<div class="gran-chips inc-chips" style="margin-bottom:10px">' + [null].concat(actInc).map(n => '<span class="' + (n === inc ? 'on' : '') + '" data-minc="' + (n || '') + '">' + (n ? esc(incLbl(n)) : 'Semua incoterm') + '</span>').join('') + '</div>' : '';
+  if(dim === 'inc'){
+    const rows = actInc.map(n => withInc({incFix: n}, () => {
+      const c = rangeTotals(d.from, d.to, T.sc), p = rangeTotals(pb.from, pb.to, T.sc);
+      return Object.assign({n, prev: p.vol}, c);
+    })).filter(o => o.vol > 0 || o.tgt > 0 || o.prev > 0);
+    const tot = withInc(T, () => rangeTotals(d.from, d.to, T.sc));
+    const tabs = '<div class="gran-chips" style="margin-bottom:14px">' + dims.map(k => '<span class="' + (k === dim ? 'on' : '') + '" data-mdim="' + k + '">Per ' + (k === 'inc' ? 'incoterm' : DIM_LBL[k].toLowerCase()) + '</span>').join('') + '</div>';
+    const cols = [{h:'Incoterm', cls:'name', val: o => incLbl(o.n), html: o => '<span class="inc-dot" style="background:' + INC_COLOR[o.n] + '"></span>' + esc(incLbl(o.n))},
+      {h: 'Realisasi (t)', num: true, val: o => o.vol, html: o => fmt(o.vol)},
+      {h: 'Target (t)', num: true, val: o => o.hasTgt ? o.tgt : null, html: o => o.hasTgt ? fmt(o.tgt) : '–'},
+      C.pct, C.gap, C.trips,
+      {h: 'Periode lalu (t)', num: true, val: o => o.prev, html: o => fmt(o.prev)},
+      {h: 'Δ', num: true, val: o => o.prev ? o.vol / o.prev - 1 : null, html: o => o.prev ? '<span style="color:' + (o.vol >= o.prev ? 'var(--green)' : 'var(--red)') + '">' + (o.vol >= o.prev ? '+' : '') + Math.round((o.vol / o.prev - 1) * 100) + '%</span>' : '–'}];
+    const head = '<div class="prog-row" style="margin-bottom:18px"><div class="prog-cell"><div class="pl">Realisasi</div><div class="pv">' + fmt(tot.vol) + ' t</div><div class="pd">' + fmt(tot.trips) + ' trip</div></div>' +
+      '<div class="prog-cell"><div class="pl">Target ' + tgtLbl() + '</div><div class="pv">' + (tot.hasTgt ? fmt(tot.tgt) + ' t' : '–') + '</div><div class="pd">gap ' + (tot.hasTgt ? signed(tot.gap) + ' t' : '–') + '</div></div>' +
+      '<div class="prog-cell"><div class="pl">Capaian</div><div class="pv" style="color:' + tierColor(tot.pct) + '">' + pctTxt(tot.pct) + '</div><div class="pd">' + esc(T.incFix || incName()) + ' vs ' + tgtLbl() + '</div></div></div>';
+    return head + tabs + (rows.length ? table(cols, rows, {}) : '<div class="dp-review">Tidak ada data untuk periode ini.</div>') +
+      '<div class="dd-hint" style="margin-top:8px">Pilih tab lain untuk rincian per provinsi, distrik, ekspeditur atau plant; di sana bisa dipilih satu incoterm.</div>';
+  }
+  return withInc(inc ? {incFix: inc} : T, () => {
     const cur = rangeGroup(d.from, d.to, T.sc, dim), prv = rangeGroup(pb.from, pb.to, T.sc, dim);
     const rows = [...cur.values()].filter(o => o.vol > 0 || o.tgt > 0).map(o => Object.assign(o, {prev: (prv.get(o.key) || {}).vol || 0}));
     rows.sort((a, b) => (b.pct == null ? -1 : b.pct) - (a.pct == null ? -1 : a.pct) || b.vol - a.vol);
@@ -495,10 +517,10 @@ function modalBody(){
     const head = '<div class="prog-row" style="margin-bottom:18px">' +
       '<div class="prog-cell"><div class="pl">Realisasi</div><div class="pv">' + fmt(tot.vol) + ' t</div><div class="pd">' + fmt(tot.trips) + ' trip</div></div>' +
       '<div class="prog-cell"><div class="pl">Target ' + tgtLbl() + '</div><div class="pv">' + (tot.hasTgt ? fmt(tot.tgt) + ' t' : '–') + '</div><div class="pd">gap ' + (tot.hasTgt ? signed(tot.gap) + ' t' : '–') + '</div></div>' +
-      '<div class="prog-cell"><div class="pl">Capaian</div><div class="pv" style="color:' + tierColor(tot.pct) + '">' + pctTxt(tot.pct) + '</div><div class="pd">' + (T.incFix || incName()) + ' vs ' + tgtLbl() + '</div></div>' +
+      '<div class="prog-cell"><div class="pl">Capaian</div><div class="pv" style="color:' + tierColor(tot.pct) + '">' + pctTxt(tot.pct) + '</div><div class="pd">' + (inc ? incLbl(inc) : T.incFix || incName()) + ' vs ' + tgtLbl() + '</div></div>' +
       '<div class="prog-cell"><div class="pl">vs ' + esc(PREV_LBL[T.gran]) + '</div><div class="pv" style="color:' + (chg == null ? 'inherit' : chg >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (chg == null ? '–' : (chg >= 0 ? '+' : '') + Math.round(chg) + '%') + '</div><div class="pd">' + fmt(tp.vol) + ' t (' + esc(pb.from === pb.to ? dayLabel(pb.from) : dayLabel(pb.from) + ' – ' + dayLabel(pb.to)) + ')</div></div>' +
       cmpCell + '</div>';
-    const tabs = '<div class="gran-chips" style="margin-bottom:14px">' + dims.map(k => '<span class="' + (k === dim ? 'on' : '') + '" data-mdim="' + k + '">Per ' + DIM_LBL[k].toLowerCase() + '</span>').join('') + '</div>';
+    const tabs = '<div class="gran-chips" style="margin-bottom:14px">' + dims.map(k => '<span class="' + (k === dim ? 'on' : '') + '" data-mdim="' + k + '">Per ' + (k === 'inc' ? 'incoterm' : DIM_LBL[k].toLowerCase()) + '</span>').join('') + '</div>' + incChips;
     const cols = [C.rank,
       {h: DIM_LBL[dim], cls: 'name', val: o => dimName(dim, o.key), html: o => esc(dimName(dim, o.key)) + (dim === 'dist' ? '<small>' + esc(tc(B.dims.prov[B.dims.distProv[o.key]])) + '</small>' : '')},
       {h: 'Realisasi (t)', num: true, val: o => o.vol, html: o => fmt(o.vol)},
@@ -2137,6 +2159,8 @@ function bindEvents(){
     if(gran){ const [id, g] = gran.dataset.gran.split(':'); TRENDS[id].gran = g; $('#' + id).innerHTML = trendInner(id); return; }
     const mdim = e.target.closest('[data-mdim]');
     if(mdim && MODAL){ MODAL.dim = mdim.dataset.mdim; $('#modalBody').innerHTML = modalBody(); return; }
+    const minc = e.target.closest('[data-minc]');
+    if(minc && MODAL){ MODAL.inc = minc.dataset.minc || null; $('#modalBody').innerHTML = modalBody(); return; }
     if(e.target.id === 'modal'){ closeModal(); return; }
     const bar = e.target.closest('[data-bar]');
     if(bar){
