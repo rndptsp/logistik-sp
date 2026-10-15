@@ -1127,16 +1127,18 @@ function treeAll(id, open){
 function distrSummary(rows){
   const per = new Map();
   rows.forEach(r => { let o = per.get(r[5]); if(!o){ o = {key: r[5], frc: 0, fc: 0, nf: 0, nfz: 0, vol: 0, trips: 0, prov: new Set(), dist: new Set(), toko: new Set(), last: -1}; per.set(r[5], o); }
-    if(r[1] === 0) o.frc += r[8]; else if(isFrc(r[1])) o.fc += r[8]; else { o.nf += r[8]; if(achKem(r[10])) o.nfz += r[8]; } o.vol += r[8]; o.trips += r[9]; o.prov.add(r[3]); o.dist.add(r[4]); if(B.dims.toko[r[7]] && B.dims.toko[r[7]][0]) o.toko.add(r[7]); o.last = Math.max(o.last, r[0]); });
+    if(r[1] === 0) o.frc += r[8]; else if(isFrc(r[1])) o.fc += r[8]; else o.nf += r[8];
+    if(achKem(r[10])) o.nfz += r[8];   // realisasi counted against the distributor target (kemasan with targets, every selected incoterm)
+    o.vol += r[8]; o.trips += r[9]; o.prov.add(r[3]); o.dist.add(r[4]); if(B.dims.toko[r[7]] && B.dims.toko[r[7]][0]) o.toko.add(r[7]); o.last = Math.max(o.last, r[0]); });
   return [...per.values()];
 }
 
-/* Distributor target (FOT/FOB/FAS rows, t[8]) for the selected incoterm(s), up to the last data day of the period. Not for FRC. */
+/* Distributor target for the selected incoterm(s), up to the last data day of the period: FOT/FOB/FAS rows of B.targets
+   (t[8]) plus FRC rows of B.tdistr (Tactical, per distributor; FRC in B.targets is split per ekspeditur instead). */
 function distrTargets(per, sc){
   per = toPer(per); sc = sc || {};
   const out = new Map(), m0 = per.from.slice(0, 7), m1 = per.to.slice(0, 7);
-  if(frcSel()) return out;
-  B.targets.forEach(t => {
+  B.targets.concat(B.tdistr || []).forEach(t => {
     if(!kemOk(tKem(t)) || !areaProvOk(t[1]) || !(t[8] >= 0) || t[0] < m0 || t[0] > m1 || !incOk(tInc(t)) || !srcOkS(t[4], sc) || (sc.distr != null && t[8] !== sc.distr) || (sc.prov != null && t[1] !== sc.prov)) return;
     out.set(t[8], (out.get(t[8]) || 0) + targetBetween(t, per.from, per.tgtTo));
   });
@@ -1186,22 +1188,26 @@ function pageDistr(name){
   // monthly volume, last 6 months; bar click lists that month's ship-to points
   const idx = D.months.indexOf(m.month), months = m.kind === 'month' ? D.months.slice(Math.max(0, idx - 5), idx + 1) : D.months.filter(x => x >= m.from.slice(0, 7) && x <= m.month);
   const all = shipRows(null, sc);
-  const data = months.map(mm => ({label: monthShort(mm), long: monthLabel(mm), vol: all.filter(r => D.dayMonth[r[0]] === mm).reduce((a, r) => a + r[8], 0), tgt: null, pct: null, month: mm}));
+  const data = months.map(mm => {
+    const rs = all.filter(r => D.dayMonth[r[0]] === mm), t = distrTargets(mm, sc).get(di) || null;
+    const az = distrSummary(rs.filter(r => incOk(r[1]) && kemOk(r[10])))[0];
+    return {label: monthShort(mm), long: monthLabel(mm), vol: rs.reduce((a, r) => a + r[8], 0), tgt: t, pct: t ? pctOf(az ? az.nfz : 0, t) : null, month: mm};
+  });
   TRENDS.dm = {id: 'dm', data, click: i => {
     const mm = data[i].month, nodes = buildTree(shipRows(mm, sc), ['prov', 'dist', 'toko']);
     openModal(tc(name) + ' · ' + monthLabel(mm), 'Tujuan kirim per provinsi › distrik › toko', nodes.length ? treeHTML(nodes, ['prov', 'dist', 'toko']) : '<div class="dp-review">Tidak ada pengiriman di bulan ini.</div>');
   }};
   page('<div class="wrap">' + crumb([['Wilayah', '#/provinsi'], ['Distributor', '#/distributor'], [tc(name)]]) +
     '<div class="dp-head"><div><div class="nm">' + esc(tc(name)) + '</div><div class="sub">Distributor · ' + incName() + ' · ' + periodSub() + '</div></div></div>' +
-    (tgt ? '<div class="dp-review">Target distributor ' + incName() + ' ' + tgtLbl() + ' s.d. ' + shortDate(m.tgtTo) + ': <b>' + fmt(tgt) + ' t</b>, realisasi ' + fmt(s.nfz) + ' t (zak) — capaian <b style="color:' + tierColor(pct) + '">' + pctTxt(pct) + '</b>. Target FOT/FOB/FAS adalah target distributor (ambil sendiri); target FRC ada di ekspeditur.</div>' : '') +
+    (tgt ? '' : '<div class="dp-review">Tidak ada target distributor ' + incName() + ' untuk distributor ini di periode ini.</div>') +
     '<div class="dp-grid4">' +
       kpi('box', 'var(--black)', 'Realisasi', fmt(s.vol) + ' <small>ton</small>', {hint: 'FRC TRUK ' + fmt(s.frc) + (s.fc ? ' · FRC KONTAINER/KAPAL ' + fmt(s.fc) : '') + ' · ambil sendiri ' + fmt(s.nf)}) +
+      kpi('target', tgt ? tierColor(pct) : 'var(--black)', 'Target ' + tgtLbl() + ' MTD', tgt ? fmt(tgt) + ' <small>ton</small>' : '–', {hint: tgt ? 'capaian <b style="color:' + tierColor(pct) + '">' + pctTxt(pct) + '</b> · ' + (s.nfz - tgt < 0 ? 'sisa ' + fmt(tgt - s.nfz) : 'lebih ' + fmt(s.nfz - tgt)) + ' t' : 'tidak ada target'}) +
       kpi('trend', 'var(--black)', 'Trip', fmt(s.trips), {hint: s.last >= 0 ? 'terakhir ' + dayLabel(B.days[s.last]) : ''}) +
       kpi('pin', 'var(--amber)', 'Toko / gudang', fmt(s.toko.size), {hint: s.prov.size + ' provinsi · ' + s.dist.size + ' distrik'}) +
-      kpi('truck', 'var(--black)', 'Ekspeditur', fmt(ekspTree.filter(n => B.dims.eksp[n.key]).length), {hint: s.nf ? 'termasuk angkut sendiri' : ''}) +
     '</div>' +
-    '<div class="dp-cols"><div class="dp-panel"><div class="pt">Volume bulanan (ton)</div>' + barsHTML('dm', data) + '<div class="trend-detail">Klik batang untuk tujuan kirim bulan itu.</div></div>' +
-    '<div class="dp-panel"><div class="pt">Diangkut oleh</div>' + (ekspTree.length ? ekspTree.map(n => '<a class="rate-row" ' + (nodeHref(n) ? 'href="' + nodeHref(n) + '"' : '') + '><div class="rl">' + esc(B.dims.eksp[n.key] || 'FOT (angkut sendiri)') + '</div><div class="rtrack"><div class="rfill" style="width:' + (n.vol / ekspTree[0].vol * 100) + '%;background:var(--black)"></div></div><div class="rv">' + fmt(n.vol) + '</div></a>').join('') : '<div class="empty">Tidak ada pengiriman untuk filter ini.</div>') + '</div></div>' +
+    '<div class="dp-cols"><div class="dp-panel"><div class="pt">Volume bulanan (ton)<span class="pt-sub">' + (data.some(d => d.tgt) ? 'garis = target distributor' : '') + '</span></div>' + barsHTML('dm', data) + '<div class="trend-detail">Klik batang untuk tujuan kirim bulan itu.</div></div>' +
+    '<div class="dp-panel"><div class="pt">Diangkut oleh<span class="pt-sub">' + fmt(ekspTree.filter(n => B.dims.eksp[n.key]).length) + ' ekspeditur</span></div>' + (ekspTree.length ? ekspTree.map(n => '<a class="rate-row" ' + (nodeHref(n) ? 'href="' + nodeHref(n) + '"' : '') + '><div class="rl">' + esc(B.dims.eksp[n.key] || 'FOT (angkut sendiri)') + '</div><div class="rtrack"><div class="rfill" style="width:' + (n.vol / ekspTree[0].vol * 100) + '%;background:var(--black)"></div></div><div class="rv">' + fmt(n.vol) + '</div></a>').join('') : '<div class="empty">Tidak ada pengiriman untuk filter ini.</div>') + '</div></div>' +
     '<div class="section-head"><div class="section-title">Tujuan pengiriman</div></div>' +
     (rows.length ? treeHTML(buildTree(rows, ['prov', 'dist', 'toko']), ['prov', 'dist', 'toko']) : '<div class="dp-review">Tidak ada pengiriman untuk filter ini.</div>') +
     '</div>', 'wilayah');

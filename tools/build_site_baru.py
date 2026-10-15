@@ -332,6 +332,33 @@ def build(cfg):
     print(f"  target rows: {len(targets):,} ({', '.join(sorted({t[0] for t in targets}))}); kemasan: "
           f"{', '.join(sorted({kem_d.items[t[9]] for t in targets}))}")
 
+    # FRC targets per distributor (sheet Target Distributor = Tactical rows, which name the distributor). Kept apart
+    # from `targets` (FRC there is split per ekspeditur) and used only for distributor achievement. Same row layout.
+    tdistr = []
+    try:
+        with open(os.path.join(base, "config", "settings.json"), encoding="utf-8") as f:
+            st = json.load(f)
+        alias, frc_plant = st.get("target_alias_plant", {}), st.get("plants_snop_nama", {}).get(st.get("tanpa_plant", {}).get("FRC", ""), "")
+    except (OSError, ValueError):
+        alias, frc_plant = {}, ""
+    if "Target Distributor" in wb.sheetnames:
+        for r in sheet_rows(wb, "Target Distributor"):
+            inc = up(r.get("TERM_ASAL") or r.get("TERM"))
+            if not inc.startswith("FRC") or inc not in INCOTERMS or not up(r.get("DISTRIBUTOR")):
+                continue
+            ton = round(num(r.get("TARGET_TON")), 3)
+            if ton <= 0:
+                continue
+            pn = str(r.get("PLANT") or "").strip()
+            if not pn or pn == "TANPA_PLANT":
+                pn = frc_plant   # same plant assumption as the ekspeditur targets (Indarung for FRC)
+            month = f"{int(r['TAHUN'])}-{int(r['BULAN_NO']):02d}"
+            p, di = prov(up(r.get("PROVINSI"))), dist(up(r.get("DISTRIK")))
+            dist_prov.setdefault(di, p)
+            tdistr.append([month, p, di, -1, src(up(alias.get(pn, pn))), ton, [round(num(r.get(f"D{i}")), 3) for i in range(1, 32)],
+                           INCOTERMS.index(inc), distr(up(r.get("DISTRIBUTOR"))), kem_d("ZAK")])
+    print(f"  target FRC per distributor: {len(tdistr):,} baris")
+
     # ---------------- Sales Order (03_SO.xlsx / data/so.csv.gz): FRC truk only, SOCC by delivery day ----------------
     so, sod = defaultdict(float), defaultdict(float)
     for r in read_store(os.path.join(base, "data", "so.csv.gz")):
@@ -404,6 +431,7 @@ def build(cfg):
         "trucks": [[day_idx[k[0]], k[1], INCOTERMS.index(k[2]), k[3], k[4], k[5], v[0], round(v[1], 2), round(v[2], 2), v[3], k[6]]
                    for k, v in trucks.items()],
         "targets": targets,
+        "tdistr": tdistr,   # FRC targets per distributor, same layout as targets (distributor achievement only)
         "so": [[k[0], k[1], k[2], k[3], round(v, 2)] for k, v in so.items() if v],
         "sod": [[k[0], k[1], k[2], k[3], round(v, 2), k[4]] for k, v in sod.items() if v],
         "prog": {"date": "", "time": "", "fields": [], "rows": []},
