@@ -141,7 +141,10 @@ nav{display:flex;align-items:stretch;gap:4px;font-size:13px;font-weight:700;colo
 .map-lbl.dim{fill:#8C9293;stroke:none;font-weight:600;font-size:10.5px;}
 .map-pct{font-size:13px;font-weight:800;fill:#fff;text-anchor:middle;pointer-events:none;paint-order:stroke;stroke:rgba(0,0,0,.3);stroke-width:2.5px;}
 .sea-lbl{font-size:10px;letter-spacing:.25em;fill:#A9BCC6;font-weight:700;pointer-events:none;}
-.map-pin{cursor:default;}
+.map-pin{cursor:pointer;}
+.map-pin:hover circle:first-child{stroke:var(--red);}
+a.eksp-plant{display:block;}
+a.eksp-plant:hover{color:var(--red);}
 .map-pin.off circle:first-child{stroke:#9AA5AB;}
 .map-pin.off .pin-lbl{opacity:.55;}
 .pin-lbl{font-size:9.5px;font-weight:700;fill:#000;paint-order:stroke;stroke:#fff;stroke-width:3px;pointer-events:none;}
