@@ -563,13 +563,29 @@ function buildNav(){
     }).join('');
     return items ? '<div class="eksp-plant">' + esc(sn.toUpperCase()) + '</div><div class="eksp-grid">' + items + '</div>' : '';
   }).join('') || '<span class="empty">Tidak ada ekspeditur pada plant terpilih</span>';
-  /* Distributor menu: biggest distributors of the period (same numbers as the Distributor page) */
-  const dm = PER(), dl = distrSummary(shipRows(dm)), dtg = distrTargets(dm);
-  dl.forEach(o => { o.tgt = dtg.get(o.key); o.pct = o.tgt ? pctOf(o.nfz, o.tgt) : null; });
-  dl.sort((a, b) => b.vol - a.vol);
-  $('#navDistrList').innerHTML = dl.filter(o => o.vol > 0).slice(0, 36).map(o => {
-    const nm = tc(B.dims.distr[o.key]);
-    return '<a class="eksp-item" href="#/distributor/' + enc(B.dims.distr[o.key]) + '" title="' + esc(nm) + '"><span class="en">' + esc(nm) + '</span><span class="ep" style="color:' + (o.pct != null ? tierColor(o.pct) : 'var(--sub)') + '">' + (o.pct != null ? pctTxt(o.pct) : fmt(o.vol) + ' t') + '</span></a>';
+  /* Distributor menu: per provinsi, then per kemasan (all kemasan and incoterm of the chosen moda; plant/period filters apply) */
+  const fk = F.kem, fi = F.inc; F.kem = 'ALL'; F.inc = 'ALL';   // moda stays (incOk honours F.moda when inc is ALL)
+  let drows; try { drows = shipRows(PER()); } finally { F.kem = fk; F.inc = fi; }
+  const KN = B.dims.kem || [], KORD = ['ZAK', 'CURAH', 'JUMBO BAG'];
+  const byProv = new Map();
+  drows.forEach(r => {
+    const kn = KN.length ? (KN[r[10]] || 'ZAK') : 'ZAK';
+    let p = byProv.get(r[3]); if(!p){ p = {tot: 0, k: new Map()}; byProv.set(r[3], p); }
+    let kg = p.k.get(kn); if(!kg){ kg = {tot: 0, d: new Map()}; p.k.set(kn, kg); }
+    kg.d.set(r[5], (kg.d.get(r[5]) || 0) + r[8]); kg.tot += r[8]; p.tot += r[8];
+  });
+  const DCAP = 10;
+  $('#navDistrList').innerHTML = [...byProv.entries()].filter(([, p]) => p.tot > 0).sort((a, b) => b[1].tot - a[1].tot).map(([pi, p]) => {
+    const cols = [...p.k.entries()].filter(([, g]) => g.tot > 0).sort((a, b) => (KORD.indexOf(a[0]) + 1 || 9) - (KORD.indexOf(b[0]) + 1 || 9)).map(([kn, g]) => {
+      const list = [...g.d.entries()].sort((a, b) => b[1] - a[1]);
+      const items = list.slice(0, DCAP).map(([di, v]) => {
+        const nm = tc(B.dims.distr[di]);
+        return '<a class="eksp-item" href="#/distributor/' + enc(B.dims.distr[di]) + '" title="' + esc(nm) + '"><span class="en">' + esc(nm) + '</span><span class="ep" style="color:var(--sub)">' + fmt(v) + ' t</span></a>';
+      }).join('');
+      const more = list.length > DCAP ? '<a class="dm-more" href="#/distributor">+' + (list.length - DCAP) + ' distributor lain &rsaquo;</a>' : '';
+      return '<div class="dm-kem"><div class="dm-kh">' + esc(kn) + ' &middot; ' + fmt(g.tot) + ' t</div>' + items + more + '</div>';
+    }).join('');
+    return '<div class="dm-prov"><div class="dm-ph"><span>' + esc(String(B.dims.prov[pi]).toUpperCase()) + '</span><span>' + fmt(p.tot) + ' t</span></div><div class="dm-cols">' + cols + '</div></div>';
   }).join('') || '<span class="empty">—</span>';
   $('#dayLabel').textContent = 'Data s.d. ' + dayLabel(B.asOf);
 }
