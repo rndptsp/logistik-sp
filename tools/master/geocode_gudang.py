@@ -12,7 +12,7 @@ Penyedia: Google Maps (Places Text Search, lalu Geocoding) bila GOOGLE_MAPS_KEY 
 (assets/districts.js), kalau tidak ditolak. Hasil yang hanya menunjuk pusat kota/kabupaten juga ditolak.
 Hanya jumlah yang dicetak.
 """
-import collections, csv, gzip, io, json, os, re, sys, time, urllib.parse, urllib.request
+import collections, concurrent.futures, csv, gzip, io, json, os, re, sys, time, urllib.error, urllib.parse, urllib.request
 from pathlib import Path
 
 BASE = Path(os.environ.get('MASTER_HOME') or '.')
@@ -100,12 +100,17 @@ def google(t, rs, bb):
             lat, lon = p['location']['latitude'], p['location']['longitude']
             if 'political' not in p.get('types', []) and inside(lat, lon, rs):
                 return lat, lon, 'google-tempat'
-    except Exception:   # noqa: BLE001 - fall through to Geocoding
-        pass
+    except urllib.error.HTTPError as e:
+        if e.code in (400, 401, 403, 429):   # bad key / API not enabled / quota: stop the run, keep the ship-tos for later
+            raise RuntimeError(f"Places API HTTP {e.code}") from e
+    except (urllib.error.URLError, TimeoutError, ValueError):
+        pass   # transient: try Geocoding
     if t['alamat']:
         r = http('https://maps.googleapis.com/maps/api/geocode/json?' + urllib.parse.urlencode({
             'address': ', '.join(x for x in (t['alamat'], t['dist'].title(), t['prov'].title(), 'Indonesia') if x),
             'components': 'country:ID', 'bounds': f'{s},{w}|{n},{e}', 'key': KEY}))
+        if r.get('status') in ('REQUEST_DENIED', 'OVER_QUERY_LIMIT', 'OVER_DAILY_LIMIT'):
+            raise RuntimeError('Geocoding API ' + r['status'])
         for g in r.get('results', []):
             loc, kind = g['geometry']['location'], g['geometry'].get('location_type')
             if kind != 'APPROXIMATE' and inside(loc['lat'], loc['lng'], rs):
@@ -158,23 +163,36 @@ def main():
     todo.sort(key=lambda t: -t['n'])   # busiest ship-tos first
     found = failed = noshape = 0
     t0 = time.time()
-    for t in todo[:LIMIT]:
-        if time.time() - t0 > BUDGET:
-            print('geocode: batas waktu build tercapai, sisanya dilanjutkan build berikutnya'); break
+
+    def look(t):
         g = find_shape(D, t['prov'], t['dist'])
         if not g:
-            noshape += 1; continue
+            return t, 'noshape'
         rs = rings(g)
-        try:
-            hit = (google if KEY else osm)(t, rs, bbox(rs))
-        except Exception as e:   # noqa: BLE001 - network/quota trouble: stop, keep what we have
-            print('geocode: berhenti,', type(e).__name__); break
+        return t, (google if KEY else osm)(t, rs, bbox(rs))
+
+    def record(t, hit):
+        nonlocal found, failed, noshape
+        if hit == 'noshape':
+            noshape += 1; return
         o = cur.setdefault(t['kode'], {c: '' for c in COLS})
         o['KODE_TOKO'] = t['kode']
         if hit:
             o['LAT'], o['LON'], o['SUMBER'] = round(hit[0], 6), round(hit[1], 6), hit[2]; found += 1
         else:
             o['SUMBER'] = 'gagal:' + PROV; failed += 1
+
+    batch = todo[:LIMIT]
+    workers = 8 if KEY else 1   # Google allows parallel calls; Nominatim is 1 request/second
+    with concurrent.futures.ThreadPoolExecutor(workers) as ex:
+        for i in range(0, len(batch), 40):
+            if time.time() - t0 > BUDGET:
+                print('geocode: batas waktu build tercapai, sisanya dilanjutkan build berikutnya'); break
+            try:
+                for t, hit in ex.map(look, batch[i:i + 40]):
+                    record(t, hit)
+            except Exception as e:   # noqa: BLE001 - key/quota/network trouble: stop, keep what we have
+                print('geocode: berhenti,', type(e).__name__, str(e)[:80]); break
     OUT.parent.mkdir(parents=True, exist_ok=True)
     buf = io.StringIO(); w = csv.DictWriter(buf, COLS); w.writeheader(); w.writerows(cur[k] for k in sorted(cur))
     with gzip.open(OUT, 'wt', encoding='utf-8') as f:
