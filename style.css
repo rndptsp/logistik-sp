@@ -559,3 +559,4 @@ table.tree td.name small{display:block;color:var(--sub);font-weight:400;font-siz
 .dp-head.has-logo .bg-credit:hover{color:#000;}
 @media(max-width:700px){.dp-head.has-logo{background-size:auto,auto 150%;background-position:0 0,right -30px center;padding:18px 16px 24px;}.dp-logo{width:52px;height:52px;margin-right:12px;}}
 .mh-left .eyebrow a{color:#fff;text-decoration:underline;text-underline-offset:2px;}
+.section-sub{font-size:12px;color:var(--sub);}

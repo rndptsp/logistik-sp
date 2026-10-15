@@ -1185,6 +1185,23 @@ function pageDistr(name){
   const m = PER(), sc = {distr: di}, rows = shipRows(m, sc);
   const s = distrSummary(rows)[0] || blankDistr(di), tgt = distrTargets(m, sc).get(di), pct = tgt ? pctOf(s.nfz, tgt) : null;
   const ekspTree = buildTree(rows, ['eksp']);
+  // every incoterm, whatever the incoterm filter: realisasi vs distributor target (FRC from Tactical, others SNOP/Tactical)
+  const incRows = INCS().map(n => withInc({incFix: n}, () => {
+    const z = distrSummary(shipRows(m, sc))[0] || blankDistr(di), t = distrTargets(m, sc).get(di) || 0;
+    return {n, vol: z.vol, az: z.nfz, trips: z.trips, tgt: t, pct: t ? pctOf(z.nfz, t) : null, gap: z.nfz - t};
+  })).filter(o => o.vol > 0 || o.tgt > 0);
+  const incT = incRows.reduce((a, o) => ({vol: a.vol + o.vol, az: a.az + (o.tgt ? o.az : 0), tgt: a.tgt + o.tgt, trips: a.trips + o.trips}), {vol: 0, az: 0, tgt: 0, trips: 0});
+  const incCols = [{h:'Incoterm', cls:'name', val: o => incLbl(o.n), html: o => esc(incLbl(o.n)) + (o.n === F.inc ? '<small>filter aktif</small>' : '')},
+    {h:'Realisasi (t)', num:true, val: o => o.vol, html: o => fmt(o.vol)},
+    {h:'Target ' + tgtLbl() + ' MTD (t)', num:true, val: o => o.tgt, html: o => o.tgt ? fmt(o.tgt) : '–'},
+    {h:'Capaian', num:true, val: o => o.pct == null ? -1 : o.pct, html: o => o.pct == null ? '–' : '<b style="color:' + tierColor(o.pct) + '">' + pctTxt(o.pct) + '</b>'},
+    {h:'Gap (t)', num:true, val: o => o.tgt ? o.gap : 0, html: o => o.tgt ? '<span style="color:' + (o.gap < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(o.gap) + '</span>' : '–'},
+    {h:'Trip', num:true, val: o => o.trips}];
+  if(incRows.length > 1){
+    const tp = incT.tgt ? pctOf(incT.az, incT.tgt) : null;
+    incCols[0].total = '<b>Semua incoterm</b>'; incCols[1].total = '<b>' + fmt(incT.vol) + '</b>'; incCols[2].total = incT.tgt ? '<b>' + fmt(incT.tgt) + '</b>' : '–';
+    incCols[3].total = tp == null ? '–' : '<b style="color:' + tierColor(tp) + '">' + pctTxt(tp) + '</b>'; incCols[4].total = incT.tgt ? signed(incT.az - incT.tgt) : '–'; incCols[5].total = fmt(incT.trips);
+  }
   // monthly volume, last 6 months; bar click lists that month's ship-to points
   const idx = D.months.indexOf(m.month), months = m.kind === 'month' ? D.months.slice(Math.max(0, idx - 5), idx + 1) : D.months.filter(x => x >= m.from.slice(0, 7) && x <= m.month);
   const all = shipRows(null, sc);
@@ -1199,13 +1216,15 @@ function pageDistr(name){
   }};
   page('<div class="wrap">' + crumb([['Wilayah', '#/provinsi'], ['Distributor', '#/distributor'], [tc(name)]]) +
     '<div class="dp-head"><div><div class="nm">' + esc(tc(name)) + '</div><div class="sub">Distributor · ' + incName() + ' · ' + periodSub() + '</div></div></div>' +
-    (tgt ? '' : '<div class="dp-review">Tidak ada target distributor ' + incName() + ' untuk distributor ini di periode ini.</div>') +
+
     '<div class="dp-grid4">' +
       kpi('box', 'var(--black)', 'Realisasi', fmt(s.vol) + ' <small>ton</small>', {hint: 'FRC TRUK ' + fmt(s.frc) + (s.fc ? ' · FRC KONTAINER/KAPAL ' + fmt(s.fc) : '') + ' · ambil sendiri ' + fmt(s.nf)}) +
       kpi('target', tgt ? tierColor(pct) : 'var(--black)', 'Target ' + tgtLbl() + ' MTD', tgt ? fmt(tgt) + ' <small>ton</small>' : '–', {hint: tgt ? 'capaian <b style="color:' + tierColor(pct) + '">' + pctTxt(pct) + '</b> · ' + (s.nfz - tgt < 0 ? 'sisa ' + fmt(tgt - s.nfz) : 'lebih ' + fmt(s.nfz - tgt)) + ' t' : 'tidak ada target'}) +
       kpi('trend', 'var(--black)', 'Trip', fmt(s.trips), {hint: s.last >= 0 ? 'terakhir ' + dayLabel(B.days[s.last]) : ''}) +
       kpi('pin', 'var(--amber)', 'Toko / gudang', fmt(s.toko.size), {hint: s.prov.size + ' provinsi · ' + s.dist.size + ' distrik'}) +
     '</div>' +
+    '<div class="section-head"><div class="section-title">Target &amp; realisasi per incoterm</div><div class="section-sub">semua incoterm, tidak tergantung filter · ' + periodSub() + '</div></div>' +
+    (incRows.length ? table(incCols, incRows, {total: incRows.length > 1}) : '<div class="dp-review">Tidak ada realisasi maupun target untuk periode ini.</div>') +
     '<div class="dp-cols"><div class="dp-panel"><div class="pt">Volume bulanan (ton)<span class="pt-sub">' + (data.some(d => d.tgt) ? 'garis = target distributor' : '') + '</span></div>' + barsHTML('dm', data) + '<div class="trend-detail">Klik batang untuk tujuan kirim bulan itu.</div></div>' +
     '<div class="dp-panel"><div class="pt">Diangkut oleh<span class="pt-sub">' + fmt(ekspTree.filter(n => B.dims.eksp[n.key]).length) + ' ekspeditur</span></div>' + (ekspTree.length ? ekspTree.map(n => '<a class="rate-row" ' + (nodeHref(n) ? 'href="' + nodeHref(n) + '"' : '') + '><div class="rl">' + esc(B.dims.eksp[n.key] || 'FOT (angkut sendiri)') + '</div><div class="rtrack"><div class="rfill" style="width:' + (n.vol / ekspTree[0].vol * 100) + '%;background:var(--black)"></div></div><div class="rv">' + fmt(n.vol) + '</div></a>').join('') : '<div class="empty">Tidak ada pengiriman untuk filter ini.</div>') + '</div></div>' +
     '<div class="section-head"><div class="section-title">Tujuan pengiriman</div></div>' +
