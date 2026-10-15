@@ -1833,28 +1833,82 @@ function setTxt(set, dims, unit){
   const nm = [...set].map(i => tc(dims[i]) || '–'); if(!nm.length) return '–';
   return '<span title="' + esc(nm.join(', ')) + '">' + esc(nm[0]) + (nm.length > 1 ? ' <small>+' + (nm.length - 1) + ' ' + unit + '</small>' : '') + '</span>';
 }
+/* Voyages: the source has no voyage number, so loading days of one ship at one plant with gaps of at most
+   VOY_GAP days form one voyage. Rows = ship rows of that ship. */
+const VOY_GAP = 2;
+function voyagesOf(rows){
+  const bySrc = new Map();
+  rows.forEach(r => { (bySrc.get(r[2]) || bySrc.set(r[2], []).get(r[2])).push(r); });
+  const out = [];
+  bySrc.forEach((rs, src) => {
+    rs.sort((a, b) => a[0] - b[0]);
+    let v = null;
+    rs.forEach(r => {
+      const ds = B.days[r[0]];
+      if(!v || (parseISO(ds) - parseISO(B.days[v.d1])) / 864e5 > VOY_GAP){
+        v = {src, d0: r[0], d1: r[0], vol: 0, trips: 0, days: new Set(), inc: new Set(), distr: new Map(), prov: new Set(), dist: new Set()}; out.push(v);
+      }
+      v.d1 = Math.max(v.d1, r[0]); v.vol += r[8]; v.trips += r[9]; v.days.add(r[0]); v.inc.add(INCS()[r[1]]);
+      v.distr.set(r[5], (v.distr.get(r[5]) || 0) + r[8]); v.prov.add(r[3]); v.dist.add(r[4]);
+    });
+  });
+  return out.sort((a, b) => a.d0 - b.d0);
+}
+const kapalRows = (m, name) => {   // sea shipments (FOB/FAS/kontainer/kapal), any incoterm of moda LAUT
+  const sv = [F.inc, F.moda]; F.inc = 'ALL'; F.moda = 'LAUT';
+  try { return shipRows(m).filter(r => name == null || B.dims.eksp[r[6]] === name); } finally { F.inc = sv[0]; F.moda = sv[1]; }
+};
+function pageKapalDetail(name){
+  const m = PER(), rows = kapalRows(m, name);
+  if(!rows.length && !B.dims.eksp.includes(name)) return notFound('Kapal ' + name);
+  const vs = voyagesOf(rows), vol = rows.reduce((a, r) => a + r[8], 0), trips = rows.reduce((a, r) => a + r[9], 0);
+  const days = new Set(rows.map(r => r[0])), distr = new Map();
+  rows.forEach(r => distr.set(r[5], (distr.get(r[5]) || 0) + r[8]));
+  const cols = [{h:'Voyage', cls:'rank', val: v => v.n, html: v => '#' + v.n},
+    {h:'Muat', cls:'name', val: v => v.d0, html: v => shortDate(B.days[v.d0]) + (v.d1 !== v.d0 ? ' – ' + shortDate(B.days[v.d1]) : '') + '<small>' + v.days.size + ' hari muat · ' + esc(B.dims.src[v.src] || '') + '</small>'},
+    {h:'Tonase (t)', num:true, val: v => v.vol, html: v => '<b>' + fmt(v.vol) + '</b>'}, {h:'SPJ', num:true, val: v => v.trips},
+    {h:'Incoterm', val: v => [...v.inc].join(', '), html: v => esc([...v.inc].map(incLbl).join(', '))},
+    {h:'Distributor', val: v => v.distr.size, html: v => [...v.distr.entries()].sort((a, b) => b[1] - a[1]).map(([d, t]) => '<a href="#/distributor/' + enc(B.dims.distr[d]) + '">' + esc(tc(B.dims.distr[d]) || '–') + '</a> <small>' + fmt(t) + ' t</small>').join('<br>')},
+    {h:'Tujuan', val: v => v.prov.size, html: v => setTxt(v.dist, B.dims.dist, 'distrik') + '<small>' + esc([...v.prov].map(p => tc(B.dims.prov[p])).join(', ')) + '</small>'}];
+  vs.forEach((v, i) => v.n = i + 1);
+  page('<div class="wrap">' + crumb([['Kapal', '#/kapal'], [name]]) +
+    '<div class="dp-head"><div><div class="nm">' + esc(name) + '</div><div class="sub">Kapal · moda laut · ' + periodSub() + '</div></div></div>' +
+    '<div class="dp-grid4">' +
+      kpi('truck', 'var(--black)', 'Voyage', fmt(vs.length), {hint: 'hari muat berurutan (jeda ≤ ' + VOY_GAP + ' hari) = 1 voyage'}) +
+      kpi('box', 'var(--black)', 'Tonase', fmt(vol) + ' <small>ton</small>', {hint: vs.length ? 'rata-rata ' + fmt(vol / vs.length) + ' t / voyage' : ''}) +
+      kpi('clock', 'var(--amber)', 'Hari muat', fmt(days.size), {hint: fmt(trips) + ' SPJ (muat truk ke kapal)'}) +
+      kpi('pin', 'var(--black)', 'Distributor', fmt(distr.size), {hint: [...distr.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2).map(([d]) => tc(B.dims.distr[d])).join(', ')}) +
+    '</div>' +
+    '<div class="section-head"><div class="section-title">Daftar voyage</div></div>' +
+    (vs.length ? table(cols, vs, {limit: 200}) : '<div class="dp-review">Tidak ada muatan kapal ini pada filter (plant, kemasan, periode).</div>') +
+    '<div class="section-head"><div class="section-title">Tujuan pengiriman</div></div>' +
+    (rows.length ? treeHTML(buildTree(rows, ['prov', 'dist', 'distr']), ['prov', 'dist', 'distr']) : '') +
+    '</div>', 'armada');
+}
 function pageKapal(){
   const sv = [F.inc, F.moda]; F.inc = 'ALL'; F.moda = 'LAUT';
   try {
     const m = PER(), rows = shipRows(m), by = new Map(), tot = rows.reduce((a, r) => a + r[8], 0);
     rows.forEach(r => {
       const nm = B.dims.eksp[r[6]], k = /^KAPAL /.test(nm || '') ? nm : '\u0000';
-      let o = by.get(k); if(!o){ o = {k, nm: k === '\u0000' ? '(kapal tidak tercatat di sumber)' : nm, vol: 0, trips: 0, days: new Set(), inc: new Set(), distr: new Set(), prov: new Set(), dist: new Set(), last: -1}; by.set(k, o); }
-      o.vol += r[8]; o.trips += r[9]; o.days.add(r[0]); o.inc.add(INCS()[r[1]]); o.distr.add(r[5]); o.prov.add(r[3]); o.dist.add(r[4]); o.last = Math.max(o.last, r[0]);
+      let o = by.get(k); if(!o){ o = {k, nm: k === '\u0000' ? '(kapal tidak tercatat di sumber)' : nm, vol: 0, trips: 0, days: new Set(), inc: new Set(), distr: new Set(), prov: new Set(), dist: new Set(), last: -1, rows: []}; by.set(k, o); }
+      o.rows.push(r); o.vol += r[8]; o.trips += r[9]; o.days.add(r[0]); o.inc.add(INCS()[r[1]]); o.distr.add(r[5]); o.prov.add(r[3]); o.dist.add(r[4]); o.last = Math.max(o.last, r[0]);
     });
     const list = [...by.values()].sort((a, b) => (a.k === '\u0000') - (b.k === '\u0000') || b.vol - a.vol);
+    list.forEach(o => { o.voy = o.k === '\u0000' ? null : voyagesOf(o.rows).length; o.rows = null; });
     list.forEach((o, i) => o.rank = o.k === '\u0000' ? null : i + 1);
     const cols = [{h:'#', cls:'rank', val: o => o.rank || 999, html: o => o.rank ? '#' + o.rank : '–'}, {h:'Kapal', cls:'name', val: o => o.nm},
-      {h:'Trip', num:true, val: o => o.trips}, {h:'Tonase (t)', num:true, val: o => o.vol, html: o => '<b>' + fmt(o.vol) + '</b>'}, {h:'Hari muat', num:true, val: o => o.days.size},
+      {h:'Voyage', num:true, val: o => o.voy == null ? -1 : o.voy, html: o => o.voy == null ? '–' : fmt(o.voy)}, {h:'Tonase (t)', num:true, val: o => o.vol, html: o => '<b>' + fmt(o.vol) + '</b>'},
+      {h:'t / voyage', num:true, val: o => o.voy ? o.vol / o.voy : 0, html: o => o.voy ? fmt(o.vol / o.voy) : '–'}, {h:'Hari muat', num:true, val: o => o.days.size},
       {h:'Distributor', val: o => o.distr.size, html: o => setTxt(o.distr, B.dims.distr, 'distributor')}, {h:'Provinsi', val: o => o.prov.size, html: o => setTxt(o.prov, B.dims.prov, 'provinsi')},
       {h:'Distrik', val: o => o.dist.size, html: o => setTxt(o.dist, B.dims.dist, 'distrik')}];
-    cols[2].total = fmt(list.reduce((a, o) => a + o.trips, 0)); cols[3].total = fmt(tot);
+    cols[2].total = fmt(list.reduce((a, o) => a + (o.voy || 0), 0)); cols[3].total = fmt(tot);
     const named = list.filter(o => o.k !== '\u0000'), unk = by.get('\u0000');
     page('<div class="wrap">' + crumb([['Kapal']]) +
-      '<div class="dp-head"><div><div class="nm">Kapal · moda laut</div><div class="sub">' + fmt(named.length) + ' kapal · trip = jumlah muat (SPJ) · ' + periodSub() + '</div></div></div>' +
+      '<div class="dp-head"><div><div class="nm">Kapal · moda laut</div><div class="sub">' + fmt(named.length) + ' kapal · voyage = hari muat berurutan (jeda ≤ ' + VOY_GAP + ' hari) · ' + periodSub() + '</div></div></div>' +
       '<div class="dp-hint" style="font-size:12px;color:var(--sub);margin:-6px 0 14px">Filter aktif: ' + srcTxt() + ' · kemasan <b>' + (F.kem === 'ALL' ? 'semua' : esc(F.kem)) + '</b> · <a class="section-link" data-act="openfilter" style="cursor:pointer;color:var(--red);font-weight:700">ubah filter</a></div>' +
       (unk && tot ? '<div class="dp-review">' + pctTxt(pctOf(unk.vol, tot)) + ' tonase laut periode ini (' + fmt(unk.vol) + ' t) belum punya nama kapal di sumber Rilis. Yang tercatat nama kapalnya baru FOB; FAS, kontainer, FRC KAPAL, FRC KONTAINER dan FOB KAPAL (polysling) menunggu data tambahan.</div>' : '') +
-      (list.length ? table(cols, list, {total: true, limit: 400}) : '<div class="dp-review">Tidak ada pengiriman laut pada filter ini (plant, kemasan, periode).</div>') + '</div>', 'armada');
+      (list.length ? table(cols, list, {total: true, limit: 400, go: o => o.k === '\u0000' ? null : '#/kapal/' + enc(o.nm)}) : '<div class="dp-review">Tidak ada pengiriman laut pada filter ini (plant, kemasan, periode).</div>') + '</div>', 'armada');
   } finally { F.inc = sv[0]; F.moda = sv[1]; }
 }
 /* Truck list grouped by main ekspeditur (the one with most trips): one collapsible sub-header per ekspeditur, biggest first. */
@@ -1977,7 +2031,7 @@ function route(){
     else if(a === 'distributor') b ? pageDistr(b) : pageDistrList();
     else if(a === 'fot') location.replace('#/distributor');
     else if(a === 'armada') pageArmada();
-    else if(a === 'kapal') pageKapal();
+    else if(a === 'kapal') b ? pageKapalDetail(b) : pageKapal();
     else if(a === 'kualitas') pageQuality();
     else if(a === 'kredit') pageCredits();
     else if(a === 'prognosa') pageForecast(PROG_GRAN[b] || 'harian');
