@@ -509,3 +509,16 @@ table.tree td.name small{display:block;color:var(--sub);font-weight:400;font-siz
 .bg-credit{position:absolute;right:10px;bottom:6px;font-size:10px;color:rgba(255,255,255,.7);max-width:60%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .bg-credit:hover{color:#fff;}
 @media(max-width:700px){.dp-head.has-bg{min-height:120px;padding:22px 16px 24px;}.dp-head.has-bg .nm{font-size:22px;}}
+
+/* Map panels: province photo faintly behind the map (mapPhoto in app.js); sea lets it show through */
+.map-sea{fill:#EEF4F7;}
+.map-wrap[style*="--mapbg"]{background:linear-gradient(rgba(244,246,247,.86),rgba(244,246,247,.93)),var(--mapbg) center/cover no-repeat,var(--gray-l);}
+.map-wrap[style*="--mapbg"] .map-sea{fill-opacity:0;}
+.map-wrap[style*="--mapbg"] .map-legend{background:rgba(255,255,255,.72);border-radius:3px;padding:6px 10px;}
+/* Kecamatan map (district page) */
+.kmap .kec-lbl{font-weight:700;fill:#fff;paint-order:stroke;stroke:rgba(0,0,0,.45);stroke-width:.22em;}
+.kmap .kec-lbl.dim{fill:#3E5661;stroke:#fff;}
+.toko-pin{cursor:default;}
+.toko-pin:hover{stroke:#000;}
+.map-row .nm small{display:block;font-size:10.5px;font-weight:500;color:var(--sub);margin-top:1px;}
+.map-note{margin-top:0;font-size:12px;}

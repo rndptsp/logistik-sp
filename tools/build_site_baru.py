@@ -225,6 +225,8 @@ def build(cfg):
     KEM_ALIAS = {"SAK": "ZAK", "JUMBO": "JUMBO BAG", "JUMBO 1 TON": "JUMBO BAG", "JUMBOBAG": "JUMBO BAG"}
     kemasan = lambda v: kem_d(KEM_ALIAS.get(up(v), up(v)) or "ZAK")
     toko_meta = {}
+    kec = Dict()                                         # kecamatan names (NAMA_KEC_SUBDISTRIK), for the district map
+    toko_kec = defaultdict(lambda: defaultdict(float))   # ship-to -> kecamatan -> ton; the main one places its map pin
     dist_prov = {}
 
     # ---------------- Realisasi (data/rilis.csv.gz) ----------------
@@ -284,6 +286,9 @@ def build(cfg):
         ti = toko(kt)
         if kt and ti not in toko_meta:
             toko_meta[ti] = [kt, str(r.get("NAMA_TOKO") or "").strip(), str(r.get("ALAMAT_TOKO") or "").strip()]
+        kc = up(r.get("NAMA_KEC_SUBDISTRIK"))
+        if kt and kc:
+            toko_kec[ti][kec(kc)] += ton
         g = ship[(d.isoformat(), inc, s, p, di, distr(up(r.get("DISTRIBUTOR"))), e, ti, kem)]
         g[0] += ton; g[1] += 1
         nopol = up(r.get("NOPOL"))
@@ -369,7 +374,10 @@ def build(cfg):
         "lastDay": last_day,
         "dims": {"inc": INCOTERMS, "prov": prov.items, "dist": dist.items, "eksp": eksp.items, "src": src.items,
                  "distr": distr.items, "truck": truck.items, "nonKin": nonkin, "kem": kem_d.items, "ekspNama": [kamus.get(n, "") for n in eksp.items],
-                 "toko": [toko_meta.get(i, ["", "", ""]) for i in range(len(toko.items))],
+                 # ship-to: [code, name, address, kecamatan index or -1]
+                 "toko": [toko_meta.get(i, ["", "", ""]) + [max(toko_kec[i], key=toko_kec[i].get) if toko_kec.get(i) else -1]
+                          for i in range(len(toko.items))],
+                 "kec": kec.items,
                  "distProv": [dist_prov.get(i, -1) for i in range(len(dist.items))]},
         "days": days,
         "facts": [[day_idx[k[0]], INCOTERMS.index(k[1]), k[2], k[3], k[4], k[5],
