@@ -564,30 +564,30 @@ function buildNav(){
     }).join('');
     return items ? '<a class="eksp-plant" href="' + plantHref(sn) + '">' + esc(sn.toUpperCase()) + ' &rsaquo;</a><div class="eksp-grid">' + items + '</div>' : '';
   }).join('') || '<span class="empty">Tidak ada ekspeditur pada plant terpilih</span>';
-  /* Distributor menu: per provinsi, then per kemasan (all kemasan and incoterm of the chosen moda; plant/period filters apply) */
+  /* Distributor menu: per kemasan (all kemasan and incoterm of the chosen moda; plant/period filters apply) */
   const fk = F.kem, fi = F.inc; F.kem = 'ALL'; F.inc = 'ALL';   // moda stays (incOk honours F.moda when inc is ALL)
   let drows; try { drows = shipRows(PER()); } finally { F.kem = fk; F.inc = fi; }
   const KN = B.dims.kem || [], KORD = ['ZAK', 'CURAH', 'JUMBO BAG'];
-  const byProv = new Map();
+  const byKem = new Map();
   drows.forEach(r => {
     const kn = KN.length ? (KN[r[10]] || 'ZAK') : 'ZAK';
-    let p = byProv.get(r[3]); if(!p){ p = {tot: 0, k: new Map()}; byProv.set(r[3], p); }
-    let kg = p.k.get(kn); if(!kg){ kg = {tot: 0, d: new Map()}; p.k.set(kn, kg); }
-    kg.d.set(r[5], (kg.d.get(r[5]) || 0) + r[8]); kg.tot += r[8]; p.tot += r[8];
+    let kg = byKem.get(kn); if(!kg){ kg = {tot: 0, d: new Map()}; byKem.set(kn, kg); }
+    kg.d.set(r[5], (kg.d.get(r[5]) || 0) + r[8]); kg.tot += r[8];
   });
-  const DCAP = 10;
-  $('#navDistrList').innerHTML = [...byProv.entries()].filter(([, p]) => p.tot > 0).sort((a, b) => b[1].tot - a[1].tot).map(([pi, p]) => {
-    const cols = [...p.k.entries()].filter(([, g]) => g.tot > 0).sort((a, b) => (KORD.indexOf(a[0]) + 1 || 9) - (KORD.indexOf(b[0]) + 1 || 9)).map(([kn, g]) => {
-      const list = [...g.d.entries()].sort((a, b) => b[1] - a[1]);
-      const items = list.slice(0, DCAP).map(([di, v]) => {
-        const nm = tc(B.dims.distr[di]);
-        return '<a class="eksp-item" href="#/distributor/' + enc(B.dims.distr[di]) + '" title="' + esc(nm) + '"><span class="en">' + esc(nm) + '</span><span class="ep" style="color:var(--sub)">' + fmt(v) + ' t</span></a>';
-      }).join('');
-      const more = list.length > DCAP ? '<a class="dm-more" href="#/distributor">+' + (list.length - DCAP) + ' distributor lain &rsaquo;</a>' : '';
-      return '<div class="dm-kem"><div class="dm-kh">' + esc(kn) + ' &middot; ' + fmt(g.tot) + ' t</div>' + items + more + '</div>';
+  const DCAP = 15;
+  const cols = [...byKem.entries()].filter(([, g]) => g.tot > 0).sort((a, b) => (KORD.indexOf(a[0]) + 1 || 9) - (KORD.indexOf(b[0]) + 1 || 9)).map(([kn, g]) => {
+    const list = [...g.d.entries()].sort((a, b) => b[1] - a[1]);
+    const items = list.slice(0, DCAP).map(([di, v]) => {
+      const nm = tc(B.dims.distr[di]);
+      return '<a class="eksp-item" href="#/distributor/' + enc(B.dims.distr[di]) + '" title="' + esc(nm) + '"><span class="en">' + esc(nm) + '</span><span class="ep" style="color:var(--sub)">' + fmt(v) + ' t</span></a>';
     }).join('');
-    return '<div class="dm-prov"><div class="dm-ph"><span>' + esc(String(B.dims.prov[pi]).toUpperCase()) + '</span><span>' + fmt(p.tot) + ' t</span></div><div class="dm-cols">' + cols + '</div></div>';
-  }).join('') || '<span class="empty">—</span>';
+    const more = list.length > DCAP ? '<a class="dm-more" href="#/distributor">+' + (list.length - DCAP) + ' distributor lain &rsaquo;</a>' : '';
+    return '<div class="dm-kem"><div class="dm-kh">' + esc(kn) + ' &middot; ' + fmt(g.tot) + ' t &middot; ' + list.length + ' distributor</div>' + items + more + '</div>';
+  }).join('');
+  $('#navDistrList').innerHTML = cols ? '<div class="dm-prov"><div class="dm-cols">' + cols + '</div></div>' : '<span class="empty">—</span>';
+  /* Plant menu: every plant with shipments or targets in the period (plant filter not applied, like the plant pages) */
+  const pl = plantList().map(o => Object.assign(o, total(PER(), {src: o.key}))).filter(o => o.vol > 0 || o.tgt > 0).sort((a, b) => b.vol - a.vol);
+  $('#navPlantList').innerHTML = pl.map(o => '<a href="' + plantHref(o.n) + '"' + (F.srcOff.has(o.n) ? ' class="off" title="tidak dicentang di filter plant"' : '') + '>' + esc(o.n) + '<span' + (o.hasTgt ? ' style="color:' + tierColor(o.pct) + '"' : '') + '>' + (o.hasTgt ? pctTxt(o.pct) : fmt(o.vol) + ' t') + '</span></a>').join('') || '<span class="empty">—</span>';
   $('#dayLabel').textContent = 'Data s.d. ' + dayLabel(B.asOf);
 }
 let draft = null;
@@ -1430,11 +1430,11 @@ function pagePlantList(){
   const rows = plantList().map(o => Object.assign(o, total(m, {src: o.key}))).filter(o => o.vol > 0 || o.tgt > 0).sort((a, b) => b.vol - a.vol);
   rows.forEach((o, i) => o.rank = i + 1);
   const cols = [C.rank, {h:'Plant', cls:'name', val: r => r.n, html: r => esc(r.n) + (F.srcOff.has(r.n) ? '<small>tidak dicentang di filter plant</small>' : '')}, C.vol(), C.tgt, C.pct, C.gap, C.trips];
-  page('<div class="wrap">' + crumb([['Wilayah', '#/provinsi'], ['Plant']]) +
+  page('<div class="wrap">' + crumb([['Plant']]) +
     '<div class="dp-head"><div><div class="nm">Semua Plant</div><div class="sub">Plant / packing plant asal pengiriman · ' + incName() + ' · ' + periodSub() + '</div></div></div>' +
     '<div class="dp-review">Semua plant ditampilkan, termasuk yang tidak dicentang di filter plant. Klik baris untuk rincian plant.</div>' +
     (rows.length ? table(cols, rows, {go: r => plantHref(r.n)}) : '<div class="dp-review">Tidak ada data untuk filter ini.</div>') +
-    '</div>', 'wilayah');
+    '</div>', 'plant');
 }
 function pagePlant(name){
   const si = B.dims.src.indexOf(name);
@@ -1445,7 +1445,7 @@ function pagePlant(name){
   const eks = [...summarize('eksp', m, sc).values()].filter(o => (o.vol > 0 || o.tgt > 0) && o.key !== D.eksEmpty).sort((a, b) => b.vol - a.vol);
   const DT = distrTable(m, sc, 60);
   const incCols = [{h:'Incoterm', cls:'name', val: r => incLbl(r.n)}, C.vol(), C.tgt, C.pct, C.gap, C.trips];
-  page('<div class="wrap">' + crumb([['Wilayah', '#/provinsi'], ['Plant', '#/plant'], [name]]) +
+  page('<div class="wrap">' + crumb([['Plant', '#/plant'], [name]]) +
     '<div class="dp-head"><div><div class="nm">' + esc(name) + '</div><div class="sub">Plant / packing plant asal pengiriman · ' + incName() + ' · ' + periodSub() + '</div></div><div class="badges"><div class="dp-badge ' + tierClass(me.pct) + '">' + pctTxt(me.pct) + ' dari target</div></div></div>' +
     (F.srcOff.has(name) ? '<div class="dp-review">Plant ini tidak dicentang di filter plant: halaman ini tetap menampilkan datanya, tetapi Ringkasan dan halaman lain tidak menghitungnya sampai dicentang.</div>' : '') +
     '<div class="dp-grid4">' +
@@ -1461,7 +1461,7 @@ function pagePlant(name){
     '</div>' +
     '<div class="section-head"><div class="section-title">Distributor dari plant ini</div><a class="section-link" href="#/distributor">Semua distributor &rsaquo;</a></div>' + DT.html +
     (eks.length ? '<div class="section-head"><div class="section-title">Ekspeditur / pengangkut dari plant ini</div></div><div class="dp-panel">' + eks.map(o => rateRow(B.dims.eksp[o.key] + ' · ' + fmt(o.vol) + ' t', o.pct, '#/ekspeditur/' + enc(B.dims.eksp[o.key]), o.hasTgt ? 'target ' + fmt(o.tgt) + ' t' : 'tanpa target')).join('') + '</div>' : '') +
-    '</div>', 'wilayah');
+    '</div>', 'plant');
 }
 
 function pageDist(name){

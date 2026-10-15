@@ -8,7 +8,7 @@ if(/\.github\.io$/.test(location.hostname)) location.replace('https://logistik-s
 <meta name="robots" content="noindex, nofollow">
 <title>Outbound Logistics — Semen Padang</title>
 <link rel="icon" href="assets/icon-192.png">
-<link rel="stylesheet" href="style.css?v=build.2026.10.16.incf">
+<link rel="stylesheet" href="style.css?v=build.2026.10.16.nav">
 </head>
 <body>
 
@@ -42,7 +42,14 @@ if(/\.github\.io$/.test(location.hostname)) location.replace('https://logistik-s
           <div class="mega-list" id="navProvList"></div>
           <div class="dd-hint">Distrik ada di dalam halaman provinsi, atau cari lewat kolom cari.</div>
           <a class="mega-foot" href="#/provinsi">Tabel semua provinsi &rsaquo;</a>
-          <a class="mega-foot" href="#/plant">Semua plant &rsaquo;</a>
+        </div>
+      </div>
+      <div class="navitem" data-nav="plant">
+        <div class="navbtn" data-toggle>Plant <span class="caret">&#9660;</span></div>
+        <div class="dropdown dd-list">
+          <div class="mega-title">Plant &middot; capaian bulan terpilih</div>
+          <div class="mega-list" id="navPlantList"></div>
+          <a class="mega-foot" href="#/plant">Tabel semua plant &rsaquo;</a>
         </div>
       </div>
       <div class="navitem" data-nav="ekspeditur">
@@ -56,7 +63,7 @@ if(/\.github\.io$/.test(location.hostname)) location.replace('https://logistik-s
       <div class="navitem" data-nav="distributor">
         <div class="navbtn" data-toggle>Distributor <span class="caret">&#9660;</span></div>
         <div class="mega mega-eksp mega-distr">
-          <div class="mega-title">Distributor &middot; volume per provinsi &amp; kemasan (moda &amp; periode terpilih)</div>
+          <div class="mega-title">Distributor &middot; volume per kemasan (moda &amp; periode terpilih)</div>
           <div class="distr-wrap" id="navDistrList"></div>
           <a class="mega-foot" href="#/distributor">Semua distributor &amp; toko tujuan &rsaquo;</a>
         </div>
@@ -92,7 +99,7 @@ if(/\.github\.io$/.test(location.hostname)) location.replace('https://logistik-s
 
 <script src="assets/bg/bg.js?v=2"></script>
 <script src="assets/logo/logo.js?v=2"></script>
-<script src="assets/sumatra.js?v=build.2026.10.16.incf"></script>
-<script src="app.js?v=build.2026.10.16.incf"></script>
+<script src="assets/sumatra.js?v=build.2026.10.16.nav"></script>
+<script src="app.js?v=build.2026.10.16.nav"></script>
 </body>
 </html>
