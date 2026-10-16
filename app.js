@@ -12,7 +12,7 @@ const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp
 const fmt = n => (n == null || isNaN(n)) ? '–' : Math.round(n).toLocaleString('id-ID');
 const fmt1 = n => (n == null || isNaN(n)) ? '–' : n.toLocaleString('id-ID', {minimumFractionDigits:1, maximumFractionDigits:1});
 const pctOf = (a, b) => b > 0 ? a / b * 100 : null;
-const pctTxt = p => p == null ? 'N/A' : Math.round(p) + '%';
+const pctTxt = p => p == null ? '–' : Math.round(p) + '%';
 const signed = n => (n >= 0 ? '+' : '−') + fmt(Math.abs(n));
 const enc = encodeURIComponent;
 const MONTHS = ['Januari','Februari','Maret','April','Mei','Juni','Juli','Agustus','September','Oktober','November','Desember'];
