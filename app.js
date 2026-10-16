@@ -1091,7 +1091,7 @@ function shipRows(m, sc){
 function buildTree(rows, levels, depth){
   depth = depth || 0;
   const lv = levels[depth], groups = new Map();
-  rows.forEach(r => { const k = SHK[lv](r); let g = groups.get(k); if(!g){ g = {lv, key: k, vol: 0, trips: 0, last: -1, rows: []}; groups.set(k, g); } g.vol += r[8]; g.trips += r[9]; g.last = Math.max(g.last, r[0]); g.rows.push(r); });
+  rows.forEach(r => { const k = SHK[lv](r); let g = groups.get(k); if(!g){ g = {lv, key: k, vol: 0, az: 0, trips: 0, last: -1, rows: []}; groups.set(k, g); } g.vol += r[8]; if(achKem(r[10])) g.az += r[8]; g.trips += r[9]; g.last = Math.max(g.last, r[0]); g.rows.push(r); });
   const nodes = [...groups.values()].sort((a, b) => b.vol - a.vol);
   nodes.forEach(n => { if(depth + 1 < levels.length) n.children = buildTree(n.rows, levels, depth + 1); n.rows = null; });
   return nodes;
@@ -1115,21 +1115,36 @@ function nodeHref(n){
 }
 /* Expandable table: click a row to open the next level; "›" opens that item's own page.
    opt.tgt = {prov: Map, dist: Map} summaries (from summarize) to show target & achievement at those levels. */
+/** Put distributor targets on tree nodes (levels distr / prov / dist), within scope `base` ({dist} or {distr}). */
+function annotateDistrTargets(nodes, m, base, ctx){
+  ctx = ctx || {};
+  nodes.forEach(n => {
+    const here = Object.assign({}, ctx);
+    if(n.lv === 'distr' || n.lv === 'prov' || n.lv === 'dist'){
+      here[n.lv] = n.key;
+      const sc = Object.assign({}, base, here), tg = distrTargets(m, sc);
+      const t = sc.distr != null ? (tg.get(sc.distr) || 0) : [...tg.values()].reduce((a, v) => a + v, 0);
+      n.t = t > 0 ? {hasTgt: true, tgt: t, pct: pctOf(n.az, t)} : {hasTgt: false};
+    }
+    if(n.children) annotateDistrTargets(n.children, m, base, here);
+  });
+  return nodes;
+}
 function treeHTML(nodes, levels, opt){
   opt = opt || {};
   const id = 'tr' + Math.random().toString(36).slice(2, 8);
-  const hasT = !!opt.tgt;
+  const hasT = !!(opt.tgt || opt.distrTgt), soCols = !opt.distrTgt;   // distributor targets: no SO per distributor
   let html = '<div class="tree-tools"><span>' + levels.map(l => LV_LBL[l]).join(' &rsaquo; ') + '</span><span><a data-tree-all="' + id + ':1">Buka semua</a> · <a data-tree-all="' + id + ':0">Tutup semua</a></span></div>' +
-    '<div class="tbl-wrap"><table class="tbl tree" id="' + id + '"><thead><tr><th>Tujuan</th><th class="num">Realisasi (t)</th>' + (hasT ? '<th class="num">Target MTD (t)</th><th class="num">Capaian</th><th class="num">SO (t)</th><th class="num">Real/SO</th>' : '') + '<th class="num">Trip</th><th class="num">Kirim terakhir</th><th></th></tr></thead><tbody>';
+    '<div class="tbl-wrap"><table class="tbl tree" id="' + id + '"><thead><tr><th>Tujuan</th><th class="num">Realisasi (t)</th>' + (hasT ? '<th class="num">Target MTD (t)</th><th class="num">Capaian</th>' + (soCols ? '<th class="num">SO (t)</th><th class="num">Real/SO</th>' : '') : '') + '<th class="num">Trip</th><th class="num">Kirim terakhir</th><th></th></tr></thead><tbody>';
   const walk = (list, depth, parent) => list.forEach((n, i) => {
     const path = parent ? parent + '-' + i : String(i), kids = n.children && n.children.length;
-    const t = hasT && opt.tgt[n.lv] ? opt.tgt[n.lv].get(n.key) : null;
+    const t = n.t || (hasT && opt.tgt && opt.tgt[n.lv] ? opt.tgt[n.lv].get(n.key) : null);
     const href = nodeHref(n);
     html += '<tr class="lv' + depth + (depth ? ' tr-hide' : '') + (kids ? ' has-kids' : '') + '" data-path="' + path + '" data-parent="' + (parent || '') + '">' +
       '<td class="name" style="padding-left:' + (12 + depth * 22) + 'px"><span class="caret-t">' + (kids ? '▸' : '') + '</span><span class="t-lbl">' + nodeLabel(n) + '</span>' + (kids ? '<span class="t-cnt">' + n.children.length + ' ' + LV_LBL[levels[depth + 1]].toLowerCase() + '</span>' : '') + '</td>' +
       '<td class="num">' + fmt(n.vol) + '</td>' +
       (hasT ? (t && t.hasTgt ? '<td class="num">' + fmt(t.tgt) + '</td><td class="num pc" style="color:' + tierColor(t.pct) + '">' + pctTxt(t.pct) + '</td>' : '<td class="num">–</td><td class="num">–</td>') +
-        (t && t.so ? '<td class="num">' + fmt(t.so) + '</td><td class="num pc">' + pctTxt(t.of) + '</td>' : '<td class="num">–</td><td class="num">–</td>') : '') +
+        (!soCols ? '' : t && t.so ? '<td class="num">' + fmt(t.so) + '</td><td class="num pc">' + pctTxt(t.of) + '</td>' : '<td class="num">–</td><td class="num">–</td>') : '') +
       '<td class="num">' + fmt(n.trips) + '</td><td class="num">' + (n.last >= 0 ? dayLabel(B.days[n.last]) : '–') + '</td>' +
       '<td class="num">' + (href ? '<a class="t-go" href="' + href + '" title="Buka halaman">&rsaquo;</a>' : '') + '</td></tr>';
     if(kids) walk(n.children, depth + 1, path);
@@ -1169,7 +1184,7 @@ function distrTargets(per, sc){
   per = toPer(per); sc = sc || {};
   const out = new Map(), m0 = per.from.slice(0, 7), m1 = per.to.slice(0, 7);
   B.targets.concat(B.tdistr || []).forEach(t => {
-    if(!kemOk(tKem(t)) || !areaProvOk(t[1]) || !(t[8] >= 0) || t[0] < m0 || t[0] > m1 || !incOk(tInc(t)) || !srcOkS(t[4], sc) || (sc.distr != null && t[8] !== sc.distr) || (sc.prov != null && t[1] !== sc.prov)) return;
+    if(!kemOk(tKem(t)) || !areaProvOk(t[1]) || !(t[8] >= 0) || t[0] < m0 || t[0] > m1 || !incOk(tInc(t)) || !srcOkS(t[4], sc) || (sc.distr != null && t[8] !== sc.distr) || (sc.prov != null && t[1] !== sc.prov) || (sc.dist != null && t[2] !== sc.dist)) return;
     out.set(t[8], (out.get(t[8]) || 0) + targetBetween(t, per.from, per.tgtTo));
   });
   return out;
@@ -1258,7 +1273,7 @@ function pageDistr(name){
     '<div class="dp-cols"><div class="dp-panel"><div class="pt">Volume bulanan (ton)<span class="pt-sub">' + (data.some(d => d.tgt) ? 'garis = target distributor' : '') + '</span></div>' + barsHTML('dm', data) + '<div class="trend-detail">Klik batang untuk tujuan kirim bulan itu.</div></div>' +
     '<div class="dp-panel"><div class="pt">Diangkut oleh<span class="pt-sub">' + fmt(ekspTree.filter(n => B.dims.eksp[n.key]).length) + ' ekspeditur</span></div>' + (ekspTree.length ? ekspTree.map(n => '<a class="rate-row" ' + (nodeHref(n) ? 'href="' + nodeHref(n) + '"' : '') + '><div class="rl">' + esc(B.dims.eksp[n.key] || 'Angkut sendiri (distributor)') + '</div><div class="rtrack"><div class="rfill" style="width:' + (n.vol / ekspTree[0].vol * 100) + '%;background:var(--black)"></div></div><div class="rv">' + fmt(n.vol) + '</div></a>').join('') : '<div class="empty">Tidak ada pengiriman untuk filter ini.</div>') + '</div></div>' +
     '<div class="section-head"><div class="section-title">Tujuan pengiriman</div></div>' +
-    (rows.length ? treeHTML(buildTree(rows, ['prov', 'dist', 'toko']), ['prov', 'dist', 'toko']) : '<div class="dp-review">Tidak ada pengiriman untuk filter ini.</div>') +
+    (rows.length ? treeHTML(annotateDistrTargets(buildTree(rows, ['prov', 'dist', 'toko']), m, {distr: di}), ['prov', 'dist', 'toko'], {distrTgt: true}) : '<div class="dp-review">Tidak ada pengiriman untuk filter ini.</div>') +
     '</div>', 'wilayah');
 }
 
@@ -1723,7 +1738,7 @@ function pageDist(name){
     mapS)) + incPerf(m, sc) +
     '<div class="dp-cols">' + trendPanel(sc, 'harian') + '</div>' +
     '<div class="section-head"><div class="section-title">Tujuan pengiriman: distributor &rsaquo; toko / gudang</div></div>' +
-    treeHTML(buildTree(shipRows(m, sc), ['distr', 'toko']), ['distr', 'toko']) +
+    treeHTML(annotateDistrTargets(buildTree(shipRows(m, sc), ['distr', 'toko']), m, {dist: di}), ['distr', 'toko'], {distrTgt: true}) +
     '<div class="section-head"><div class="section-title">Ekspeditur di distrik ini</div></div>' +
     (eks.length ? table(ekCols, eks, {go: r => '#/ekspeditur/' + enc(B.dims.eksp[r.key]), sort: 1}) : '<div class="dp-review">Tidak ada ekspeditur FRC untuk filter ini.</div>') +
     '</div>', 'wilayah');
