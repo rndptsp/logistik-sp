@@ -1,0 +1,19 @@
+# One-off diagnostics on the private master store. Prints counts/column names only (this log is public).
+name: Diagnose store (counts only)
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  diag:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ADMIN_URL: ${{ secrets.ADMIN_URL }}
+      BUILD_TOKEN: ${{ secrets.BUILD_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 tools/ci_store.py pull "$RUNNER_TEMP/m" "$RUNNER_TEMP/i" > /dev/null 2>&1
+      - run: python3 tools/diag_dermaga.py "$RUNNER_TEMP/m" > "$RUNNER_TEMP/d.txt" 2>&1; cat "$RUNNER_TEMP/d.txt" | while read -r l; do echo "::notice::$l"; done
+      - if: always()
+        run: rm -rf "$RUNNER_TEMP/m" "$RUNNER_TEMP/i" "$RUNNER_TEMP/d.txt"
