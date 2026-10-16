@@ -215,7 +215,7 @@ def read_store(path):
         yield from csv.DictReader(f)
 
 
-EKSP_NAMA_TETAP = {"SMBR": "PT Semen Baturaja Tbk (SMBR)"}   # ekspeditur codes the kamus may not know
+EKSP_NAMA_TETAP = {"SMBR": "PT Semen Baturaja Tbk (SMBR)"}   # fixed names, over the kamus (it maps SMBR to "ANGKUT SENDIRI")
 
 
 def build(cfg):
@@ -438,7 +438,7 @@ def build(cfg):
         "asOf": days[-1] if days else None,
         "lastDay": last_day,
         "dims": {"inc": INCOTERMS, "prov": prov.items, "dist": dist.items, "eksp": eksp.items, "src": src.items,
-                 "distr": distr.items, "truck": truck.items, "nonKin": nonkin, "kem": kem_d.items, "kapal": kapal_d.items, "kapalInfo": [kapal_info.get(n) for n in kapal_d.items], "ekspNama": [kamus.get(n, "") or EKSP_NAMA_TETAP.get(n, "") for n in eksp.items],
+                 "distr": distr.items, "truck": truck.items, "nonKin": nonkin, "kem": kem_d.items, "kapal": kapal_d.items, "kapalInfo": [kapal_info.get(n) for n in kapal_d.items], "ekspNama": [EKSP_NAMA_TETAP.get(n) or kamus.get(n, "") for n in eksp.items],
                  # ship-to: [code, name, address, kecamatan index or -1, lat, lon] (lat/lon null when unknown)
                  "toko": [toko_row(i) for i in range(len(toko.items))],
                  "kec": kec.items,
