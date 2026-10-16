@@ -729,7 +729,7 @@ table.tree td.name small{display:block;color:var(--sub);font-weight:400;font-siz
 .tbl th.fz1,.tbl td.fz1{left:44px}
 .tbl .fzl{box-shadow:inset -1px 0 0 var(--line),4px 0 6px -4px rgba(0,0,0,.18)}
 .tbl tr.go:hover td.fz{background:#FAFAFA}
-.tbl tr.total td.fz{background:inherit}
+.tbl tr.total td.fz{background:var(--gray-l)}
 .tbl td.name.fz{max-width:46vw}
 /* tree tables: frozen first column, indentation by level (narrower on phones) */
 table.tree td.name{padding-left:calc(12px + var(--d,0) * 22px)}
@@ -737,3 +737,9 @@ table.tree tr.lv0 td.fz{background:var(--white)}
 @media (max-width:600px){
   table.tree td.name{min-width:0;width:50vw;max-width:50vw;padding-left:calc(8px + var(--d,0) * 12px)}
 }
+/* ship timeline: vessel name column frozen while the 30 days scroll */
+.kg-nm{position:sticky;left:0;z-index:4;background:var(--white);box-shadow:inset -1px 0 0 var(--line),4px 0 6px -4px rgba(0,0,0,.18)}
+.kg-head .kg-nm{background:var(--bg2,#f6f6f6)}
+.kgantt>.kg-row{min-width:750px}
+.kg-d{min-width:0;overflow:hidden}
+@media (max-width:760px){.kgantt>.kg-row{min-width:640px}}
