@@ -684,3 +684,10 @@ table.tree td.name small{display:block;color:var(--sub);font-weight:400;font-siz
 .krm-h b{font-size:18px;text-transform:uppercase;letter-spacing:.03em}
 .krm-h small{color:var(--sub);font-size:13px}
 .krm-sub{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--sub);margin:14px 0 6px}
+/* bar labels: keep % and values apart when many bars share a phone screen */
+.bars .bpct i.pc-s{font-style:normal}
+@media (max-width:600px){
+  .bars.many .bpct{font-size:8.5px;letter-spacing:-.2px}
+  .bars.many .bpct i.pc-s{display:none}
+  .bars.many .bval{font-size:8px;letter-spacing:-.2px}
+}
