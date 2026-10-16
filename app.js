@@ -1767,7 +1767,7 @@ function pagePlant(name){
   const shipTl = shipGantt(m, null, {src: si, bare: true});   // plants that also load ships (GP Dumai) get the timeline too
   const shipSec = isSea || shipTl ? '<div class="section-head"><div class="section-title">Kapal muat · 30 hari</div><a class="section-link" href="#/kapal">Semua kapal &rsaquo;</a></div>' +
     (shipTl || '<div class="dp-review">Tidak ada kapal bernama yang muat di ' + esc(name) + ' dalam 30 hari terakhir.</div>') : '';
-  const hourSec = (isSea ? '' : plantHourSection()) + shipSec;
+  const hourSec = shipSec;   // release-per-hour panel removed (Rendy); plantHourSection kept for a possible return
   const cmp = '<div class="section-head"><div class="section-title">Perbandingan per incoterm</div><div class="section-sub">' + esc(m.sub) + ' vs ' + shortDate(R.pp.from) + '–' + shortDate(R.pp.to) + '</div></div>' +
     (rows.length ? table(cols, rows, {total: rows.length > 1}) : '<div class="dp-review">Tidak ada data untuk filter ini.</div>');
   // destinations (filter-driven, as before)
