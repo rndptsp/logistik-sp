@@ -684,13 +684,6 @@ table.tree td.name small{display:block;color:var(--sub);font-weight:400;font-siz
 .krm-h b{font-size:18px;text-transform:uppercase;letter-spacing:.03em}
 .krm-h small{color:var(--sub);font-size:13px}
 .krm-sub{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--sub);margin:14px 0 6px}
-/* bar labels: keep % and values apart when many bars share a phone screen */
-.bars .bpct i.pc-s{font-style:normal}
-@media (max-width:600px){
-  .bars.many .bpct{font-size:8.5px;letter-spacing:-.2px}
-  .bars.many .bpct i.pc-s{display:none}
-  .bars.many .bval{font-size:8px;letter-spacing:-.2px}
-}
 /* compact tables inside panels (were "name · t + bar" lists) */
 .cap-tbl .tbl-wrap{margin-bottom:6px}
 .cap-tbl .tbl{width:100%}
@@ -702,6 +695,23 @@ table.tree td.name small{display:block;color:var(--sub);font-weight:400;font-siz
   .cap-tbl .tbl td{padding:7px 5px;font-size:11.5px}
   .cap-tbl .tbl td.name{font-size:11px}
 }
-/* key for the % and value rows above bar charts */
-.bars-key{display:flex;flex-wrap:wrap;gap:4px 16px;font-size:11.5px;color:var(--sub);margin:2px 0 10px}
-.bars-key b{font-size:12px;font-weight:800;color:var(--black);padding:0 2px;border-bottom:1px dashed currentColor}
+/* bar labels: % inside the bar, value floating on its top (labels follow bar heights, no crowded row) */
+.bars .b{position:relative}
+.bars .bin{position:absolute;top:4px;left:50%;transform:translateX(-50%);color:#fff;font-size:9.5px;font-weight:800;white-space:nowrap;pointer-events:none;text-shadow:0 0 2px rgba(0,0,0,.25)}
+.bars .btop{position:absolute;left:-4px;right:-4px;display:flex;flex-direction:column;align-items:center;padding-bottom:3px;pointer-events:none}
+.bars .btop .bval,.bars .btop .bpct{margin:0;line-height:1.15}
+.bars.dense .bin,.bars.dense .btop{visibility:hidden}
+.bars.dense .bcol:hover .bin,.bars.dense .bcol:hover .btop,.bars.dense .bcol:last-child .bin,.bars.dense .bcol:last-child .btop,.bars.dense .bcol.sel .bin,.bars.dense .bcol.sel .btop{visibility:visible}
+.lg-num b{font-weight:800;color:var(--black)}
+@media (max-width:600px){
+  .bars.many{gap:3px}
+  .bars.many .b{width:82%}
+  .bars.many .bin{writing-mode:vertical-rl;transform:translateX(-50%) rotate(180deg);font-size:8.5px;top:3px}
+  .bars.many .btop .bval,.bars.many .btop .bpct{writing-mode:vertical-rl;transform:rotate(180deg);font-size:8.5px}
+}
+.bars .tick{z-index:0;left:6%;right:6%}
+.bars .b{z-index:1}
+.bars .btop{z-index:2}
+.bars .btop .bval{text-shadow:0 0 3px #fff,0 0 3px #fff,0 0 2px #fff}
+.bars .btop .bval b{font-weight:800}
+@media (max-width:600px){.bars.many .tick{left:-1px;right:-1px}}

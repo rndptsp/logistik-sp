@@ -408,24 +408,23 @@ function deltaHTML(a, b){
   const p = (a / b - 1) * 100;
   return '<div class="bcmp" style="color:' + (p >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (p >= 0 ? '▲' : '▼') + Math.abs(Math.round(p)) + '%</div>';
 }
+const LG_NUM = '<span class="lg-num"><b>%</b> dalam batang = capaian · <b>angka</b> di atas = ton</span>';
 function barsHTML(id, data, opt){
   const hasC = data.some(d => d.c);
   const max = Math.max(1, ...data.map(d => Math.max(d.vol, d.tgt || 0, d.c ? d.c.vol : 0)));
-  // key for the two number rows above the bars, shown with the chart's own first values so newcomers can read them
-  const k = data.find(d => d.pct != null && d.vol > 0) || data.find(d => d.vol > 0);
-  const isJam = data.some(d => d.unit === 'jam');
-  const key = k && !(opt && opt.noKey) ? '<div class="bars-key">' + (k.pct != null ? '<span><b style="color:' + tierColor(k.pct) + '">' + Math.round(k.pct) + '</b> = % capaian vs target ' + esc(tgtLbl()) + '</span>' : '') +
-    '<span><b>' + (isJam ? fmt1(k.vol) : fmt(k.vol)) + '</b> = ' + (opt && opt.valLbl || (isJam ? 'rata-rata jam' : 'realisasi (ton)')) + '</span></div>' : '';
-  return key + '<div class="bars' + (hasC ? ' pair' : '') + (data.length > 16 && !(opt && opt.labels) ? ' dense' : '') + (data.length > 9 ? ' many' : '') + '">' + data.map((d, i) => {
-    const h = Math.max(2, d.vol / max * 100);
-    const th = d.tgt != null ? Math.min(100, d.tgt / max * 100) : null;
+  return '<div class="bars' + (hasC ? ' pair' : '') + (data.length > 16 && !(opt && opt.labels) ? ' dense' : '') + (data.length > 9 ? ' many' : '') + '">' + data.map((d, i) => {
+    const HR = 84;   // headroom above the tallest bar for its value label
+    const h = Math.max(2, d.vol / max * HR);
+    const th = d.tgt != null ? Math.min(HR, d.tgt / max * HR) : null;
     const c = d.pct != null ? tierColor(d.pct) : 'var(--black)';
     const unit = d.unit === 'jam' ? fmt1(d.vol) : fmt(d.vol);
-    return '<div class="bcol click" data-bar="' + id + ':' + i + '" title="' + esc(d.long || d.label) + ' — klik untuk rincian">' +
-      (d.pct != null ? '<div class="bpct" style="color:' + c + '">' + Math.round(d.pct) + '<i class="pc-s">%</i></div>' : '') +
-      '<div class="bval">' + unit + '</div>' + (d.c ? deltaHTML(d.vol, d.c.vol) : '') +
-      '<div class="bwrap"><div class="b" style="height:' + h + '%;background:' + (d.color || c) + ';animation-delay:' + (i * 50) + 'ms"></div>' +
-      (d.c ? '<div class="b b2" style="height:' + Math.max(2, d.c.vol / max * 100) + '%;animation-delay:' + (i * 50 + 25) + 'ms"></div>' : '') +
+    // % sits inside the bar (white); the value floats on top of each bar, so labels follow the bar heights instead of one crowded row
+    const pin = d.pct != null && h >= 30, pout = d.pct != null && !pin, pTxt = d.pct != null ? Math.round(d.pct) + '%' : '';
+    return '<div class="bcol click" data-bar="' + id + ':' + i + '" title="' + esc((d.long || d.label) + (d.pct != null ? ' · ' + pTxt + ' dari target' : '')) + ' — klik untuk rincian">' +
+      (d.c ? deltaHTML(d.vol, d.c.vol) : '') +
+      '<div class="bwrap"><div class="b" style="height:' + h + '%;background:' + (d.color || c) + ';animation-delay:' + (i * 50) + 'ms">' + (pin ? '<span class="bin">' + pTxt + '</span>' : '') + '</div>' +
+      '<div class="btop" style="bottom:' + h + '%"><span class="bval">' + unit + (pout ? ' <b style="color:' + c + '">' + pTxt + '</b>' : '') + '</span></div>' +
+      (d.c ? '<div class="b b2" style="height:' + Math.max(2, d.c.vol / max * HR) + '%;animation-delay:' + (i * 50 + 25) + 'ms"></div>' : '') +
       (th != null ? '<div class="tick" style="bottom:' + th + '%"></div>' : '') + '</div>' +
       '<div class="blabel">' + esc(d.label) + '</div></div>';
   }).join('') + '</div>';
@@ -459,7 +458,7 @@ function trendInner(id){
   const legend = '<span><i style="background:var(--green)"></i>&ge;100% target</span><span><i style="background:var(--amber)"></i>85–99%</span><span><i style="background:var(--red)"></i>&lt;85%</span><span><i class="dash"></i>target ' + tgtLbl() + (inc === 'FOT' ? ' FOT (distributor)' : '') + '</span>' +
     (T.cmp ? '<span><i style="background:#BCC3C5"></i>' + esc(cmpLabel(T)) + '</span><span>▲▼ = selisih vs pembanding</span>' : '');
   return '<div class="pt"><span>' + esc(T.title) + ' (ton)</span><div class="pt-tools">' + (T.noCmp ? '' : cmpOptions(T)) + '<div class="gran-chips">' + chips + '</div></div></div>' + barsHTML(id, data) +
-    '<div class="trend-legend">' + legend + '</div>' +
+    '<div class="trend-legend">' + legend + LG_NUM + '</div>' +
     '<div class="trend-detail" id="' + id + '-d">Klik batang mana pun untuk rincian per provinsi, distrik, ekspeditur &amp; source' + (T.cmp ? ', dibandingkan dengan ' + esc(cmpLabel(T)) : '') + '.</div>';
 }
 
@@ -1704,7 +1703,7 @@ function plantHourSection(){
   const hData = bs.map((b, h) => { const t = tgtDay ? tgtDay / 24 : null; return {label: pad2(h), long: dayLabel(ds) + ' · jam ' + pad2(h) + '.00–' + pad2(h) + '.59 · ' + fmt(b.trips) + ' trip' + [...b.inc.entries()].map(([i, v]) => ' · ' + incLbl(INCS()[i]) + ' ' + fmt(v) + ' t').join(''), vol: b.tot, tgt: t, pct: t ? pctOf(b.tot, t) : null}; });
   TRENDS.ph = {id: 'ph', data: hData, click: () => {}};
   return '<div id="plantHours"><div class="section-head"><div class="section-title">Rilis per jam (ton) · jam truk keluar</div>' + nav + '</div>' +
-    '<div class="dp-panel pc-panel">' + stats + barsHTML('ph', hData, {labels: true}) + '<div class="trend-legend"><span><i style="background:var(--green)"></i>&ge;100% target/jam</span><span><i style="background:var(--amber)"></i>85–99%</span><span><i style="background:var(--red)"></i>&lt;85%</span>' + (tgtDay ? '<span><i class="dash"></i>target ' + tgtLbl() + ' / jam</span>' : '') + '</div></div></div>';
+    '<div class="dp-panel pc-panel">' + stats + barsHTML('ph', hData, {labels: true}) + '<div class="trend-legend">' + LG_NUM + '<span><i style="background:var(--green)"></i>&ge;100% target/jam</span><span><i style="background:var(--amber)"></i>85–99%</span><span><i style="background:var(--red)"></i>&lt;85%</span>' + (tgtDay ? '<span><i class="dash"></i>target ' + tgtLbl() + ' / jam</span>' : '') + '</div></div></div>';
 }
 function pagePlant(name){
   const si = B.dims.src.indexOf(name);
@@ -1927,7 +1926,7 @@ function pageForecast(gran){
       '<div class="prog-cell"><div class="pl">Proyeksi minggu</div><div class="pv" style="color:' + tierColor(pctOf(proj, wTgt)) + '">' + fmt(proj) + ' t</div><div class="pd">laju ' + fmt(runrate) + ' t/hari</div></div>' +
       '<div class="prog-cell"><div class="pl">Target minggu penuh</div><div class="pv">' + fmt(wTgt) + ' t</div><div class="pd">proyeksi ' + pctTxt(pctOf(proj, wTgt)) + '</div></div></div>' +
       '<div class="dp-panel" style="margin-bottom:34px"><div class="pt">Realisasi ' + incName() + ' per hari vs target ' + tgtLbl() + ', ' + days[0].getDate() + ' ' + MON3[days[0].getMonth()] + ' – ' + days[6].getDate() + ' ' + MON3[days[6].getMonth()] + '</div>' + barsHTML(id, data) +
-      '<div class="trend-legend"><span><i style="background:var(--green)"></i>&ge;100%</span><span><i style="background:var(--amber)"></i>85–99%</span><span><i style="background:var(--red)"></i>&lt;85%</span><span><i class="dash"></i>target ' + tgtLbl() + '</span></div><div class="trend-detail" id="tw-d">Klik batang untuk rincian hari itu per provinsi, distrik, ekspeditur &amp; source.</div></div>';
+      '<div class="trend-legend">' + LG_NUM + '<span><i style="background:var(--green)"></i>&ge;100%</span><span><i style="background:var(--amber)"></i>85–99%</span><span><i style="background:var(--red)"></i>&lt;85%</span><span><i class="dash"></i>target ' + tgtLbl() + '</span></div><div class="trend-detail" id="tw-d">Klik batang untuk rincian hari itu per provinsi, distrik, ekspeditur &amp; source.</div></div>';
   } else {
     const m = PER().month, ld = lastDayOf(m), n = dim(m);
     const rows = [...summarize('prov', m).values()].filter(o => o.hasTgt || o.vol > 0).map(o => {
@@ -2164,7 +2163,7 @@ function pageArmada(){
       kpi('clock', 'var(--amber)', 'Rata-rata SLA', t.dwell == null ? '–' : fmt1(t.dwell) + ' <small>jam</small>', {hint: 'masuk → keluar pabrik'}) +
       kpi('box', 'var(--black)', 'Ton / trip', fmt1(t.vol / Math.max(1, t.trips))) +
     '</div>' +
-    '<div class="dp-cols even"><div class="dp-panel"><div class="pt">Sebaran trip per truk</div>' + barsHTML('ab', bdata, {valLbl: 'jumlah truk'}) + '<div class="trend-detail" id="ab-d">Banyak truk 1 trip = armada tidak kontinu. Klik batang untuk daftar truknya.</div></div>' +
+    '<div class="dp-cols even"><div class="dp-panel"><div class="pt">Sebaran trip per truk</div>' + barsHTML('ab', bdata) + '<div class="trend-detail" id="ab-d">Banyak truk 1 trip = armada tidak kontinu. Klik batang untuk daftar truknya.</div></div>' +
     '<div class="dp-panel"><div class="pt">Rata-rata SLA per hari (jam) — makin rendah makin baik</div>' + dwellBars + '<div class="trend-legend"><span><i style="background:var(--green)"></i>&le;' + SLA_TARGET + ' jam (memenuhi target)</span><span><i style="background:var(--red)"></i>&gt;' + SLA_TARGET + ' jam</span><span><i class="dash"></i>target ' + SLA_TARGET + ' jam</span><span>klik batang = SLA per ekspeditur</span></div></div></div>' +
     '<div class="section-head"><div class="section-title">Daftar truk per ekspeditur</div><div class="section-link"><a data-grp="1">Buka semua</a> · <a data-grp="0">Tutup semua</a></div></div>' + (incGroups(() => { const tk = trucksFor(m).sort((a, b) => b.trips - a.trips); return tk.length ? trucksByEksp(cols, tk) : ''; }, () => fmt(trucksFor(m).length) + ' truk') || '<div class="dp-review">Tidak ada truk untuk filter ini.</div>') +
     '</div>', 'armada');
