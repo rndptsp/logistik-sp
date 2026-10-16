@@ -651,3 +651,8 @@ table.tree td.name small{display:block;color:var(--sub);font-weight:400;font-siz
 .toko-shared{cursor:pointer}
 .toko-shared .toko-pin{stroke:#fff}
 .toko-n{fill:#fff;font-weight:800;text-anchor:middle;dominant-baseline:central;pointer-events:none}
+/* per-incoterm group header (tables/panels split by incoterm when several are active) */
+.inc-grp{display:flex;align-items:baseline;gap:8px;margin:18px 0 8px;padding:6px 0 6px 10px;border-left:4px solid var(--c);font-size:13px;letter-spacing:.04em;text-transform:uppercase}
+.inc-grp:first-child{margin-top:4px}
+.inc-grp small{text-transform:none;letter-spacing:0;color:var(--muted);font-weight:400;font-size:12px}
+.dp-panel .inc-grp{margin:12px 0 4px;font-size:12px}
