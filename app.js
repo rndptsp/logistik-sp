@@ -1725,7 +1725,9 @@ function pagePlant(name){
     '<div class="mh-left"><div class="eyebrow">Kinerja rilis · ' + esc(m.sub) + '</div><h2 class="mh-h">' + head + '</h2><div class="mh-chips">' + chips.join('') + '</div></div>' +
     '<div class="ph-cards"><div class="mh-lh"><span>KPI per incoterm · SNOP &amp; Internal</span></div>' + cards + '</div></div></section>';
   // daily trend: the standard trend panel (tier-coloured bars, % and value, target ticks, MTD/harian/mingguan/bulanan)
-  const sla = plantSla(R, m), slaAvg = dwN ? dwS / dwN : null;
+  // loading port (most tonnage on sea incoterms): truck SLA and release-per-hour say nothing about ships -> ship timeline
+  const seaVol = R.I.reduce((a, o) => a + (modaOf(INCS()[o.i]) === 'LAUT' ? o.vol : 0), 0), isSea = vol > 0 && seaVol / vol >= 0.5;
+  const sla = isSea || !dwN ? '' : plantSla(R, m), slaAvg = dwN ? dwS / dwN : null;
   const chart = '<div class="section-head"><div class="section-title">Tren realisasi</div></div>' +
     '<div class="main-chart">' + trendPanel(sc, 'harian', 'Tren realisasi ' + name) + '</div>' +
     (sla ? '<div class="dp-panel pc-panel" style="margin-top:14px"><div class="pt">SLA per ' + (R.monthly ? 'bulan' : 'hari') + ' (jam, masuk → keluar pabrik)<span class="pt-sub">rata-rata <b style="color:' + slaColor(slaAvg) + '">' + fmt1(slaAvg) + ' jam</b> · target ' + SLA_TARGET + ' jam</span></div>' + sla +
@@ -1748,7 +1750,10 @@ function pagePlant(name){
   }
   if(!plantHourCtx || plantHourCtx.si !== si) plantHourDay = null;   // another plant: start at its latest day
   plantHourCtx = {si};
-  const hourSec = plantHourSection();
+  const shipTl = shipGantt(m, null, {src: si, bare: true});   // plants that also load ships (GP Dumai) get the timeline too
+  const shipSec = isSea || shipTl ? '<div class="section-head"><div class="section-title">Kapal muat · 30 hari</div><a class="section-link" href="#/kapal">Semua kapal &rsaquo;</a></div>' +
+    (shipTl || '<div class="dp-review">Tidak ada kapal bernama yang muat di ' + esc(name) + ' dalam 30 hari terakhir.</div>') : '';
+  const hourSec = (isSea ? '' : plantHourSection()) + shipSec;
   const cmp = '<div class="section-head"><div class="section-title">Perbandingan per incoterm</div><div class="section-sub">' + esc(m.sub) + ' vs ' + shortDate(R.pp.from) + '–' + shortDate(R.pp.to) + '</div></div>' +
     (rows.length ? table(cols, rows, {total: rows.length > 1}) : '<div class="dp-review">Tidak ada data untuk filter ini.</div>');
   // destinations (filter-driven, as before)
