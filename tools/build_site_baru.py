@@ -221,6 +221,7 @@ def build(cfg):
     print(f"Membaca master baru: {base}")
     prov, dist, eksp, src, distr, truck, toko = Dict(), Dict(), Dict(), Dict(), Dict(), Dict(), Dict()
     kem_d = Dict()
+    kapal_d = Dict()   # vessel names (NAMA_KAPAL)
     kem_d("ZAK"); kem_d("CURAH"); kem_d("JUMBO BAG")
     KEM_ALIAS = {"SAK": "ZAK", "JUMBO": "JUMBO BAG", "JUMBO 1 TON": "JUMBO BAG", "JUMBOBAG": "JUMBO BAG"}
     kemasan = lambda v: kem_d(KEM_ALIAS.get(up(v), up(v)) or "ZAK")
@@ -282,8 +283,10 @@ def build(cfg):
         last_day[month] = max(last_day.get(month, 0), d.day)
         p, di = prov(up(r.get("NAMA_PROPINSI"))), dist(up(r.get("NAMA_AREA_DISTRIK")))
         dist_prov.setdefault(di, p)
-        kapal = up(r.get("NAMA_KAPAL"))   # sea shipments (FOB/FAS): the vessel is the carrier, i.e. the "ekspeditur"
-        e = eksp(up(r.get("EXPEDITUR_KODE")) if frc else ("KAPAL " + kapal if kapal else ""))
+        kapal = up(r.get("NAMA_KAPAL"))   # sea shipments: the vessel, kept as its own dimension (ship rows, Kapal page)
+        # ekspeditur: FRC* = the transporter code; every other incoterm (FOT, FOB, FAS, FOT CONTAINER) = the distributor
+        # itself (it arranges the haul), as in the targets (update_target.py: "ekspeditur = distributor")
+        e = eksp(up(r.get("EXPEDITUR_KODE")) if frc else up(r.get("DISTRIBUTOR")))
         s = src(up(r.get("SOURCE_PLANT")))
         dwell = r.get("DWELL_TIME_JAM")
         ok_dwell = dwell not in (None, "") and not r.get("DWELL_WAITING_FLAG") and 0 <= num(dwell) <= 48
@@ -299,7 +302,7 @@ def build(cfg):
         kc = up(r.get("NAMA_KEC_SUBDISTRIK"))
         if kt and kc:
             toko_kec[ti][kec(kc)] += ton
-        g = ship[(d.isoformat(), inc, s, p, di, distr(up(r.get("DISTRIBUTOR"))), e, ti, kem)]
+        g = ship[(d.isoformat(), inc, s, p, di, distr(up(r.get("DISTRIBUTOR"))), e, ti, kem, kapal_d(kapal) if kapal else -1)]
         g[0] += ton; g[1] += 1
         m_out = re.match(r"(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):", str(r.get("WAKTU_KELUAR") or ""))   # truck out of the plant
         if m_out and hour_from <= m_out.group(1) < today.isoformat():
@@ -334,7 +337,7 @@ def build(cfg):
         if inc.startswith("FRC"):
             targets.append([month, p, di, eksp(code), s, ton, daily, INCOTERMS.index(inc), -1, kem])
         else:   # distributor target: EXPEDITUR_KODE holds the distributor
-            targets.append([month, p, di, eksp(""), s, ton, daily, INCOTERMS.index(inc), distr(code), kem])
+            targets.append([month, p, di, eksp(code), s, ton, daily, INCOTERMS.index(inc), distr(code), kem])   # ekspeditur = distributor
     print(f"  target rows: {len(targets):,} ({', '.join(sorted({t[0] for t in targets}))}); kemasan: "
           f"{', '.join(sorted({kem_d.items[t[9]] for t in targets}))}")
 
@@ -422,7 +425,7 @@ def build(cfg):
         "asOf": days[-1] if days else None,
         "lastDay": last_day,
         "dims": {"inc": INCOTERMS, "prov": prov.items, "dist": dist.items, "eksp": eksp.items, "src": src.items,
-                 "distr": distr.items, "truck": truck.items, "nonKin": nonkin, "kem": kem_d.items, "ekspNama": [kamus.get(n, "") for n in eksp.items],
+                 "distr": distr.items, "truck": truck.items, "nonKin": nonkin, "kem": kem_d.items, "kapal": kapal_d.items, "ekspNama": [kamus.get(n, "") for n in eksp.items],
                  # ship-to: [code, name, address, kecamatan index or -1, lat, lon] (lat/lon null when unknown)
                  "toko": [toko_row(i) for i in range(len(toko.items))],
                  "kec": kec.items,
@@ -431,7 +434,8 @@ def build(cfg):
         "facts": [[day_idx[k[0]], INCOTERMS.index(k[1]), k[2], k[3], k[4], k[5],
                    round(v[0], 2), v[1], round(v[2], 2), v[3], k[6]] for k, v in facts.items()],
         # one row per day x incoterm x source x province x district x distributor x ekspeditur x ship-to
-        "ship": [[day_idx[k[0]], INCOTERMS.index(k[1]), k[2], k[3], k[4], k[5], k[6], k[7], round(v[0], 2), v[1], k[8]]
+        # [day, inc, src, prov, dist, distr, eksp, toko, ton, trips, kem, kapal (-1 = none)]
+        "ship": [[day_idx[k[0]], INCOTERMS.index(k[1]), k[2], k[3], k[4], k[5], k[6], k[7], round(v[0], 2), v[1], k[8], k[9]]
                  for k, v in ship.items()],
         # per day, so any date range can be cut exactly: [day, truck, inc, eksp, src, prov, trips, ton, dwellSum, dwellN]
         "trucks": [[day_idx[k[0]], k[1], INCOTERMS.index(k[2]), k[3], k[4], k[5], v[0], round(v[1], 2), round(v[2], 2), v[3], k[6]]

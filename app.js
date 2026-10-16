@@ -93,9 +93,11 @@ function prepare(){
   const eksEmpty = dims.eksp.indexOf('');
   const frcEksp = new Set(), liveProv = new Set(), liveDist = new Set();
   B.facts.forEach(f => { if(isFrc(f[1]) && f[5] !== eksEmpty) frcEksp.add(f[5]); liveProv.add(f[3]); liveDist.add(f[4]); });
+  B.targets.forEach(t => { if(isFrc(t[7]) && t[3] !== eksEmpty) frcEksp.add(t[3]); });
+  const distrIdx = Object.fromEntries(dims.distr.map((p, i) => [p, i]));
   const sources = [...new Set(B.facts.map(f => f[2]).concat(B.targets.map(t => t[4])))].filter(i => i !== srcEmpty).map(i => dims.src[i]).sort();
   D = { dayMonth, dayNum, dayDow, months, provIdx, ekspIdx, distIdx, srcEmpty, eksEmpty,
-        ekspList: [...frcEksp].map(i => dims.eksp[i]).sort(), liveProv, liveDist, sources };
+        ekspList: [...frcEksp].map(i => dims.eksp[i]).sort(), frcEksp, distrIdx, liveProv, liveDist, sources };
   F.per = {kind: 'month', month: months[months.length - 1]};
   D.tgtKem = new Set(B.targets.map(tKem));
   D.nfTgt = B.targets.some(t => t[7] >= 1);   // builds without sheet SNOP: FRC targets only
@@ -448,17 +450,22 @@ function trendInner(id){
 
 /* ===================== Drill-down modal ===================== */
 let MODAL = null;
+/* Ekspeditur = the carrier: FRC* -> the transporter (full name from the kamus); every other incoterm -> the
+   distributor itself (it arranges the haul). Labels drop the legal form; links go to the right page. */
+const coLbl = n => String(n || '').replace(/\s*\(PERSERO\)/i, '').replace(/[\s,.]*\bPT\.?\s*$/i, '').replace(/^\s*PT\.?\s+/i, '').trim();
+const ekspLbl = k => { const c = B.dims.eksp[k]; if(!c) return 'Angkut sendiri (distributor)'; const n = (B.dims.ekspNama || [])[k]; return coLbl(n || c) || c; };
+const ekspHref = k => { const c = B.dims.eksp[k]; if(!c) return null; if(D.frcEksp.has(k)) return '#/ekspeditur/' + enc(c); return D.distrIdx[c] != null ? '#/distributor/' + enc(c) : null; };
 const DIM_LBL = {prov: 'Provinsi', dist: 'Distrik', eksp: 'Ekspeditur', src: 'Source plant'};
 function dimName(dim, k){
   if(dim === 'prov') return tc(B.dims.prov[k]);
   if(dim === 'dist') return tc(B.dims.dist[k]);
-  if(dim === 'eksp') return B.dims.eksp[k] || 'Angkut sendiri (distributor)';
+  if(dim === 'eksp') return ekspLbl(k);
   return tc(B.dims.src[k] || '(tanpa plant)');
 }
 function dimHref(dim, k){
   if(dim === 'prov') return '#/provinsi/' + enc(B.dims.prov[k]);
   if(dim === 'dist') return '#/distrik/' + enc(B.dims.dist[k]);
-  if(dim === 'eksp') return B.dims.eksp[k] ? '#/ekspeditur/' + enc(B.dims.eksp[k]) : null;
+  if(dim === 'eksp') return ekspHref(k);
   return null;
 }
 function openModal(title, sub, html){
@@ -1101,7 +1108,7 @@ function nodeLabel(n){
   if(n.lv === 'prov') return esc(tc(B.dims.prov[n.key]));
   if(n.lv === 'dist') return esc(tc(B.dims.dist[n.key]));
   if(n.lv === 'distr') return esc(tc(B.dims.distr[n.key]) || '(tanpa distributor)');
-  if(n.lv === 'eksp') return esc(B.dims.eksp[n.key] || 'Angkut sendiri (distributor)');
+  if(n.lv === 'eksp') return esc(ekspLbl(n.key));
   const t = B.dims.toko[n.key];
   if(!t || !t[0]) return '<span class="t-unk">Toko belum tercatat</span><small>data tujuan tidak tersedia untuk periode ini</small>';
   return esc(t[1] || t[0]) + '<small>' + esc([t[2], t[0]].filter(Boolean).join(' · ')) + '</small>';
@@ -1110,7 +1117,7 @@ function nodeHref(n){
   if(n.lv === 'prov') return '#/provinsi/' + enc(B.dims.prov[n.key]);
   if(n.lv === 'dist') return '#/distrik/' + enc(B.dims.dist[n.key]);
   if(n.lv === 'distr') return B.dims.distr[n.key] ? '#/distributor/' + enc(B.dims.distr[n.key]) : null;
-  if(n.lv === 'eksp') return B.dims.eksp[n.key] ? '#/ekspeditur/' + enc(B.dims.eksp[n.key]) : null;
+  if(n.lv === 'eksp') return ekspHref(n.key);
   return null;
 }
 /* Expandable table: click a row to open the next level; "›" opens that item's own page.
@@ -1271,7 +1278,7 @@ function pageDistr(name){
     '<div class="section-head"><div class="section-title">Target &amp; realisasi per incoterm</div><div class="section-sub">' + incName() + ' · ' + periodSub() + '</div></div>' +
     (incRows.length ? table(incCols, incRows, {total: incRows.length > 1}) : '<div class="dp-review">Tidak ada realisasi maupun target untuk periode ini.</div>') +
     '<div class="dp-cols"><div class="dp-panel"><div class="pt">Volume bulanan (ton)<span class="pt-sub">' + (data.some(d => d.tgt) ? 'garis = target distributor' : '') + '</span></div>' + barsHTML('dm', data) + '<div class="trend-detail">Klik batang untuk tujuan kirim bulan itu.</div></div>' +
-    '<div class="dp-panel"><div class="pt">Diangkut oleh<span class="pt-sub">' + fmt(ekspTree.filter(n => B.dims.eksp[n.key]).length) + ' ekspeditur</span></div>' + (ekspTree.length ? ekspTree.map(n => '<a class="rate-row" ' + (nodeHref(n) ? 'href="' + nodeHref(n) + '"' : '') + '><div class="rl">' + esc(B.dims.eksp[n.key] || 'Angkut sendiri (distributor)') + '</div><div class="rtrack"><div class="rfill" style="width:' + (n.vol / ekspTree[0].vol * 100) + '%;background:var(--black)"></div></div><div class="rv">' + fmt(n.vol) + '</div></a>').join('') : '<div class="empty">Tidak ada pengiriman untuk filter ini.</div>') + '</div></div>' +
+    '<div class="dp-panel"><div class="pt">Diangkut oleh<span class="pt-sub">' + fmt(ekspTree.filter(n => B.dims.eksp[n.key]).length) + ' ekspeditur</span></div>' + (ekspTree.length ? ekspTree.map(n => '<a class="rate-row" ' + (nodeHref(n) ? 'href="' + nodeHref(n) + '"' : '') + '><div class="rl">' + esc(ekspLbl(n.key)) + '</div><div class="rtrack"><div class="rfill" style="width:' + (n.vol / ekspTree[0].vol * 100) + '%;background:var(--black)"></div></div><div class="rv">' + fmt(n.vol) + '</div></a>').join('') : '<div class="empty">Tidak ada pengiriman untuk filter ini.</div>') + '</div></div>' +
     '<div class="section-head"><div class="section-title">Tujuan pengiriman</div></div>' +
     (rows.length ? treeHTML(annotateDistrTargets(buildTree(rows, ['prov', 'dist', 'toko']), m, {distr: di}), ['prov', 'dist', 'toko'], {distrTgt: true}) : '<div class="dp-review">Tidak ada pengiriman untuk filter ini.</div>') +
     '</div>', 'wilayah');
@@ -1480,7 +1487,7 @@ function pageProv(name){
     '</div>'
     )) + incPerf(m, sc) +
     '<div class="dp-cols">' + trendPanel(sc, 'mingguan') +
-      '<div class="dp-panel"><div class="pt">Ekspeditur di provinsi ini<span class="pt-sub">capaian target · Real/SO</span></div>' + (eks.length ? eks.map(o => rateRow(B.dims.eksp[o.key] + ' · ' + fmt(o.vol) + ' t', o.pct, '#/ekspeditur/' + enc(B.dims.eksp[o.key]), o.hasTgt ? 'target ' + fmt(o.tgt) + ' t' : 'tanpa target', o.of)).join('') : '<div class="empty">' + (nfOn() ? incName() + ' diambil langsung oleh distributor — lihat halaman Distributor.' : 'Tidak ada data.') + '</div>') + '</div>' +
+      '<div class="dp-panel"><div class="pt">Ekspeditur di provinsi ini<span class="pt-sub">capaian target · Real/SO</span></div>' + (eks.length ? eks.map(o => rateRow(ekspLbl(o.key) + ' · ' + fmt(o.vol) + ' t', o.pct, ekspHref(o.key), o.hasTgt ? 'target ' + fmt(o.tgt) + ' t' : 'tanpa target', o.of)).join('') : '<div class="empty">' + (nfOn() ? incName() + ' diambil langsung oleh distributor — lihat halaman Distributor.' : 'Tidak ada data.') + '</div>') + '</div>' +
     '</div>' +
     '<div class="section-head"><div class="section-title">Distributor di provinsi ini</div><a class="section-link" href="#/distributor">Semua distributor &rsaquo;</a></div>' + distrTable(m, sc, 60).html +
     '<div class="section-head"><div class="section-title">Kinerja &amp; tujuan pengiriman per distrik</div></div>' +
@@ -1725,7 +1732,7 @@ function pagePlant(name){
     hero + chart + hourSec + cmp +
     '<div class="dp-cols">' +
       '<div class="dp-panel"><div class="pt">Provinsi tujuan<span class="pt-sub">capaian target · ' + esc(incName()) + '</span></div>' + (provs.length ? provs.map(o => rateRow(tc(B.dims.prov[o.key]) + ' · ' + fmt(o.vol) + ' t', o.pct, '#/provinsi/' + enc(B.dims.prov[o.key]), o.hasTgt ? 'target ' + fmt(o.tgt) + ' t' : 'tanpa target')).join('') : '<div class="empty">Tidak ada data.</div>') + '</div>' +
-      '<div class="dp-panel"><div class="pt">Ekspeditur / pengangkut<span class="pt-sub">' + esc(incName()) + '</span></div>' + (eks.length ? eks.map(o => rateRow(B.dims.eksp[o.key] + ' · ' + fmt(o.vol) + ' t', o.pct, '#/ekspeditur/' + enc(B.dims.eksp[o.key]), o.hasTgt ? 'target ' + fmt(o.tgt) + ' t' : 'tanpa target')).join('') : '<div class="empty">Tidak ada data.</div>') + '</div>' +
+      '<div class="dp-panel"><div class="pt">Ekspeditur / pengangkut<span class="pt-sub">' + esc(incName()) + '</span></div>' + (eks.length ? eks.map(o => rateRow(ekspLbl(o.key) + ' · ' + fmt(o.vol) + ' t', o.pct, ekspHref(o.key), o.hasTgt ? 'target ' + fmt(o.tgt) + ' t' : 'tanpa target')).join('') : '<div class="empty">Tidak ada data.</div>') + '</div>' +
     '</div>' +
     '<div class="section-head"><div class="section-title">Distributor dari plant ini</div><a class="section-link" href="#/distributor">Semua distributor &rsaquo;</a></div>' + DT.html +
     '</div>', 'plant');
@@ -1737,7 +1744,7 @@ function pageDist(name){
   const m = PER(), sc = {dist: di}, pname = B.dims.prov[B.dims.distProv[di]] || '';
   const me = total(m, sc);
   const eks = [...summarize('eksp', m, sc).values()].filter(o => (o.vol > 0 || o.tgt > 0) && o.key !== D.eksEmpty).sort((a, b) => b.vol - a.vol);
-  const ekCols = [{h:'Ekspeditur', cls:'name', val: r => B.dims.eksp[r.key]}, C.vol(), C.tgt, C.pct, C.gap, C.so, C.of, C.trips, C.dwell];
+  const ekCols = [{h:'Ekspeditur', cls:'name', val: r => ekspLbl(r.key)}, C.vol(), C.tgt, C.pct, C.gap, C.so, C.of, C.trips, C.dwell];
   const mapS = kecMapSection(name, pname, m, di);   // kecamatan panel carries the KPIs; fallback (province map) keeps the KPI row
   page('<div class="wrap">' + crumb([['Wilayah', '#/provinsi'], [tc(pname), '#/provinsi/' + enc(pname)], [tc(name)]]) +
     '<div class="dp-head"><div><div class="nm">' + esc(tc(name)) + '</div><div class="sub">' + esc(tc(pname)) + ' · ' + periodSub() + '</div></div><div class="badges"><div class="dp-badge ' + tierClass(me.pct) + '">' + pctTxt(me.pct) + ' dari target</div></div></div>' +
@@ -1754,18 +1761,18 @@ function pageDist(name){
     '<div class="section-head"><div class="section-title">Tujuan pengiriman: distributor &rsaquo; toko / gudang</div></div>' +
     treeHTML(annotateDistrTargets(buildTree(shipRows(m, sc), ['distr', 'toko']), m, {dist: di}), ['distr', 'toko'], {distrTgt: true}) +
     '<div class="section-head"><div class="section-title">Ekspeditur di distrik ini</div></div>' +
-    (eks.length ? table(ekCols, eks, {go: r => '#/ekspeditur/' + enc(B.dims.eksp[r.key]), sort: 1}) : '<div class="dp-review">Tidak ada ekspeditur FRC untuk filter ini.</div>') +
+    (eks.length ? table(ekCols, eks, {go: r => ekspHref(r.key), sort: 1}) : '<div class="dp-review">Tidak ada ekspeditur untuk filter ini.</div>') +
     '</div>', 'wilayah');
 }
 
 function pageEkspList(){
   const m = PER(), t = total(m);
-  const list = ranked(summarize('eksp', m)).filter(r => r.key !== D.eksEmpty);
+  const list = ranked(summarize('eksp', m)).filter(r => D.frcEksp.has(r.key));   // transporters only (FRC)
   const tr = trucksFor(m);
   const perE = new Map(); tr.forEach(x => x.eksp.forEach((n, e) => { const o = perE.get(e) || {n: 0, one: 0}; o.n++; if(x.trips === 1) o.one++; perE.set(e, o); }));
   const multi = tr.length ? pctOf(tr.filter(x => x.trips > 1).length, tr.length) : null;
   const tk = r => (perE.get(r.key) || {n: 0, one: 0});
-  const cols = [C.rank, {h:'Ekspeditur', cls:'name', val: r => B.dims.eksp[r.key]}, C.vol(), C.tgt, C.pct, C.gap, C.so, C.of, C.trips,
+  const cols = [C.rank, {h:'Ekspeditur', cls:'name', val: r => ekspLbl(r.key)}, C.vol(), C.tgt, C.pct, C.gap, C.so, C.of, C.trips,
     {h:'Truk', num:true, val: r => tk(r).n, html: r => fmt(tk(r).n)},
     {h:'Trip / truk', num:true, val: r => r.trips / Math.max(1, tk(r).n), html: r => fmt1(r.trips / Math.max(1, tk(r).n))},
     {h:'Truk 1 trip', num:true, val: r => tk(r).one}, C.dwell, C.note];
@@ -1775,8 +1782,8 @@ function pageEkspList(){
     (nfOn() ? '<div class="dp-review">' + incName() + ' diambil langsung oleh distributor (tanpa ekspeditur). Ganti filter ke FRC, atau buka <a href="#/distributor" style="color:var(--red);font-weight:700">Distributor</a>.</div>' : '') +
     '<div class="dp-cols even"><div class="dp-panel"><div class="pt">Scorecard keseluruhan</div>' +
       rateRow('Capaian target ' + tgtLbl(), t.pct) + rateRow('Realisasi / SO', t.of) + rateRow('Truk aktif > 1 trip', multi) +
-    '</div><div class="dp-panel"><div class="pt">Capaian per ekspeditur<span class="pt-sub">capaian target · Real/SO</span></div>' + (list.filter(r => r.pct != null).map(r => rateRow(B.dims.eksp[r.key], r.pct, '#/ekspeditur/' + enc(B.dims.eksp[r.key]), '', r.of)).join('') || '<div class="empty">Tidak ada target untuk filter ini.</div>') + '</div></div>' +
-    table(cols, list, {go: r => '#/ekspeditur/' + enc(B.dims.eksp[r.key]), total: true}) +
+    '</div><div class="dp-panel"><div class="pt">Capaian per ekspeditur<span class="pt-sub">capaian target · Real/SO</span></div>' + (list.filter(r => r.pct != null).map(r => rateRow(ekspLbl(r.key), r.pct, ekspHref(r.key), '', r.of)).join('') || '<div class="empty">Tidak ada target untuk filter ini.</div>') + '</div></div>' +
+    table(cols, list, {go: r => ekspHref(r.key), total: true}) +
     '</div>', 'ekspeditur');
 }
 
@@ -1797,7 +1804,7 @@ function pageEksp(code){
     {h:'Hari aktif', num:true, val: r => r.days}, {h:'SLA (jam)', num:true, val: r => r.dwN ? r.dwS / r.dwN : null, html: r => r.dwN ? fmt1(r.dwS / r.dwN) : '–'},
     {h:'Aktif', val: r => r.first, html: r => activeTxt(r)}, {h:'Provinsi utama', val: r => tc(B.dims.prov[r.prov])}];
   page('<div class="wrap">' + crumb([['Ekspeditur', '#/ekspeditur'], [code]]) +
-    '<div class="dp-head"><div><div class="nm">' + esc(code) + '</div><div class="sub">' + ekspFull(code) + 'Mitra ekspeditur FRC · ' + periodSub() + '</div></div><div class="badges">' + (me.rank ? '<div class="dp-badge">Rank ' + me.rank + ' / ' + all.filter(o => o.key !== D.eksEmpty && o.rank).length + '</div>' : '') + '<div class="dp-badge ' + tierClass(me.pct) + '">' + pctTxt(me.pct) + ' dari target</div></div></div>' +
+    '<div class="dp-head"><div><div class="nm">' + esc(code) + '</div><div class="sub">' + ekspFull(code) + 'Mitra ekspeditur FRC · ' + periodSub() + '</div></div><div class="badges">' + (me.rank ? '<div class="dp-badge">Rank ' + me.rank + ' / ' + all.filter(o => D.frcEksp.has(o.key) && o.rank).length + '</div>' : '') + '<div class="dp-badge ' + tierClass(me.pct) + '">' + pctTxt(me.pct) + ' dari target</div></div></div>' +
     '<div class="dp-review">' + reviewText(me.pct) + (me.hasTgt ? ' Realisasi ' + fmt(me.frc) + ' t vs target MTD ' + fmt(me.tgt) + ' t (gap ' + signed(me.gap) + ' t).' : '') + (one ? ' ' + one + ' truk baru 1 trip bulan ini.' : '') + '</div>' +
     '<div class="dp-grid4">' +
       kpi('check', 'var(--green)', 'Realisasi', fmt(me.vol) + ' <small>ton</small>', {hint: fmt(me.trips) + ' trip'}) +
@@ -1888,7 +1895,7 @@ function pageForecast(gran){
     chips + body + '</div>', 'prognosa');
 }
 
-/* Moda laut: one row per vessel (the ekspeditur of FOB/FAS shipments is "KAPAL <nama>"). Sea rows without a vessel name
+/* Moda laut: one row per vessel (shipName: bundle column 11). Sea rows without a vessel name
    (FAS, containers, ...) are shown as a separate line so the gap is visible instead of silently missing. */
 /* "NAMA" for one value, "NAMA +2" for several (full list in the tooltip) */
 function setTxt(set, dims, unit){
@@ -1900,13 +1907,17 @@ function setTxt(set, dims, unit){
      loading day is its own voyage;
    - cargo ships: loading days of one ship at one plant with gaps of at most VOY_GAP days form one voyage. */
 const VOY_GAP = 3, VOY_SMALL = 150;
-const shipKind = e => {   // 'reguler' | 'kargo', from the ship's whole history (stable across filters)
+/* Vessel of a ship row: bundle column 11 (B.dims.kapal) since the ekspeditur of FOB/FAS/FOT is the distributor;
+   older bundles carried the vessel as ekspeditur "KAPAL <nama>". */
+const shipName = r => B.dims.kapal ? (r[11] != null && r[11] >= 0 ? 'KAPAL ' + B.dims.kapal[r[11]] : null)
+  : (/^KAPAL /.test(B.dims.eksp[r[6]] || '') ? B.dims.eksp[r[6]] : null);
+const shipKind = nm => {   // 'reguler' | 'kargo', from the ship's whole history (stable across filters)
   const c = B._shipKind || (B._shipKind = new Map());
-  if(!c.has(e)){ const d = new Set(); let t = 0; B.ship.forEach(r => { if(r[6] === e){ d.add(r[0]); t += r[8]; } }); c.set(e, d.size && t / d.size < VOY_SMALL ? 'reguler' : 'kargo'); }
-  return c.get(e);
+  if(!c.has(nm)){ const d = new Set(); let t = 0; B.ship.forEach(r => { if(shipName(r) === nm){ d.add(r[0]); t += r[8]; } }); c.set(nm, d.size && t / d.size < VOY_SMALL ? 'reguler' : 'kargo'); }
+  return c.get(nm);
 };
 function voyagesOf(rows){
-  const gap = rows.length && shipKind(rows[0][6]) === 'reguler' ? 0 : VOY_GAP;
+  const gap = rows.length && shipKind(shipName(rows[0])) === 'reguler' ? 0 : VOY_GAP;
   const bySrc = new Map();
   rows.forEach(r => { (bySrc.get(r[2]) || bySrc.set(r[2], []).get(r[2])).push(r); });
   const out = [];
@@ -1926,11 +1937,11 @@ function voyagesOf(rows){
 }
 const kapalRows = (m, name) => {   // sea shipments (FOB/FAS/kontainer/kapal), any incoterm of moda LAUT
   const sv = [F.inc, F.moda]; F.inc = 'ALL'; F.moda = 'LAUT';
-  try { return shipRows(m).filter(r => name == null || B.dims.eksp[r[6]] === name); } finally { F.inc = sv[0]; F.moda = sv[1]; }
+  try { return shipRows(m).filter(r => name == null || shipName(r) === name); } finally { F.inc = sv[0]; F.moda = sv[1]; }
 };
 function pageKapalDetail(name){
   const m = PER(), rows = kapalRows(m, name);
-  if(!rows.length && !B.dims.eksp.includes(name)) return notFound('Kapal ' + name);
+  if(!rows.length && !B.ship.some(r => shipName(r) === name)) return notFound('Kapal ' + name);
   const vs = voyagesOf(rows), vol = rows.reduce((a, r) => a + r[8], 0), trips = rows.reduce((a, r) => a + r[9], 0);
   const days = new Set(rows.map(r => r[0])), distr = new Map();
   rows.forEach(r => distr.set(r[5], (distr.get(r[5]) || 0) + r[8]));
@@ -1942,9 +1953,9 @@ function pageKapalDetail(name){
     {h:'Tujuan', val: v => v.prov.size, html: v => setTxt(v.dist, B.dims.dist, 'distrik') + '<small>' + esc([...v.prov].map(p => tc(B.dims.prov[p])).join(', ')) + '</small>'}];
   vs.forEach((v, i) => v.n = i + 1);
   page('<div class="wrap">' + crumb([['Kapal', '#/kapal'], [name]]) +
-    '<div class="dp-head"><div><div class="nm">' + esc(name) + '</div><div class="sub">Kapal ' + (rows.length ? shipKind(rows[0][6]) : '') + ' · moda laut · ' + periodSub() + '</div></div></div>' +
+    '<div class="dp-head"><div><div class="nm">' + esc(name) + '</div><div class="sub">Kapal ' + (rows.length ? shipKind(shipName(rows[0])) : '') + ' · moda laut · ' + periodSub() + '</div></div></div>' +
     '<div class="dp-grid4">' +
-      kpi('truck', 'var(--black)', 'Voyage', fmt(vs.length), {hint: rows.length && shipKind(rows[0][6]) === 'reguler' ? 'kapal reguler (rata-rata < ' + VOY_SMALL + ' t/hari muat): tiap hari muat = 1 voyage' : 'kapal kargo: hari muat berjeda ≤ ' + VOY_GAP + ' hari = 1 voyage'}) +
+      kpi('truck', 'var(--black)', 'Voyage', fmt(vs.length), {hint: rows.length && shipKind(shipName(rows[0])) === 'reguler' ? 'kapal reguler (rata-rata < ' + VOY_SMALL + ' t/hari muat): tiap hari muat = 1 voyage' : 'kapal kargo: hari muat berjeda ≤ ' + VOY_GAP + ' hari = 1 voyage'}) +
       kpi('box', 'var(--black)', 'Tonase', fmt(vol) + ' <small>ton</small>', {hint: vs.length ? 'rata-rata ' + fmt(vol / vs.length) + ' t / voyage' : ''}) +
       kpi('clock', 'var(--amber)', 'Hari muat', fmt(days.size), {hint: fmt(trips) + ' SPJ (muat truk ke kapal)'}) +
       kpi('pin', 'var(--black)', 'Distributor', fmt(distr.size), {hint: [...distr.entries()].sort((a, b) => b[1] - a[1]).slice(0, 2).map(([d]) => tc(B.dims.distr[d])).join(', ')}) +
@@ -1960,7 +1971,7 @@ function pageKapal(){
   try {
     const m = PER(), rows = shipRows(m), by = new Map(), tot = rows.reduce((a, r) => a + r[8], 0);
     rows.forEach(r => {
-      const nm = B.dims.eksp[r[6]], k = /^KAPAL /.test(nm || '') ? nm : '\u0000';
+      const nm = shipName(r), k = nm || '\u0000';
       let o = by.get(k); if(!o){ o = {k, nm: k === '\u0000' ? '(kapal tidak tercatat di sumber)' : nm, vol: 0, trips: 0, days: new Set(), inc: new Set(), distr: new Set(), prov: new Set(), dist: new Set(), last: -1, rows: []}; by.set(k, o); }
       o.rows.push(r); o.vol += r[8]; o.trips += r[9]; o.days.add(r[0]); o.inc.add(INCS()[r[1]]); o.distr.add(r[5]); o.prov.add(r[3]); o.dist.add(r[4]); o.last = Math.max(o.last, r[0]);
     });
@@ -1987,7 +1998,7 @@ function trucksByEksp(cols, trucks){
   trucks.forEach(r => { const e = [...r.eksp.entries()].sort((a, b) => b[1] - a[1])[0][0]; (g.get(e) || g.set(e, []).get(e)).push(r); });
   const groups = [...g.entries()].map(([e, rows]) => ({e, rows: rows.sort((a, b) => b.trips - a.trips || b.ton - a.ton), trips: rows.reduce((a, r) => a + r.trips, 0), ton: rows.reduce((a, r) => a + r.ton, 0),
     dS: rows.reduce((a, r) => a + r.dwS, 0), dN: rows.reduce((a, r) => a + r.dwN, 0)})).sort((a, b) => b.ton - a.ton);
-  return groups.map((x, i) => '<details class="trk-grp"' + (i === 0 ? ' open' : '') + '><summary><span class="gn">' + esc(B.dims.eksp[x.e] || 'Angkut sendiri (distributor)') + '</span>' +
+  return groups.map((x, i) => '<details class="trk-grp"' + (i === 0 ? ' open' : '') + '><summary><span class="gn">' + esc(ekspLbl(x.e)) + '</span>' +
     '<span class="gs"><b>' + fmt(x.rows.length) + '</b> truk</span><span class="gs"><b>' + fmt(x.trips) + '</b> trip</span><span class="gs"><b>' + fmt(x.ton) + '</b> t</span><span class="gs">SLA <b>' + (x.dN ? fmt1(x.dS / x.dN) : '–') + '</b> jam</span></summary>' +
     table(cols, x.rows, {limit: 400}) + '</details>').join('');
 }
@@ -2011,12 +2022,12 @@ function pageArmada(){
     B.facts.forEach(f => { if(inPer(f[0], m) && D.dayDow[f[0]] === wd && incOk(f[1]) && srcOk(f[2]) && kemOk(f[10]) && areaProvOk(f[3])){ const o = per.get(f[5]) || {key: f[5], s: 0, n: 0, trips: 0, vol: 0}; o.s += f[8]; o.n += f[9]; o.trips += f[7]; o.vol += f[6]; per.set(f[5], o); } });
     const rows = [...per.values()].filter(o => o.n).map(o => Object.assign(o, {dw: o.s / o.n}));
     openModal('SLA hari ' + DAYS[wd], esc(periodSub()) + ' · per ekspeditur',
-      table([{h:'Ekspeditur', cls:'name', val: o => B.dims.eksp[o.key] || 'Angkut sendiri (distributor)'}, {h:'Rata-rata SLA (jam)', num:true, cls:'pc', val: o => o.dw, html: o => fmt1(o.dw), style: o => 'color:' + slaColor(o.dw)}, {h:'Trip', num:true, val: o => o.trips}, {h:'Tonase', num:true, val: o => o.vol, html: o => fmt(o.vol)}], rows, {go: o => B.dims.eksp[o.key] ? '#/ekspeditur/' + enc(B.dims.eksp[o.key]) : null, sort: 1}));
+      table([{h:'Ekspeditur', cls:'name', val: o => ekspLbl(o.key)}, {h:'Rata-rata SLA (jam)', num:true, cls:'pc', val: o => o.dw, html: o => fmt1(o.dw), style: o => 'color:' + slaColor(o.dw)}, {h:'Trip', num:true, val: o => o.trips}, {h:'Tonase', num:true, val: o => o.vol, html: o => fmt(o.vol)}], rows, {go: o => ekspHref(o.key), sort: 1}));
   }};
   const dwellBars = barsHTML('ad', dow);
   const one = trucks.filter(x => x.trips === 1).length;
   const cols = [{h:'#', cls:'rank', val: r => r.trips, html: (r, i) => '#' + (i + 1)}, {h:'Nopol', cls:'name', val: r => B.dims.truck[r.truck]},
-    {h:'Ekspeditur', val: r => [...r.eksp.keys()].map(e => B.dims.eksp[e] || 'FOT').join(', ')}, {h:'Trip', num:true, val: r => r.trips}, {h:'Tonase', num:true, val: r => r.ton, html: r => fmt(r.ton)},
+    {h:'Ekspeditur', val: r => [...r.eksp.keys()].map(e => B.dims.eksp[e] ? ekspLbl(e) : 'FOT').join(', ')}, {h:'Trip', num:true, val: r => r.trips}, {h:'Tonase', num:true, val: r => r.ton, html: r => fmt(r.ton)},
     {h:'Hari aktif', num:true, val: r => r.days}, {h:'SLA (jam)', num:true, val: r => r.dwN ? r.dwS / r.dwN : null, html: r => r.dwN ? fmt1(r.dwS / r.dwN) : '–'},
     {h:'Aktif', val: r => r.first, html: r => activeTxt(r)}, {h:'Provinsi utama', val: r => tc(B.dims.prov[r.prov])}];
   page('<div class="wrap">' + crumb([['Armada']]) +
