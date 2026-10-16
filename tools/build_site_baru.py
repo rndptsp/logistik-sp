@@ -215,6 +215,9 @@ def read_store(path):
         yield from csv.DictReader(f)
 
 
+EKSP_NAMA_TETAP = {"SMBR": "PT Semen Baturaja Tbk (SMBR)"}   # ekspeditur codes the kamus may not know
+
+
 def build(cfg):
     t0 = time.time()
     base = cfg.get("master_baru") or os.environ.get("MASTER_BARU") or os.path.join(os.path.dirname(ROOT), "MASTER BARU")
@@ -339,8 +342,8 @@ def build(cfg):
         dist_prov.setdefault(di, p)
         code = up(r.get("EXPEDITUR_KODE"))
         if inc.startswith("FRC") and "BATURAJA" in up(r.get("SOURCE_PLANT")) and up(r.get("PROPORSI_SUMBER")) == "DISTRIBUTOR_TACTICAL_SUMUT":
-            code = "TANPA_EKSPEDITUR"   # stored before the Baturaja rule was dropped: distributors get no franco target
-            check["target FRC Baturaja: distributor -> TANPA_EKSPEDITUR"] += 1
+            code = "SMBR"   # stored before the Baturaja rule changed: franco from Baturaja = ekspeditur Semen Baturaja (SMBR)
+            check["target FRC Baturaja: distributor -> SMBR"] += 1
         s = src(up(r.get("SOURCE_PLANT")))
         ton = round(num(r.get("TARGET_TON_BULAN")), 3)
         kem = kemasan(r.get("KEMASAN"))   # optional column; empty = ZAK
@@ -435,7 +438,7 @@ def build(cfg):
         "asOf": days[-1] if days else None,
         "lastDay": last_day,
         "dims": {"inc": INCOTERMS, "prov": prov.items, "dist": dist.items, "eksp": eksp.items, "src": src.items,
-                 "distr": distr.items, "truck": truck.items, "nonKin": nonkin, "kem": kem_d.items, "kapal": kapal_d.items, "kapalInfo": [kapal_info.get(n) for n in kapal_d.items], "ekspNama": [kamus.get(n, "") for n in eksp.items],
+                 "distr": distr.items, "truck": truck.items, "nonKin": nonkin, "kem": kem_d.items, "kapal": kapal_d.items, "kapalInfo": [kapal_info.get(n) for n in kapal_d.items], "ekspNama": [kamus.get(n, "") or EKSP_NAMA_TETAP.get(n, "") for n in eksp.items],
                  # ship-to: [code, name, address, kecamatan index or -1, lat, lon] (lat/lon null when unknown)
                  "toko": [toko_row(i) for i in range(len(toko.items))],
                  "kec": kec.items,

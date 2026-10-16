@@ -1219,7 +1219,15 @@ function distrTargets(per, sc){
 const blankDistr = k => ({key: k, frc: 0, fc: 0, nf: 0, nfz: 0, vol: 0, trips: 0, prov: new Set(), dist: new Set(), toko: new Set(), last: -1});
 
 /* Distributor table (realisasi per incoterm, target distributor & capaian, coverage) for a scope: {} = all, {prov}, {src}. */
+/* Distributor table, one block per kemasan (ZAK / CURAH / JUMBO BAG) in the kemasan filter; list/rows/tot stay overall. */
 function distrTable(m, sc, limit){
+  const all = distrTableOne(m, sc, limit);
+  if(!KEMS().length) return all;
+  const ks = F.kem === 'ALL' ? KEMS().slice() : [F.kem], sv = F.kem;
+  const html = ks.map(k => { F.kem = k; try { const o = distrTableOne(m, sc, limit); return o.list.length ? '<div class="inc-grp" style="--c:var(--black)"><b>' + esc(k) + '</b><small>' + fmt(o.list.length) + ' distributor · ' + fmt(o.tot) + ' t</small></div>' + o.html : ''; } finally { F.kem = sv; } }).join('');
+  return Object.assign(all, {html: html || all.html});
+}
+function distrTableOne(m, sc, limit){
   const rows = shipRows(m, sc), list = distrSummary(rows), tg = distrTargets(m, sc);
   tg.forEach((v, k) => { if(B.dims.distr[k] && !list.some(o => o.key === k)) list.push(blankDistr(k)); });
   list.forEach(o => { o.tgt = tg.get(o.key); o.pct = o.tgt ? pctOf(o.nfz, o.tgt) : null; });

@@ -11,8 +11,8 @@ Aturan bulan baru (>= Juli):
   - Volume = Tactical (Target per baris), harian = vektor harian Tactical.
   - Plant = porsi SNOP per (bulan, kode distrik, term) + asumsi plant (config/settings.json: tanpa_plant).
   - FRC: ekspeditur = proporsi sheet 'Target Ekspeditur' di file monitoring bulan itu (tanpa aturan tambahan),
-    kecuali PP Belawan (Sumut): ekspeditur = distributor (sister company). CP Baturaja SMBR ikut aturan umum
-    (distributor tidak mendapat target franco; konfirmasi Rendy 16-10-2026).
+    kecuali PP Belawan (Sumut): ekspeditur = distributor (sister company); CP Baturaja SMBR: ekspeditur = SMBR 100%
+    (Semen Baturaja; distributor tidak mendapat target franco - konfirmasi Rendy 17-10-2026).
     Distrik tidak ada di monitoring -> proporsi bulan terdekat sebelumnya di data tersimpan, jika tidak ada TANPA_EKSPEDITUR.
   - FRC CONTAINER = SUMA 100%, FRC KAPAL = MKTC 100%; FOT/FOT CONTAINER/FOB/FAS: ekspeditur = distributor.
 Bulan yang sudah ada diganti (bukan ditambah). Backup otomatis ke data/backup/.
@@ -193,6 +193,8 @@ def build(mn,tact,snop,mon,te_old,td_old):
                 if x_<=0: continue
                 f_=x_/tot_;vv=v*f_
                 out.append([2026,mn,mname,'TACTICAL','FRC',p,kd,d,kp,PD.get(pn,pn),pn,e_,vv,f_,src,cat]+[vv*y for y in w])
+        if 'Baturaja' in str(pn):
+            emit({'SMBR':1.0},'TUNGGAL_100','Baturaja: ekspeditur Semen Baturaja (SMBR) 100% (Rendy)');continue
         if p=='SUMATERA UTARA' and 'Belawan' in str(pn):
             z=dist.get((kd,'FRC'))
             if z: emit(dict(z),'DISTRIBUTOR_TACTICAL_SUMUT','Belawan: ekspeditur = distributor (sister company, Rendy)');continue
