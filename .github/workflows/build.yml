@@ -35,13 +35,15 @@ jobs:
         run: python3 tools/ci_report.py running
       - name: Download master store + uploaded files
         run: python3 tools/ci_store.py pull "$MASTER_HOME" "$INBOX" > "$RUNNER_TEMP/build.log" 2>&1 || { grep -E "^GAGAL" "$RUNNER_TEMP/build.log" | head -n 3; exit 1; }
+      - name: Open sealed files from inbox_repo/ (encrypted to the store key; log goes to the admin page)
+        run: python3 tools/repo_inbox.py open "$MASTER_HOME" "$INBOX" >> "$RUNNER_TEMP/build.log" 2>&1
       - name: Update master (log goes to the admin page)
         run: python3 tools/master/run_web.py --inbox "$INBOX" >> "$RUNNER_TEMP/build.log" 2>&1
       - name: Build site (log goes to the admin page)
         run: MASTER_BARU="$MASTER_HOME" python3 tools/build_site_baru.py --master x >> "$RUNNER_TEMP/build.log" 2>&1
       - name: Commit and push data
         run: |
-          mkdir -p "$RUNNER_TEMP/out" && cp data/site.enc data/meta.json "$RUNNER_TEMP/out/"
+          mkdir -p "$RUNNER_TEMP/out" && cp data/site.enc data/meta.json tools/inbox_pub.pem "$RUNNER_TEMP/out/"
           BUILD=$(python3 -c "import json;print(json.load(open('data/meta.json'))['build'])")
           ASOF=$(python3 -c "import json;print(json.load(open('data/meta.json'))['asOf'])")
           git config user.name "logistik-sp admin build"
@@ -50,7 +52,9 @@ jobs:
             git fetch -q origin main && git checkout -q -f -B main origin/main   # -f: outputs are saved in RUNNER_TEMP; code pushed meanwhile must not block
             cp "$RUNNER_TEMP/out/site.enc" "$RUNNER_TEMP/out/meta.json" data/
             sed -E -i "s/(style\.css|app\.js|sumatra\.js)\?v=[^\"]*/\1?v=$BUILD/g" index.html
-            git add data/site.enc data/meta.json index.html
+            cp "$RUNNER_TEMP/out/inbox_pub.pem" tools/
+            for f in $(cat "$MASTER_HOME/_repo_inbox.txt" 2>/dev/null); do git rm -q --ignore-unmatch "$f"; done   # opened: remove the sealed copy
+            git add data/site.enc data/meta.json index.html tools/inbox_pub.pem
             if git diff --cached --quiet; then echo "Data tidak berubah." >> "$RUNNER_TEMP/build.log"; exit 0; fi
             git commit -q -m "Update data dari upload admin: data s.d. $ASOF ($BUILD)"
             git push -q origin main && exit 0
@@ -59,7 +63,7 @@ jobs:
           exit 1
       - name: Save updated master store (only after the site is published)
         run: |
-          if [ -n "$(ls -A "$INBOX"/*.xlsx 2>/dev/null)" ]; then
+          if [ -n "$(ls -A "$INBOX"/*.xlsx 2>/dev/null)" ] || [ -f "$MASTER_HOME/_push_needed" ]; then
             python3 tools/ci_store.py push "$MASTER_HOME" >> "$RUNNER_TEMP/build.log" 2>&1
             python3 tools/ci_store.py promote "$MASTER_HOME" >> "$RUNNER_TEMP/build.log" 2>&1
           else echo "Tanpa file baru: master tersimpan tidak berubah." >> "$RUNNER_TEMP/build.log"; fi

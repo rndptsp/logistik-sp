@@ -9,7 +9,7 @@ import json, os, sys, urllib.request, urllib.error
 URL = os.environ["ADMIN_URL"].rstrip("/") + "/api/build/"
 H = {"authorization": "Bearer " + os.environ["BUILD_TOKEN"], "user-agent": "logistik-sp-build/1.0 (GitHub Actions)"}
 PUSH = ["data/rilis.csv.gz", "data/so.csv.gz", "data/target_ekspeditur.csv.gz", "data/target_distributor.csv.gz", "config/ekspeditur_map.json",
-        "data/gudang.csv.gz", "data/kapal.csv.gz"]   # optional files are skipped when absent
+        "data/gudang.csv.gz", "data/kapal.csv.gz", "config/inbox_key.pem"]   # optional files are skipped when absent
 
 def call(path, method="GET", data=None, ctype=None, timeout=600):
     h = dict(H)
@@ -39,7 +39,7 @@ def main():
         print("slot di inbox:", ", ".join(f["slot"] for f in ib["files"]) or "(kosong: build ulang dari master tersimpan)")
     elif cmd == "push":
         for p in PUSH:
-            if p in ("data/gudang.csv.gz", "data/kapal.csv.gz") and not os.path.exists(os.path.join(home, p)): continue
+            if p in ("data/gudang.csv.gz", "data/kapal.csv.gz", "config/inbox_key.pem") and not os.path.exists(os.path.join(home, p)): continue
             b = open(os.path.join(home, p), "rb").read()
             call("staging/" + p, "PUT", b, "application/octet-stream"); print("staging", p, len(b), "byte")
     elif cmd == "promote":
