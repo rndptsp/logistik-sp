@@ -642,10 +642,8 @@ table.tree td.name small{display:block;color:var(--sub);font-weight:400;font-siz
 .ks-photo{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .ks-noart{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:rgba(255,255,255,.35);font-size:12px}
 .ks-art{width:72%;max-width:300px}
-.ks-tl{width:100%;height:140px;display:block}
 @media (max-width:760px){.ks-hero{grid-template-columns:1fr;padding:18px}.ks-right{min-height:180px}}
 .ks-hero .eyebrow{font-size:12px;text-transform:uppercase;letter-spacing:.08em;font-weight:700}
-@media (max-width:760px){.ks-tl{height:110px}}
 .ks-conf{display:inline-block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:99px;margin-right:8px;background:rgba(255,255,255,.12);color:#fff}
 .ks-conf.ks-tinggi{background:#1baf7a}.ks-conf.ks-sedang{background:#eda100;color:#111}.ks-conf.ks-rendah{background:#c8102e}
 .toko-shared{cursor:pointer}
@@ -654,5 +652,29 @@ table.tree td.name small{display:block;color:var(--sub);font-weight:400;font-siz
 /* per-incoterm group header (tables/panels split by incoterm when several are active) */
 .inc-grp{display:flex;align-items:baseline;gap:8px;margin:18px 0 8px;padding:6px 0 6px 10px;border-left:4px solid var(--c);font-size:13px;letter-spacing:.04em;text-transform:uppercase}
 .inc-grp:first-child{margin-top:4px}
-.inc-grp small{text-transform:none;letter-spacing:0;color:var(--muted);font-weight:400;font-size:12px}
+.inc-grp small{text-transform:none;letter-spacing:0;color:var(--sub);font-weight:400;font-size:12px}
 .dp-panel .inc-grp{margin:12px 0 4px;font-size:12px}
+
+/* 30-day ship timeline per dermaga */
+.kgantt{border:1px solid var(--line);border-radius:10px;background:var(--card,#fff);overflow-x:auto;margin-bottom:6px}
+.kg-row{display:grid;grid-template-columns:190px minmax(560px,1fr);align-items:center;border-top:1px solid var(--line);min-height:38px}
+.kg-row:first-child{border-top:0}
+.kg-head{position:sticky;top:0;background:var(--bg2,#f6f6f6);min-height:34px;font-size:11px;color:var(--sub)}
+.kg-nm{padding:6px 12px;font-weight:700;font-size:13px;color:inherit;text-decoration:none;line-height:1.2;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.kg-nm small{display:block;font-weight:400;font-size:11px;color:var(--sub)}
+.kg-head .kg-nm{font-weight:700;text-transform:uppercase;letter-spacing:.05em;font-size:11px}
+.kg-days{display:grid;grid-template-columns:repeat(30,1fr);height:100%}
+.kg-d{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;padding-bottom:6px;border-left:1px solid var(--line);font-variant-numeric:tabular-nums}
+.kg-d b{font-size:9px;text-transform:uppercase;color:var(--black)}
+.kg-d.sun{color:var(--red)}
+.kg-track{position:relative;height:38px;background:repeating-linear-gradient(90deg,transparent 0,transparent calc(100%/30 - 1px),var(--line) calc(100%/30 - 1px),var(--line) calc(100%/30))}
+.kg-v{position:absolute;top:9px;height:20px;border-radius:5px;background:rgba(235,104,52,.22);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:#7a2a0c;text-decoration:none;z-index:1;overflow:hidden;white-space:nowrap}
+.kg-v.reguler{background:rgba(42,120,214,.2);color:#123f73}
+.kg-lb{position:absolute;top:9px;height:20px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#fff;text-shadow:0 0 3px rgba(0,0,0,.55);z-index:3;pointer-events:none;white-space:nowrap}
+.kg-day{position:absolute;top:9px;height:20px;background:var(--red);border-radius:3px;z-index:2;pointer-events:auto;box-shadow:inset 0 0 0 1px rgba(255,255,255,.5)}
+.kg-day.reguler{background:#2a78d6}
+.kg-v:hover{outline:2px solid var(--black)}
+.kg-key{display:flex;flex-wrap:wrap;gap:14px;font-size:12px;color:var(--sub);margin:6px 0 18px}
+.kg-key i{display:inline-block;width:14px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.kg-key i.kargo{background:var(--red)}.kg-key i.reguler{background:#2a78d6}.kg-key i.span{background:rgba(235,104,52,.22)}
+@media (max-width:760px){.kg-row{grid-template-columns:120px minmax(520px,1fr)}.kg-nm{font-size:12px;padding:6px 8px}}

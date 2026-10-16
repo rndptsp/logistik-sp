@@ -1972,16 +1972,35 @@ const kapalInfo = name => { const K = B.dims.kapal || [], i = K.indexOf(String(n
 /* Commons file page -> direct thumbnail (Special:FilePath redirects to upload.wikimedia.org). */
 const commonsImg = (u, w) => { const m = /\/wiki\/File:(.+)$/.exec(u || ''); return m ? 'https://commons.wikimedia.org/wiki/Special:FilePath/' + m[1] + '?width=' + (w || 900) : (u || ''); };
 const SHIP_SVG = '<svg viewBox="0 0 320 150" class="ks-art" aria-hidden="true"><path d="M18 96h284l-30 34H52z" fill="currentColor" opacity=".9"/><rect x="70" y="62" width="150" height="34" rx="3" fill="currentColor" opacity=".55"/><rect x="190" y="30" width="56" height="66" rx="4" fill="currentColor" opacity=".75"/><rect x="200" y="40" width="36" height="10" rx="2" fill="#0f1a21" opacity=".5"/><rect x="226" y="12" width="10" height="20" fill="currentColor" opacity=".6"/><path d="M0 140c26-8 54-8 80 0s54 8 80 0 54-8 80 0 54 8 80 0" stroke="currentColor" stroke-width="3" fill="none" opacity=".35"/></svg>';
-/* Voyage timeline: one block per voyage across the period, height = tonnage; gaps between blocks = time between voyages. */
-function voyageTimeline(vs, m){
-  if(!vs.length) return '';
-  const d0 = B.days.indexOf(m.from) >= 0 ? B.days.indexOf(m.from) : vs[0].d0, d1 = B.days.indexOf(m.to) >= 0 ? B.days.indexOf(m.to) : vs[vs.length - 1].d1;
-  const span = Math.max(1, d1 - d0 + 1), mx = Math.max(...vs.map(v => v.vol)), W = 1000, H = 120;
-  const x = d => (d - d0) / span * W;
-  const bars = vs.map(v => { const h = Math.max(6, v.vol / mx * (H - 26)), w = Math.max(6, x(v.d1 + 1) - x(v.d0) - 2);
-    return '<rect x="' + x(v.d0).toFixed(1) + '" y="' + (H - 18 - h).toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="2" fill="var(--red)"><title>Voyage #' + v.n + ' · ' + shortDate(B.days[v.d0]) + (v.d1 !== v.d0 ? '–' + shortDate(B.days[v.d1]) : '') + ' · ' + fmt(v.vol) + ' t</title></rect>'; }).join('');
-  const ticks = []; for(let d = d0; d <= d1; d++){ const ds = B.days[d]; if(ds && (ds.slice(8) === '01' || (span <= 45 && +ds.slice(8) % 7 === 1))) ticks.push('<text x="' + x(d).toFixed(1) + '" y="' + (H - 4) + '" font-size="11" fill="var(--muted)">' + shortDate(ds) + '</text>'); }
-  return '<svg viewBox="0 0 ' + W + ' ' + H + '" class="ks-tl" preserveAspectRatio="none"><line x1="0" x2="' + W + '" y1="' + (H - 18) + '" y2="' + (H - 18) + '" stroke="var(--line)"/>' + bars + ticks.join('') + '</svg>';
+/* 30-day loading timeline per dermaga (loading point = source plant): one row per vessel in order of arrival,
+   a light bar spans each voyage, solid blocks mark the loading days. name: only that vessel. */
+const dermagaLbl = si => tc(B.dims.src[si] || '(tanpa dermaga)').replace(/^Vp Transhpmnt Pdg Sp$/i, 'VP Transhipment Padang');
+function shipGantt(m, name){
+  const end = Math.max(0, B.days.indexOf(m.to) >= 0 ? B.days.indexOf(m.to) : B.days.length - 1), start = Math.max(0, end - 29), N = end - start + 1;
+  const rows = kapalRows(makePer('range', B.days[start], B.days[end]), name == null ? null : name).filter(r => shipName(r));
+  if(!rows.length) return '';
+  const bySrc = new Map();
+  rows.forEach(r => { const g = bySrc.get(r[2]) || bySrc.set(r[2], new Map()).get(r[2]), nm = shipName(r); (g.get(nm) || g.set(nm, []).get(nm)).push(r); });
+  const pc = d => ((d - start) / N * 100).toFixed(3) + '%', wd = n => (n / N * 100).toFixed(3) + '%';
+  let head = '';
+  for(let d = start; d <= end; d++){ const ds = B.days[d], dw = D.dayDow[d], first = d === start || ds.slice(8) === '01';
+    head += '<span class="kg-d' + (dw === 0 ? ' sun' : '') + '"' + ' title="' + esc(dayLabel(ds)) + '">' + (first ? '<b>' + MON3[+ds.slice(5, 7) - 1] + '</b>' : '') + +ds.slice(8) + '</span>'; }
+  const blocks = [...bySrc.entries()].map(([si, ships]) => {
+    const list = [...ships.entries()].map(([nm, rs]) => ({nm, rs, vs: voyagesOf(rs), vol: rs.reduce((a, r) => a + r[8], 0), kind: shipKind(nm)}));
+    list.forEach(o => o.first = Math.min(...o.vs.map(v => v.d0)));
+    list.sort((a, b) => a.first - b.first || b.vol - a.vol);
+    const vol = list.reduce((a, o) => a + o.vol, 0), nv = list.reduce((a, o) => a + o.vs.length, 0);
+    const lines = list.map(o => {
+      const dayT = new Map(); o.rs.forEach(r => dayT.set(r[0], (dayT.get(r[0]) || 0) + r[8]));
+      const bars = o.vs.map(v => '<a class="kg-v ' + o.kind + '" href="#/kapal/' + enc(o.nm) + '" style="left:' + pc(v.d0) + ';width:' + wd(v.d1 - v.d0 + 1) + '" title="' + esc(o.nm.replace(/^KAPAL /, '') + ' · ' + shortDate(B.days[v.d0]) + (v.d1 !== v.d0 ? '–' + shortDate(B.days[v.d1]) : '') + ' · ' + fmt(v.vol) + ' t · ' + v.days.size + ' hari muat') + '">' +
+        '</a>' + (v.d1 - v.d0 + 1 >= 2 ? '<span class="kg-lb" style="left:' + pc(v.d0) + ';width:' + wd(v.d1 - v.d0 + 1) + '">' + fmt(v.vol) + ' t</span>' : '')).join('') +
+        [...dayT.entries()].map(([d, t]) => '<i class="kg-day ' + o.kind + '" style="left:' + pc(d) + ';width:' + wd(1) + '" title="' + esc(dayLabel(B.days[d]) + ' · ' + fmt(t) + ' t') + '"></i>').join('');
+      return '<div class="kg-row"><a class="kg-nm" href="#/kapal/' + enc(o.nm) + '">' + esc(o.nm.replace(/^KAPAL /, '')) + '<small>' + o.kind + ' · ' + fmt(o.vol) + ' t</small></a><div class="kg-track">' + bars + '</div></div>';
+    }).join('');
+    return {vol, html: (name == null ? '<div class="inc-grp" style="--c:var(--black)"><b>' + esc(dermagaLbl(si)) + '</b><small>' + fmt(list.length) + ' kapal · ' + fmt(nv) + ' voyage · ' + fmt(vol) + ' t</small></div>' : '') +
+      '<div class="kgantt"><div class="kg-row kg-head"><span class="kg-nm">' + (name == null ? 'Kapal (urut kedatangan)' : esc(dermagaLbl(si))) + '</span><div class="kg-days">' + head + '</div></div>' + lines + '</div>'};
+  }).sort((a, b) => b.vol - a.vol);
+  return blocks.map(b => b.html).join('') + '<div class="kg-key"><span><i class="kargo"></i>kapal kargo</span><span><i class="reguler"></i>kapal reguler</span><span><i class="span"></i>rentang voyage</span><span>blok pekat = hari muat · ' + shortDate(B.days[start]) + ' – ' + shortDate(B.days[end]) + '</span></div>';
 }
 function pageKapalDetail(name){
   const m = PER(), rows = kapalRows(m, name);
@@ -2013,8 +2032,8 @@ function pageKapalDetail(name){
       (facts.length ? '<dl class="ks-facts">' + facts.map(f => '<div><dt>' + f[0] + '</dt><dd>' + esc(String(f[1])) + '</dd></div>').join('') + '</dl>' : '<div class="ks-empty">Data registri kapal (IMO, GT, operator) belum ada di master kapal.</div>') +
       (srcLinks.length ? '<div class="ks-src">' + conf + (I.catatan && facts.length ? esc(I.catatan) + ' · ' : '') + 'Sumber: ' + srcLinks.map(u => '<a href="' + esc(u) + '" target="_blank" rel="noopener">' + esc(u.replace(/^https:\/\/(www\.)?/, '').split('/')[0]) + '</a>').join(' · ') + '</div>' : '') +
     '</div><div class="ks-right">' + photo + '</div></section>' +
-    '<div class="section-head"><div class="section-title">Timeline voyage</div><div class="section-link">tinggi batang = tonase · celah = jeda antar voyage</div></div>' +
-    (vs.length ? '<div class="dp-panel">' + voyageTimeline(vs, m) + '</div>' : '<div class="dp-review">Tidak ada muatan kapal ini pada filter (plant, kemasan, periode).' + (() => { let l = -1; B.ship.forEach(r => { if(shipName(r) === name) l = Math.max(l, r[0]); }); return l >= 0 ? ' Muat terakhir di data: <b>' + dayLabel(B.days[l]) + '</b> — ubah periode untuk melihat riwayatnya.' : ''; })() + '</div>') +
+    '<div class="section-head"><div class="section-title">Timeline 30 hari</div></div>' + (shipGantt(m, name) || '<div class="dp-review">Tidak ada muatan kapal ini dalam 30 hari terakhir periode.</div>') +
+    (vs.length ? '' : '<div class="dp-review">Tidak ada muatan kapal ini pada filter (plant, kemasan, periode).' + (() => { let l = -1; B.ship.forEach(r => { if(shipName(r) === name) l = Math.max(l, r[0]); }); return l >= 0 ? ' Muat terakhir di data: <b>' + dayLabel(B.days[l]) + '</b> — ubah periode untuk melihat riwayatnya.' : ''; })() + '</div>') +
     (rows.length ? '<div class="dp-cols even"><div class="dp-panel"><div class="pt">Muat dari</div>' + rr(src, k => tc(B.dims.src[k] || '(tanpa plant)'), k => B.dims.src[k] ? '#/plant/' + enc(B.dims.src[k]) : null) + '</div>' +
       '<div class="dp-panel"><div class="pt">Tujuan provinsi</div>' + rr(prov, k => tc(B.dims.prov[k]), k => '#/provinsi/' + enc(B.dims.prov[k])) + '</div></div>' : '') +
     (vs.length ? '<div class="section-head"><div class="section-title">Riwayat voyage</div></div>' + table(cols, vs.slice().reverse(), {limit: 200}) : '') +
@@ -2024,27 +2043,42 @@ function pageKapalDetail(name){
 function pageKapal(){
   const sv = [F.inc, F.moda]; F.inc = 'ALL'; F.moda = 'LAUT';
   try {
-    const m = PER(), rows = shipRows(m), by = new Map(), tot = rows.reduce((a, r) => a + r[8], 0);
-    rows.forEach(r => {
-      const nm = shipName(r), k = nm || '\u0000';
-      let o = by.get(k); if(!o){ o = {k, nm: k === '\u0000' ? '(kapal tidak tercatat di sumber)' : nm, vol: 0, trips: 0, days: new Set(), inc: new Set(), distr: new Set(), prov: new Set(), dist: new Set(), last: -1, rows: []}; by.set(k, o); }
-      o.rows.push(r); o.vol += r[8]; o.trips += r[9]; o.days.add(r[0]); o.inc.add(INCS()[r[1]]); o.distr.add(r[5]); o.prov.add(r[3]); o.dist.add(r[4]); o.last = Math.max(o.last, r[0]);
-    });
-    const list = [...by.values()].sort((a, b) => (a.k === '\u0000') - (b.k === '\u0000') || b.vol - a.vol);
-    list.forEach(o => { o.voy = o.k === '\u0000' ? null : voyagesOf(o.rows).length; o.rows = null; });
-    list.forEach((o, i) => o.rank = o.k === '\u0000' ? null : i + 1);
-    const cols = [{h:'#', cls:'rank', val: o => o.rank || 999, html: o => o.rank ? '#' + o.rank : '–'}, {h:'Kapal', cls:'name', val: o => o.nm, html: o => { const I = o.k === '\u0000' ? null : kapalInfo(o.nm); return esc(o.nm.replace(/^KAPAL /, '')) + (I && (I.jenis || I.gt) ? '<small>' + esc([I.jenis, I.gt && 'GT ' + I.gt].filter(Boolean).join(' · ')) + '</small>' : ''); }},
+    const m = PER(), rows = shipRows(m), tot = rows.reduce((a, r) => a + r[8], 0);
+    const agg = rs => {
+      const by = new Map();
+      rs.forEach(r => {
+        const nm = shipName(r), k = nm || '\u0000';
+        let o = by.get(k); if(!o){ o = {k, nm: k === '\u0000' ? '(kapal tidak tercatat di sumber)' : nm, vol: 0, trips: 0, days: new Set(), inc: new Set(), distr: new Set(), prov: new Set(), dist: new Set(), last: -1, rows: []}; by.set(k, o); }
+        o.rows.push(r); o.vol += r[8]; o.trips += r[9]; o.days.add(r[0]); o.inc.add(INCS()[r[1]]); o.distr.add(r[5]); o.prov.add(r[3]); o.dist.add(r[4]); o.last = Math.max(o.last, r[0]);
+      });
+      const list = [...by.values()].sort((a, b) => (a.k === '\u0000') - (b.k === '\u0000') || b.vol - a.vol);
+      list.forEach(o => { o.voy = o.k === '\u0000' ? null : voyagesOf(o.rows).length; o.rows = null; });
+      list.forEach((o, i) => o.rank = o.k === '\u0000' ? null : i + 1);
+      return list;
+    };
+    const cols = [{h:'#', cls:'rank', val: o => o.rank || 999, html: o => o.rank ? '#' + o.rank : '–'}, {h:'Kapal', cls:'name', val: o => o.nm, html: o => { const I = o.k === '\u0000' ? null : kapalInfo(o.nm); return esc(o.nm.replace(/^KAPAL /, '')) + '<small>' + esc([o.k === '\u0000' ? '' : 'kapal ' + shipKind(o.nm), I && I.jenis, I && I.gt && 'GT ' + I.gt].filter(Boolean).join(' · ')) + '</small>'; }},
       {h:'Voyage', num:true, val: o => o.voy == null ? -1 : o.voy, html: o => o.voy == null ? '–' : fmt(o.voy)}, {h:'Tonase (t)', num:true, val: o => o.vol, html: o => '<b>' + fmt(o.vol) + '</b>'},
       {h:'t / voyage', num:true, val: o => o.voy ? o.vol / o.voy : 0, html: o => o.voy ? fmt(o.vol / o.voy) : '–'}, {h:'Hari muat', num:true, val: o => o.days.size},
+      {h:'Muat terakhir', val: o => o.last, html: o => o.last >= 0 ? shortDate(B.days[o.last]) : '–'},
       {h:'Distributor', val: o => o.distr.size, html: o => setTxt(o.distr, B.dims.distr, 'distributor')}, {h:'Provinsi', val: o => o.prov.size, html: o => setTxt(o.prov, B.dims.prov, 'provinsi')},
       {h:'Distrik', val: o => o.dist.size, html: o => setTxt(o.dist, B.dims.dist, 'distrik')}];
-    cols[2].total = fmt(list.reduce((a, o) => a + (o.voy || 0), 0)); cols[3].total = fmt(tot);
-    const named = list.filter(o => o.k !== '\u0000'), unk = by.get('\u0000');
+    const all = agg(rows), named = all.filter(o => o.k !== '\u0000'), unk = all.find(o => o.k === '\u0000');
+    // grouping: per dermaga (loading point = source plant); vessel names exist for FOB only, so an incoterm split adds nothing
+    const srcs = [...new Set(rows.map(r => r[2]))].map(si => ({si, rs: rows.filter(r => r[2] === si)})).map(g => Object.assign(g, {vol: g.rs.reduce((a, r) => a + r[8], 0)})).sort((a, b) => b.vol - a.vol);
+    const groups = srcs.map(g => {
+      const list = agg(g.rs), c = cols.map(x => Object.assign({}, x)), n = list.filter(o => o.k !== '\u0000');
+      c[2].total = fmt(list.reduce((a, o) => a + (o.voy || 0), 0)); c[3].total = fmt(g.vol);
+      return '<div class="inc-grp" style="--c:var(--black)"><b>' + esc(dermagaLbl(g.si)) + '</b><small>' + fmt(n.length) + ' kapal · ' + fmt(g.vol) + ' t · ' + pctTxt(pctOf(g.vol, tot)) + ' tonase laut</small></div>' +
+        table(c, list, {total: true, limit: 400, go: o => o.k === '\u0000' ? null : '#/kapal/' + enc(o.nm)});
+    }).join('');
+    const gantt = shipGantt(m);
     page('<div class="wrap">' + crumb([['Kapal']]) +
-      '<div class="dp-head"><div><div class="nm">Kapal · moda laut</div><div class="sub">' + fmt(named.length) + ' kapal · voyage: kapal reguler (rata-rata < ' + VOY_SMALL + ' t/hari muat) = tiap hari muat; kapal kargo = hari muat berjeda ≤ ' + VOY_GAP + ' hari · ' + periodSub() + '</div></div></div>' +
+      '<div class="dp-head"><div><div class="nm">Kapal · moda laut</div><div class="sub">' + fmt(named.length) + ' kapal di ' + fmt(srcs.length) + ' dermaga · voyage: kapal reguler (rata-rata < ' + VOY_SMALL + ' t/hari muat) = tiap hari muat; kapal kargo = hari muat berjeda ≤ ' + VOY_GAP + ' hari · ' + periodSub() + '</div></div></div>' +
       '<div class="dp-hint" style="font-size:12px;color:var(--sub);margin:-6px 0 14px">Filter aktif: ' + srcTxt() + ' · kemasan <b>' + (F.kem === 'ALL' ? 'semua' : esc(F.kem)) + '</b> · <a class="section-link" data-act="openfilter" style="cursor:pointer;color:var(--red);font-weight:700">ubah filter</a></div>' +
       (unk && tot ? '<div class="dp-review">' + pctTxt(pctOf(unk.vol, tot)) + ' tonase laut periode ini (' + fmt(unk.vol) + ' t) belum punya nama kapal di sumber Rilis. Yang tercatat nama kapalnya baru FOB; FAS, kontainer, FRC KAPAL, FRC KONTAINER dan FOB KAPAL (polysling) menunggu data tambahan.</div>' : '') +
-      (list.length ? table(cols, list, {total: true, limit: 400, go: o => o.k === '\u0000' ? null : '#/kapal/' + enc(o.nm)}) : '<div class="dp-review">Tidak ada pengiriman laut pada filter ini (plant, kemasan, periode).</div>') + '</div>', 'armada');
+      (gantt ? '<div class="section-head"><div class="section-title">Timeline 30 hari per dermaga</div><div class="section-sub">kapal masuk berurutan dari atas · klik bar untuk detail kapal</div></div>' + gantt : '') +
+      '<div class="section-head"><div class="section-title">Daftar kapal per dermaga</div></div>' +
+      (rows.length ? groups : '<div class="dp-review">Tidak ada pengiriman laut pada filter ini (plant, kemasan, periode).</div>') + '</div>', 'armada');
   } finally { F.inc = sv[0]; F.moda = sv[1]; }
 }
 /* Truck list grouped by main ekspeditur (the one with most trips): one collapsible sub-header per ekspeditur, biggest first. */
