@@ -1065,7 +1065,17 @@ function kecMapSection(name, pname, m, di){
       pins += pin(o, g.cx + rr * Math.cos(a), g.cy + rr * Math.sin(a), true);
     });
   });
-  exact.sort((a, b) => b.vol - a.vol).forEach(o => { pins += pin(o, o.x, o.y, false); });
+  /* Shared warehouse (gudang bersama): ship-tos on the same coordinate become one pin with a count. */
+  const spot = new Map();
+  exact.forEach(o => { const k = o.x.toFixed(2) + ',' + o.y.toFixed(2); (spot.get(k) || spot.set(k, []).get(k)).push(o); });
+  [...spot.values()].sort((a, b) => b.reduce((x, o) => x + o.vol, 0) - a.reduce((x, o) => x + o.vol, 0)).forEach(l => {
+    if(l.length === 1) return pins += pin(l[0], l[0].x, l[0].y, false);
+    l.sort((a, b) => b.vol - a.vol); l.forEach(o => o.shared = l.length);
+    const v = l.reduce((x, o) => x + o.vol, 0), tr = l.reduce((x, o) => x + o.trips, 0), r = fs * (0.42 + 0.38 * Math.sqrt(Math.min(1, v / maxT))), o = l[0];
+    const tip = 'Gudang bersama · ' + l.length + ' ship-to|' + (o.kec >= 0 ? 'Kec. ' + K.d[o.kec].n + '|' : '') + fmt(v) + ' t · ' + fmt(tr) + ' trip|' + l.map(q => { const t = B.dims.toko[q.ti]; return (t[1] || t[0]) + ': ' + fmt(q.vol) + ' t'; }).join('|');
+    pins += '<g class="toko-shared" data-tip="' + esc(tip) + '"><circle class="toko-pin" cx="' + o.x.toFixed(1) + '" cy="' + o.y.toFixed(1) + '" r="' + r.toFixed(2) + '" stroke-width="1.6" vector-effect="non-scaling-stroke"/>' +
+      '<text x="' + o.x.toFixed(1) + '" y="' + o.y.toFixed(1) + '" class="toko-n" style="font-size:' + (r * 1.1).toFixed(2) + 'px">' + l.length + '</text></g>';
+  });
   const svg = '<svg class="map-svg" viewBox="' + K.vb.join(' ') + '" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Peta kecamatan dan toko/gudang tujuan di ' + esc(tc(name)) + '">' +
     shapes + labels + pins + '</svg>';
   const list = [...per.values()].filter(o => (B.dims.toko[o.ti] || [])[0]).sort((a, b) => b.vol - a.vol);
@@ -1076,7 +1086,7 @@ function kecMapSection(name, pname, m, di){
   const head = list.length ? '<b>' + list.length + ' toko/gudang</b> menerima ' + fmt(tot) + ' t di ' + esc(tc(name)) + '. 3 teratas menyerap <b>' + pctTxt(pctOf(top3, tot)) + '</b> tonase' +
     (kecTop ? '; kecamatan terpadat: <b>' + esc(kecTop[0]) + '</b>.' : '.') : 'Belum ada toko/gudang tujuan tercatat di ' + esc(tc(name)) + ' untuk filter ini.';
   const dot = o => o.x != null ? 'var(--red)' : o.kec >= 0 ? '#F08A90' : '#5B6B74';
-  const rows = list.map((o, r) => { const t = B.dims.toko[o.ti]; return '<div class="mh-row mh-row2"><span class="mh-rk">' + (r + 1) + '</span><span class="mh-nm"><b class="mh-dot" style="background:' + dot(o) + '"></b>' + esc(t[1] || t[0]) + '<small>' + esc(o.kec >= 0 ? 'Kec. ' + K.d[o.kec].n : (t[2] || 'lokasi belum diketahui')) + '</small><i style="width:' + (o.vol / maxV * 100) + '%;background:#5FD08F"></i></span><span class="mh-tn">' + fmt(o.vol) + ' t</span><span class="mh-pc">' + pctTxt(pctOf(o.vol, tot)) + '</span></div>'; }).join('');
+  const rows = list.map((o, r) => { const t = B.dims.toko[o.ti]; return '<div class="mh-row mh-row2"><span class="mh-rk">' + (r + 1) + '</span><span class="mh-nm"><b class="mh-dot" style="background:' + dot(o) + '"></b>' + esc(t[1] || t[0]) + '<small>' + esc(o.kec >= 0 ? 'Kec. ' + K.d[o.kec].n : (t[2] || 'lokasi belum diketahui')) + (o.shared ? ' · gudang bersama (' + o.shared + ')' : '') + '</small><i style="width:' + (o.vol / maxV * 100) + '%;background:#5FD08F"></i></span><span class="mh-tn">' + fmt(o.vol) + ' t</span><span class="mh-pc">' + pctTxt(pctOf(o.vol, tot)) + '</span></div>'; }).join('');
   const note = list.length ? '<div class="mh-note">' + nEx + ' toko/gudang berkoordinat · ' + nAp + ' di pusat kecamatan (perkiraan)' + (nNo ? ' · ' + nNo + ' belum terpetakan' : '') + '. Koordinat bisa diupload di halaman admin, slot <i>Lokasi gudang / toko</i>.</div>' : '';
   return heroPanel({photo: pname, cls: 'kmap', eyebrow: 'Peta kecamatan &amp; toko/gudang tujuan · <a href="#/provinsi/' + enc(pname) + '">peta ' + esc(tc(pname)) + ' &rsaquo;</a>', head,
       chips: kpiChips(total(m, {dist: di})).concat(heroChip('Toko / gudang', fmt(list.length) + ' <small>di ' + byKec.size + '/' + K.d.length + ' kec.</small>', (list.length ? pctTxt(pctOf(nEx + nAp, list.length)) : '–') + ' terpetakan · ' + nEx + ' berkoordinat')),

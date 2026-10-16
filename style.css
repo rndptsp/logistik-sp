@@ -648,3 +648,6 @@ table.tree td.name small{display:block;color:var(--sub);font-weight:400;font-siz
 @media (max-width:760px){.ks-tl{height:110px}}
 .ks-conf{display:inline-block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;padding:2px 7px;border-radius:99px;margin-right:8px;background:rgba(255,255,255,.12);color:#fff}
 .ks-conf.ks-tinggi{background:#1baf7a}.ks-conf.ks-sedang{background:#eda100;color:#111}.ks-conf.ks-rendah{background:#c8102e}
+.toko-shared{cursor:pointer}
+.toko-shared .toko-pin{stroke:#fff}
+.toko-n{fill:#fff;font-weight:800;text-anchor:middle;dominant-baseline:central;pointer-events:none}
