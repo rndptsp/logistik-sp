@@ -719,3 +719,15 @@ table.tree td.name small{display:block;color:var(--sub);font-weight:400;font-siz
 .dp-panel:has(.cap-tbl){border:0;padding:0;background:none}
 .dp-panel:has(.cap-tbl) .pt{margin-bottom:10px;color:var(--black)}
 .dp-panel:has(.cap-tbl) .inc-grp:first-of-type{margin-top:0}
+/* frozen first column(s) and header row */
+.tbl-wrap.tall{max-height:70vh}
+.tbl th{z-index:2}
+.tbl th.fz,.tbl td.fz{position:sticky;left:0;background:var(--white)}
+.tbl th.fz{z-index:3;background:var(--gray-l)}
+.tbl td.fz{z-index:1}
+.tbl th.fz0,.tbl td.fz0.rank{min-width:44px;width:44px;max-width:44px;box-sizing:border-box}
+.tbl th.fz1,.tbl td.fz1{left:44px}
+.tbl .fzl{box-shadow:inset -1px 0 0 var(--line),4px 0 6px -4px rgba(0,0,0,.18)}
+.tbl tr.go:hover td.fz{background:#FAFAFA}
+.tbl tr.total td.fz{background:inherit}
+.tbl td.name.fz{max-width:46vw}

@@ -553,7 +553,7 @@ function table(cols, rows, opt){
   opt = opt || {};
   const id = 'tb' + Math.random().toString(36).slice(2, 8);
   TABLES[id] = {cols, rows, opt, sort: opt.sort || null, dir: opt.dir || -1};
-  return '<div class="tbl-wrap" id="' + id + '">' + tableInner(id) + '</div>';
+  return '<div class="tbl-wrap' + (rows.length > 15 ? ' tall' : '') + '" id="' + id + '">' + tableInner(id) + '</div>';   // tall: own scroll area so the header row stays frozen
 }
 function tableInner(id){
   const T = TABLES[id];
@@ -563,12 +563,15 @@ function tableInner(id){
     rows.sort((a, b) => { const x = v(a), y = v(b); if(x == null && y == null) return 0; if(x == null) return 1; if(y == null) return -1; return (x < y ? -1 : x > y ? 1 : 0) * T.dir; });
   }
   const lim = T.opt.limit || 500;
-  const head = '<tr>' + T.cols.map((c, i) => '<th class="' + (c.num ? 'num' : '') + '" data-sort="' + id + ':' + i + '">' + c.h + (T.sort === i ? '<span class="arr">' + (T.dir > 0 ? '▲' : '▼') + '</span>' : '') + '</th>').join('') + '</tr>';
+  // frozen columns: the first one, plus the next when the first is only a rank number (#)
+  const nfz = /\brank\b/.test(T.cols[0] && T.cols[0].cls || '') && T.cols.length > 2 ? 2 : 1;
+  const fz = i => i < nfz ? ' fz fz' + i + (i === nfz - 1 ? ' fzl' : '') : '';
+  const head = '<tr>' + T.cols.map((c, i) => '<th class="' + (c.num ? 'num' : '') + fz(i) + '" data-sort="' + id + ':' + i + '">' + c.h + (T.sort === i ? '<span class="arr">' + (T.dir > 0 ? '▲' : '▼') + '</span>' : '') + '</th>').join('') + '</tr>';
   const body = rows.slice(0, lim).map((r, ri) => {
     const href = T.opt.go ? T.opt.go(r) : null;
-    return '<tr' + (href ? ' class="go" data-href="' + href + '"' : '') + '>' + T.cols.map(c => '<td class="' + (c.cls || '') + (c.num ? ' num' : '') + '"' + (c.style ? ' style="' + c.style(r) + '"' : '') + '>' + (c.html ? c.html(r, ri) : esc(c.val(r))) + '</td>').join('') + '</tr>';
+    return '<tr' + (href ? ' class="go" data-href="' + href + '"' : '') + '>' + T.cols.map((c, i) => '<td class="' + (c.cls || '') + (c.num ? ' num' : '') + fz(i) + '"' + (c.style ? ' style="' + c.style(r) + '"' : '') + '>' + (c.html ? c.html(r, ri) : esc(c.val(r))) + '</td>').join('') + '</tr>';
   }).join('');
-  const tot = T.opt.total ? '<tr class="total">' + T.cols.map(c => '<td class="' + (c.num ? 'num' : '') + '">' + (c.total != null ? c.total : c.cls === 'name' ? 'TOTAL' : '') + '</td>').join('') + '</tr>' : '';
+  const tot = T.opt.total ? '<tr class="total">' + T.cols.map((c, i) => '<td class="' + (c.num ? 'num' : '') + fz(i) + '">' + (c.total != null ? c.total : c.cls === 'name' ? 'TOTAL' : '') + '</td>').join('') + '</tr>' : '';
   const more = rows.length > lim ? '<tr><td colspan="' + T.cols.length + '" style="color:var(--sub)">… ' + (rows.length - lim) + ' baris lainnya tidak ditampilkan</td></tr>' : '';
   return '<table class="tbl"><thead>' + head + '</thead><tbody>' + body + tot + more + '</tbody></table>';
 }
