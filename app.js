@@ -437,7 +437,7 @@ function cmpOptions(T){
     const ds = [...D.liveDist].filter(i => i !== sc.dist && B.dims.distProv[i] === p).sort((a, b) => B.dims.dist[a].localeCompare(B.dims.dist[b]));
     groups.push(['Distrik lain di ' + tc(B.dims.prov[p]), ds.map(i => ['dist:' + i, tc(B.dims.dist[i])])]);
   } else if(sc.eksp != null){
-    groups.push(['Ekspeditur lain', D.ekspList.filter(e => D.ekspIdx[e] !== sc.eksp).map(e => ['eksp:' + D.ekspIdx[e], e])]);
+    groups.push(['Ekspeditur lain', D.ekspList.filter(e => D.ekspIdx[e] !== sc.eksp).map(e => ['eksp:' + D.ekspIdx[e], ekspLbl(D.ekspIdx[e])]).sort((a, b) => a[1].localeCompare(b[1]))]);
   } else {
     groups.push(['Provinsi', [...D.liveProv].filter(i => i !== sc.prov).sort((a, b) => B.dims.prov[a].localeCompare(B.dims.prov[b])).map(i => ['prov:' + i, tc(B.dims.prov[i])])]);
   }
@@ -466,7 +466,7 @@ function trendInner(id){
 let MODAL = null;
 /* Ekspeditur = the carrier: FRC* -> the transporter (full name from the kamus); every other incoterm -> the
    distributor itself (it arranges the haul). Labels drop the legal form; links go to the right page. */
-const coLbl = n => String(n || '').replace(/\s*\(PERSERO\)/i, '').replace(/[\s,.]*\bPT\.?\s*$/i, '').replace(/^\s*PT\.?\s+/i, '').trim();
+const coLbl = n => String(n || '').replace(/[\s,.]+P\.?$/i, m => /,/.test(m) ? '' : m).replace(/[\s,.]+$/, '').replace(/\s*\(PERSERO\)/i, '').replace(/[\s,.]*\bPT\.?\s*$/i, '').replace(/^\s*PT\.?\s+/i, '').trim();
 const distrLbl = k => coLbl(tc(B.dims.distr[k] || '')) || tc(B.dims.distr[k] || '');   // distributor name without the legal form
 const ekspLbl = k => { const c = B.dims.eksp[k]; if(!c) return 'Angkut sendiri (distributor)'; if(c === 'TANPA_EKSPEDITUR') return 'Belum dialokasikan ke ekspeditur'; const n = (B.dims.ekspNama || [])[k]; return coLbl(n || c) || c; };
 const ekspHref = k => { const c = B.dims.eksp[k]; if(!c || c === 'TANPA_EKSPEDITUR') return null; if(D.frcEksp.has(k)) return '#/ekspeditur/' + enc(c); return D.distrIdx[c] != null ? '#/distributor/' + enc(c) : null; };
@@ -1312,7 +1312,7 @@ function pageDistr(name){
     const mm = data[i].month, nodes = buildTree(shipRows(mm, sc), ['prov', 'dist', 'toko']);
     openModal(tc(name) + ' · ' + monthLabel(mm), 'Tujuan kirim per provinsi › distrik › toko', nodes.length ? treeHTML(annotateDistrTargets(nodes, mm, {distr: di}), ['prov', 'dist', 'toko'], {distrTgt: true}) : '<div class="dp-review">Tidak ada pengiriman di bulan ini.</div>');
   }};
-  page('<div class="wrap">' + crumb([['Wilayah', '#/provinsi'], ['Distributor', '#/distributor'], [tc(name)]]) +
+  page('<div class="wrap">' + crumb([['Wilayah', '#/provinsi'], ['Distributor', '#/distributor'], [coLbl(tc(name)) || tc(name)]]) +
     '<div class="dp-head"><div><div class="nm">' + esc(coLbl(tc(name)) || tc(name)) + '</div><div class="sub">Distributor · ' + incName() + ' · ' + periodSub() + '</div></div></div>' +
 
     '<div class="dp-grid4">' +
@@ -1929,7 +1929,7 @@ function pageForecast(gran){
       '<div class="prog-cell"><div class="pl">Proyeksi minggu</div><div class="pv" style="color:' + tierColor(pctOf(proj, wTgt)) + '">' + fmt(proj) + ' t</div><div class="pd">laju ' + fmt(runrate) + ' t/hari</div></div>' +
       '<div class="prog-cell"><div class="pl">Target minggu penuh</div><div class="pv">' + fmt(wTgt) + ' t</div><div class="pd">proyeksi ' + pctTxt(pctOf(proj, wTgt)) + '</div></div></div>' +
       '<div class="dp-panel" style="margin-bottom:34px"><div class="pt">Realisasi ' + incName() + ' per hari vs target ' + tgtLbl() + ', ' + days[0].getDate() + ' ' + MON3[days[0].getMonth()] + ' – ' + days[6].getDate() + ' ' + MON3[days[6].getMonth()] + '</div>' + barsHTML(id, data) +
-      '<div class="trend-legend">' + LG_NUM + '<span><i style="background:var(--green)"></i>&ge;100%</span><span><i style="background:var(--amber)"></i>85–99%</span><span><i style="background:var(--red)"></i>&lt;85%</span><span><i class="dash"></i>target ' + tgtLbl() + '</span></div><div class="trend-detail" id="tw-d">Klik batang untuk rincian hari itu per provinsi, distrik, ekspeditur &amp; source.</div></div>';
+      '<div class="trend-legend"><span><i style="background:var(--green)"></i>&ge;100%</span><span><i style="background:var(--amber)"></i>85–99%</span><span><i style="background:var(--red)"></i>&lt;85%</span><span><i class="dash"></i>target ' + tgtLbl() + '</span>' + LG_NUM + '</div><div class="trend-detail" id="tw-d">Klik batang untuk rincian hari itu per provinsi, distrik, ekspeditur &amp; source.</div></div>';
   } else {
     const m = PER().month, ld = lastDayOf(m), n = dim(m);
     const rows = [...summarize('prov', m).values()].filter(o => o.hasTgt || o.vol > 0).map(o => {
@@ -2125,7 +2125,7 @@ function trucksByEksp(cols, trucks){
     dS: rows.reduce((a, r) => a + r.dwS, 0), dN: rows.reduce((a, r) => a + r.dwN, 0)})).sort((a, b) => b.ton - a.ton);
   return groups.map((x, i) => '<details class="trk-grp"' + (i === 0 ? ' open' : '') + '><summary><span class="gn">' + esc(ekspLbl(x.e)) + '</span>' +
     '<span class="gs"><b>' + fmt(x.rows.length) + '</b> truk</span><span class="gs"><b>' + fmt(x.trips) + '</b> trip</span><span class="gs"><b>' + fmt(x.ton) + '</b> t</span><span class="gs">SLA <b>' + (x.dN ? fmt1(x.dS / x.dN) : '–') + '</b> jam</span></summary>' +
-    table(cols, x.rows, {limit: 400}) + '</details>').join('');
+    table(cols.filter(c => c.h !== 'Ekspeditur'), x.rows, {limit: 400}) + '</details>').join('');
 }
 function pageArmada(){
   const m = PER(), t = total(m), trucks = trucksFor(m).sort((a, b) => b.trips - a.trips);

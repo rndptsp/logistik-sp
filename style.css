@@ -743,3 +743,11 @@ table.tree tr.lv0 td.fz{background:var(--white)}
 .kgantt>.kg-row{min-width:750px}
 .kg-d{min-width:0;overflow:hidden}
 @media (max-width:760px){.kgantt>.kg-row{min-width:640px}}
+/* per-incoterm cards: two per row on phones */
+@media (max-width:600px){
+  .ip-grid{grid-template-columns:1fr 1fr;gap:8px}
+  .ip-card{padding:10px 10px}
+  .ip-v{font-size:18px;margin:2px 0 6px}
+  .ip-m{font-size:11px}
+  .ip-s{font-size:10.5px}
+}
