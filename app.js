@@ -1277,6 +1277,20 @@ function pageDistr(name){
     '</div>', 'wilayah');
 }
 
+/* New version check: a long-open tab keeps running the code it loaded. Every 5 minutes and whenever the tab comes back
+   into view, index.html is re-read; when its app.js version differs from the running one, a bar offers a reload. */
+function watchNewVersion(){
+  const own = document.querySelector('script[src*="app.js"]'), mine = own && own.src.split('?v=')[1];
+  if(!mine) return;
+  const check = () => fetch('index.html', {cache: 'no-store'}).then(r => r.text()).then(t => {
+    const m = t.match(/app\.js\?v=([^"'&]+)/);
+    if(m && m[1] !== mine && !$('#newVersion')){
+      document.body.insertAdjacentHTML('beforeend', '<div id="newVersion" class="new-ver">Versi dashboard atau data terbaru tersedia. <a href="#" onclick="location.reload();return false">Muat ulang</a></div>');
+    }
+  }).catch(() => {});
+  setInterval(check, 5 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible') check(); });
+}
 /* ===================== Pages ===================== */
 const view = () => $('#view');
 /* Page header photo: assets/bg/bg.js sets window.BG = {key: {f: file, t: title, a: author, l: licence, u: source page}}.
@@ -2230,6 +2244,7 @@ function bindEvents(){
     tip.style.display = 'block'; tip.style.left = (e.clientX + 14) + 'px'; tip.style.top = (e.clientY + 14) + 'px';
   });
   window.addEventListener('hashchange', route);
+  watchNewVersion();
 }
 
 /* ===================== Crypto, gate, session ===================== */
