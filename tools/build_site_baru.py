@@ -237,6 +237,13 @@ def build(cfg):
             gudang[str(r.get("KODE_TOKO") or "").strip()] = (num(r.get("LAT")) or None, num(r.get("LON")) or None, up(r.get("KECAMATAN")),
                                                             str(r.get("ALAMAT_LENGKAP") or "").strip())
         print(f"  lokasi gudang: {len(gudang):,} toko")
+    # optional vessel master (slot "kapal"): NAMA_KAPAL -> info shown on the Kapal page (public registry facts only)
+    kapal_info = {}
+    kpath = os.path.join(base, "data", "kapal.csv.gz")
+    if os.path.exists(kpath):
+        for r in read_store(kpath):
+            kapal_info[up(r.get("NAMA_KAPAL"))] = {k.lower(): v for k, v in r.items() if k != "NAMA_KAPAL" and v not in (None, "")}
+        print(f"  master kapal: {len(kapal_info):,} kapal")
 
     # ---------------- Realisasi (data/rilis.csv.gz) ----------------
     facts = defaultdict(lambda: [0.0, 0, 0.0, 0])
@@ -425,7 +432,7 @@ def build(cfg):
         "asOf": days[-1] if days else None,
         "lastDay": last_day,
         "dims": {"inc": INCOTERMS, "prov": prov.items, "dist": dist.items, "eksp": eksp.items, "src": src.items,
-                 "distr": distr.items, "truck": truck.items, "nonKin": nonkin, "kem": kem_d.items, "kapal": kapal_d.items, "ekspNama": [kamus.get(n, "") for n in eksp.items],
+                 "distr": distr.items, "truck": truck.items, "nonKin": nonkin, "kem": kem_d.items, "kapal": kapal_d.items, "kapalInfo": [kapal_info.get(n) for n in kapal_d.items], "ekspNama": [kamus.get(n, "") for n in eksp.items],
                  # ship-to: [code, name, address, kecamatan index or -1, lat, lon] (lat/lon null when unknown)
                  "toko": [toko_row(i) for i in range(len(toko.items))],
                  "kec": kec.items,
