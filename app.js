@@ -965,7 +965,7 @@ function heroPanel(o){
   return '<section class="map-hero mh-page' + (o.cls ? ' ' + o.cls : '') + '"><div class="mh-bg"' + (bg ? ' style="background-image:linear-gradient(90deg,rgba(15,26,33,.96) 0%,rgba(15,26,33,.86) 45%,rgba(15,26,33,.6) 100%),url(&quot;assets/bg/' + bg.f + '&quot;)"' : '') + '></div><div class="mh-inner">' +
     '<div class="mh-left"><div class="eyebrow">' + o.eyebrow + '</div><h2 class="mh-h">' + o.head + '</h2>' +
       '<div class="mh-chips">' + o.chips.join('') + '</div>' +
-      '<div class="mh-list"><div class="mh-lh"><span>' + o.listHead + '</span></div><div class="mh-row mh-head"><span></span><span></span>' + o.listCols.map((c, i) => '<span class="' + ['mh-tn', 'mh-pc', 'mh-so'][i] + '">' + c + '</span>').join('') + '</div><div class="mh-scroll">' + o.rows + '</div></div>' +
+      '<div class="mh-list"><div class="mh-lh"><span>' + o.listHead + '</span></div><div class="mh-row mh-head' + (o.listCols.length === 2 ? ' mh-row2' : '') + '"><span></span><span></span>' + o.listCols.map((c, i) => '<span class="' + ['mh-tn', 'mh-pc', 'mh-so'][i] + '">' + c + '</span>').join('') + '</div><div class="mh-scroll">' + o.rows + '</div></div>' +
       '<div class="mh-key">' + o.key + '</div>' + (o.note || '') +
     '</div>' +
     '<div class="mh-map">' + o.map + '<div class="mh-hint">' + o.hint + '</div></div>' +
