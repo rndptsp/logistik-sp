@@ -731,3 +731,9 @@ table.tree td.name small{display:block;color:var(--sub);font-weight:400;font-siz
 .tbl tr.go:hover td.fz{background:#FAFAFA}
 .tbl tr.total td.fz{background:inherit}
 .tbl td.name.fz{max-width:46vw}
+/* tree tables: frozen first column, indentation by level (narrower on phones) */
+table.tree td.name{padding-left:calc(12px + var(--d,0) * 22px)}
+table.tree tr.lv0 td.fz{background:var(--white)}
+@media (max-width:600px){
+  table.tree td.name{min-width:0;width:50vw;max-width:50vw;padding-left:calc(8px + var(--d,0) * 12px)}
+}
