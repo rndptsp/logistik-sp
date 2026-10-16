@@ -678,3 +678,9 @@ table.tree td.name small{display:block;color:var(--sub);font-weight:400;font-siz
 .kg-key i{display:inline-block;width:14px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
 .kg-key i.kargo{background:var(--red)}.kg-key i.reguler{background:#2a78d6}.kg-key i.span{background:rgba(235,104,52,.22)}
 @media (max-width:760px){.kg-row{grid-template-columns:120px minmax(520px,1fr)}.kg-nm{font-size:12px;padding:6px 8px}}
+/* Kapal list: one block per dermaga (header, timeline, detail table) */
+.krm-grp{border-top:3px solid var(--black);padding-top:12px;margin:22px 0 30px}
+.krm-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:10px;margin-bottom:6px}
+.krm-h b{font-size:18px;text-transform:uppercase;letter-spacing:.03em}
+.krm-h small{color:var(--sub);font-size:13px}
+.krm-sub{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--sub);margin:14px 0 6px}
