@@ -252,7 +252,7 @@ function summarize(group, per, sc, opt){
     }
   }
   out.forEach(o => {
-    o.pct = o.hasTgt ? (o.tgt > 0 ? pctOf(o.frc, o.tgt) : 100) : null;
+    o.pct = o.hasTgt ? (o.tgt > 0 ? pctOf(o.frc, o.tgt) : 100) : (o.vol > 0 || o.frc > 0 ? 100 : null);   // no target but shipped = 100% (Rendy)
     o.of = soOn() && o.so > 0 ? pctOf(o.frc0, o.so) : null;
     o.gap = o.frc - o.tgt;
     o.dwell = o.dwN ? o.dwS / o.dwN : null;
@@ -313,7 +313,7 @@ function rangeGroup(fromISO, toISO, sc, group){
       if(any){ const o = get(TK[group](t)); o.tgt += add * tgtK(); o.hasTgt = true; }
     });
   }
-  out.forEach(o => { o.pct = o.hasTgt ? (o.tgt > 0 ? pctOf(o.frc, o.tgt) : 100) : null; o.gap = o.frc - o.tgt; });
+  out.forEach(o => { o.pct = o.hasTgt ? (o.tgt > 0 ? pctOf(o.frc, o.tgt) : 100) : (o.vol > 0 || o.frc > 0 ? 100 : null); o.gap = o.frc - o.tgt; });
   return out;
 }
 function rangeTotals(fromISO, toISO, sc){
@@ -919,7 +919,7 @@ function distMapHTML(pname, m, opt){
     if(!a){ a = {vol:0, frc:0, frc0:0, tgt:0, so:0, trips:0, hasTgt:false, keys:[]}; agg.set(i, a); }
     a.vol += o.vol; a.frc += o.frc; a.frc0 += o.frc0; a.tgt += o.tgt; a.so += o.so; a.trips += o.trips; a.hasTgt = a.hasTgt || o.hasTgt; a.keys.push(o.key);
   });
-  agg.forEach(a => { a.pct = a.hasTgt ? (a.tgt > 0 ? pctOf(a.frc, a.tgt) : 100) : null; a.gap = a.frc - a.tgt; a.of = soOn() && a.so > 0 ? pctOf(a.frc0, a.so) : null; });   // same rules as summarize()
+  agg.forEach(a => { a.pct = a.hasTgt ? (a.tgt > 0 ? pctOf(a.frc, a.tgt) : 100) : (a.vol > 0 || a.frc > 0 ? 100 : null); a.gap = a.frc - a.tgt; a.of = soOn() && a.so > 0 ? pctOf(a.frc0, a.so) : null; });   // same rules as summarize()
   const [vx, vy, vw, vh] = G.vb, fs = Math.max(vw, vh) / 52;
   const defs = '<defs>' + [['Green', '#2E9E5C', '#1A7A42'], ['Amber', '#C9952E', '#8A5A00'], ['Red', '#FF6B74', '#E02A36'], ['Ink', '#7A8A93', '#4E5D66']].map(c =>
     '<linearGradient id="d' + c[0] + '" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="' + c[1] + '"/><stop offset="100%" stop-color="' + c[2] + '"/></linearGradient>').join('') + '</defs>';
@@ -1245,7 +1245,7 @@ function distrTable(m, sc, limit){
 function distrTableOne(m, sc, limit){
   const rows = shipRows(m, sc), list = distrSummary(rows), tg = distrTargets(m, sc);
   tg.forEach((v, k) => { if(B.dims.distr[k] && !list.some(o => o.key === k)) list.push(blankDistr(k)); });
-  list.forEach(o => { o.tgt = tg.get(o.key); o.pct = o.tgt ? pctOf(o.nfz, o.tgt) : null; });
+  list.forEach(o => { o.tgt = tg.get(o.key); o.pct = o.tgt ? pctOf(o.nfz, o.tgt) : (o.vol > 0 ? 100 : null); });   // no target but shipped = 100%
   list.sort((a, b) => b.vol - a.vol || (b.tgt || 0) - (a.tgt || 0));
   list.forEach((o, i) => o.rank = i + 1);
   const tot = list.reduce((a, o) => a + o.vol, 0), unk = rows.filter(r => !(B.dims.toko[r[7]] && B.dims.toko[r[7]][0])).reduce((a, r) => a + r[8], 0);
