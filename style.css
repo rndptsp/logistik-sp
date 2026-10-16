@@ -623,3 +623,4 @@ table.tree td.name small{display:block;color:var(--sub);font-weight:400;font-siz
 .bd-grp b{font-weight:800;}
 .bd-grp span:not(.inc-dot){color:var(--sub);font-size:12.5px;}
 .bd-grp .inc-dot{margin-right:0;}
+@media(max-width:560px){.rate-row{gap:8px;}.rate-row .rl{width:auto;flex:1 1 0;min-width:0;}.rate-row .rtrack{flex:0 0 54px;}.rate-row .rv{width:44px;}.rate-row .rso{width:54px;}}
