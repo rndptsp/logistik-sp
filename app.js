@@ -411,7 +411,12 @@ function deltaHTML(a, b){
 function barsHTML(id, data, opt){
   const hasC = data.some(d => d.c);
   const max = Math.max(1, ...data.map(d => Math.max(d.vol, d.tgt || 0, d.c ? d.c.vol : 0)));
-  return '<div class="bars' + (hasC ? ' pair' : '') + (data.length > 16 && !(opt && opt.labels) ? ' dense' : '') + (data.length > 9 ? ' many' : '') + '">' + data.map((d, i) => {
+  // key for the two number rows above the bars, shown with the chart's own first values so newcomers can read them
+  const k = data.find(d => d.pct != null && d.vol > 0) || data.find(d => d.vol > 0);
+  const isJam = data.some(d => d.unit === 'jam');
+  const key = k && !(opt && opt.noKey) ? '<div class="bars-key">' + (k.pct != null ? '<span><b style="color:' + tierColor(k.pct) + '">' + Math.round(k.pct) + '</b> = % capaian vs target ' + esc(tgtLbl()) + '</span>' : '') +
+    '<span><b>' + (isJam ? fmt1(k.vol) : fmt(k.vol)) + '</b> = ' + (opt && opt.valLbl || (isJam ? 'rata-rata jam' : 'realisasi (ton)')) + '</span></div>' : '';
+  return key + '<div class="bars' + (hasC ? ' pair' : '') + (data.length > 16 && !(opt && opt.labels) ? ' dense' : '') + (data.length > 9 ? ' many' : '') + '">' + data.map((d, i) => {
     const h = Math.max(2, d.vol / max * 100);
     const th = d.tgt != null ? Math.min(100, d.tgt / max * 100) : null;
     const c = d.pct != null ? tierColor(d.pct) : 'var(--black)';
@@ -2159,7 +2164,7 @@ function pageArmada(){
       kpi('clock', 'var(--amber)', 'Rata-rata SLA', t.dwell == null ? '–' : fmt1(t.dwell) + ' <small>jam</small>', {hint: 'masuk → keluar pabrik'}) +
       kpi('box', 'var(--black)', 'Ton / trip', fmt1(t.vol / Math.max(1, t.trips))) +
     '</div>' +
-    '<div class="dp-cols even"><div class="dp-panel"><div class="pt">Sebaran trip per truk</div>' + barsHTML('ab', bdata) + '<div class="trend-detail" id="ab-d">Banyak truk 1 trip = armada tidak kontinu. Klik batang untuk daftar truknya.</div></div>' +
+    '<div class="dp-cols even"><div class="dp-panel"><div class="pt">Sebaran trip per truk</div>' + barsHTML('ab', bdata, {valLbl: 'jumlah truk'}) + '<div class="trend-detail" id="ab-d">Banyak truk 1 trip = armada tidak kontinu. Klik batang untuk daftar truknya.</div></div>' +
     '<div class="dp-panel"><div class="pt">Rata-rata SLA per hari (jam) — makin rendah makin baik</div>' + dwellBars + '<div class="trend-legend"><span><i style="background:var(--green)"></i>&le;' + SLA_TARGET + ' jam (memenuhi target)</span><span><i style="background:var(--red)"></i>&gt;' + SLA_TARGET + ' jam</span><span><i class="dash"></i>target ' + SLA_TARGET + ' jam</span><span>klik batang = SLA per ekspeditur</span></div></div></div>' +
     '<div class="section-head"><div class="section-title">Daftar truk per ekspeditur</div><div class="section-link"><a data-grp="1">Buka semua</a> · <a data-grp="0">Tutup semua</a></div></div>' + (incGroups(() => { const tk = trucksFor(m).sort((a, b) => b.trips - a.trips); return tk.length ? trucksByEksp(cols, tk) : ''; }, () => fmt(trucksFor(m).length) + ' truk') || '<div class="dp-review">Tidak ada truk untuk filter ini.</div>') +
     '</div>', 'armada');
