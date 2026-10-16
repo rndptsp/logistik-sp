@@ -93,7 +93,8 @@ function prepare(){
   const eksEmpty = dims.eksp.indexOf('');
   const frcEksp = new Set(), liveProv = new Set(), liveDist = new Set();
   B.facts.forEach(f => { if(isFrc(f[1]) && f[5] !== eksEmpty) frcEksp.add(f[5]); liveProv.add(f[3]); liveDist.add(f[4]); });
-  B.targets.forEach(t => { if(isFrc(t[7]) && t[3] !== eksEmpty) frcEksp.add(t[3]); });
+  const tanpaEks = dims.eksp.indexOf('TANPA_EKSPEDITUR');
+  B.targets.forEach(t => { if(isFrc(t[7]) && t[3] !== eksEmpty && t[3] !== tanpaEks) frcEksp.add(t[3]); });
   const distrIdx = Object.fromEntries(dims.distr.map((p, i) => [p, i]));
   const sources = [...new Set(B.facts.map(f => f[2]).concat(B.targets.map(t => t[4])))].filter(i => i !== srcEmpty).map(i => dims.src[i]).sort();
   D = { dayMonth, dayNum, dayDow, months, provIdx, ekspIdx, distIdx, srcEmpty, eksEmpty,
@@ -462,8 +463,8 @@ let MODAL = null;
 /* Ekspeditur = the carrier: FRC* -> the transporter (full name from the kamus); every other incoterm -> the
    distributor itself (it arranges the haul). Labels drop the legal form; links go to the right page. */
 const coLbl = n => String(n || '').replace(/\s*\(PERSERO\)/i, '').replace(/[\s,.]*\bPT\.?\s*$/i, '').replace(/^\s*PT\.?\s+/i, '').trim();
-const ekspLbl = k => { const c = B.dims.eksp[k]; if(!c) return 'Angkut sendiri (distributor)'; const n = (B.dims.ekspNama || [])[k]; return coLbl(n || c) || c; };
-const ekspHref = k => { const c = B.dims.eksp[k]; if(!c) return null; if(D.frcEksp.has(k)) return '#/ekspeditur/' + enc(c); return D.distrIdx[c] != null ? '#/distributor/' + enc(c) : null; };
+const ekspLbl = k => { const c = B.dims.eksp[k]; if(!c) return 'Angkut sendiri (distributor)'; if(c === 'TANPA_EKSPEDITUR') return 'Belum dialokasikan ke ekspeditur'; const n = (B.dims.ekspNama || [])[k]; return coLbl(n || c) || c; };
+const ekspHref = k => { const c = B.dims.eksp[k]; if(!c || c === 'TANPA_EKSPEDITUR') return null; if(D.frcEksp.has(k)) return '#/ekspeditur/' + enc(c); return D.distrIdx[c] != null ? '#/distributor/' + enc(c) : null; };
 const DIM_LBL = {prov: 'Provinsi', dist: 'Distrik', eksp: 'Ekspeditur', src: 'Source plant'};
 function dimName(dim, k){
   if(dim === 'prov') return tc(B.dims.prov[k]);

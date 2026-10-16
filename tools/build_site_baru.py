@@ -338,6 +338,9 @@ def build(cfg):
         p, di = prov(up(r.get("PROVINSI"))), dist(up(r.get("DISTRIK")))
         dist_prov.setdefault(di, p)
         code = up(r.get("EXPEDITUR_KODE"))
+        if inc.startswith("FRC") and "BATURAJA" in up(r.get("SOURCE_PLANT")) and up(r.get("PROPORSI_SUMBER")) == "DISTRIBUTOR_TACTICAL_SUMUT":
+            code = "TANPA_EKSPEDITUR"   # stored before the Baturaja rule was dropped: distributors get no franco target
+            check["target FRC Baturaja: distributor -> TANPA_EKSPEDITUR"] += 1
         s = src(up(r.get("SOURCE_PLANT")))
         ton = round(num(r.get("TARGET_TON_BULAN")), 3)
         kem = kemasan(r.get("KEMASAN"))   # optional column; empty = ZAK
