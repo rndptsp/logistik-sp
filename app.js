@@ -1116,17 +1116,17 @@ function nodeHref(n){
 /* Expandable table: click a row to open the next level; "›" opens that item's own page.
    opt.tgt = {prov: Map, dist: Map} summaries (from summarize) to show target & achievement at those levels. */
 /** Put distributor targets on tree nodes (levels distr / prov / dist), within scope `base` ({dist} or {distr}). */
-function annotateDistrTargets(nodes, m, base, ctx){
+function annotateDistrTargets(nodes, m, base, ctx, only){
   ctx = ctx || {};
   nodes.forEach(n => {
     const here = Object.assign({}, ctx);
-    if(n.lv === 'distr' || n.lv === 'prov' || n.lv === 'dist'){
-      here[n.lv] = n.key;
+    if(n.lv === 'distr' || n.lv === 'prov' || n.lv === 'dist') here[n.lv] = n.key;
+    if((n.lv === 'distr' || n.lv === 'prov' || n.lv === 'dist') && (!only || only.includes(n.lv))){
       const sc = Object.assign({}, base, here), tg = distrTargets(m, sc);
       const t = sc.distr != null ? (tg.get(sc.distr) || 0) : [...tg.values()].reduce((a, v) => a + v, 0);
       n.t = t > 0 ? {hasTgt: true, tgt: t, pct: pctOf(n.az, t)} : {hasTgt: false};
     }
-    if(n.children) annotateDistrTargets(n.children, m, base, here);
+    if(n.children) annotateDistrTargets(n.children, m, base, here, only);
   });
   return nodes;
 }
@@ -1257,7 +1257,7 @@ function pageDistr(name){
   });
   TRENDS.dm = {id: 'dm', data, click: i => {
     const mm = data[i].month, nodes = buildTree(shipRows(mm, sc), ['prov', 'dist', 'toko']);
-    openModal(tc(name) + ' · ' + monthLabel(mm), 'Tujuan kirim per provinsi › distrik › toko', nodes.length ? treeHTML(nodes, ['prov', 'dist', 'toko']) : '<div class="dp-review">Tidak ada pengiriman di bulan ini.</div>');
+    openModal(tc(name) + ' · ' + monthLabel(mm), 'Tujuan kirim per provinsi › distrik › toko', nodes.length ? treeHTML(annotateDistrTargets(nodes, mm, {distr: di}), ['prov', 'dist', 'toko'], {distrTgt: true}) : '<div class="dp-review">Tidak ada pengiriman di bulan ini.</div>');
   }};
   page('<div class="wrap">' + crumb([['Wilayah', '#/provinsi'], ['Distributor', '#/distributor'], [tc(name)]]) +
     '<div class="dp-head"><div><div class="nm">' + esc(tc(name)) + '</div><div class="sub">Distributor · ' + incName() + ' · ' + periodSub() + '</div></div></div>' +
@@ -1470,7 +1470,7 @@ function pageProv(name){
     '</div>' +
     '<div class="section-head"><div class="section-title">Distributor di provinsi ini</div><a class="section-link" href="#/distributor">Semua distributor &rsaquo;</a></div>' + distrTable(m, sc, 60).html +
     '<div class="section-head"><div class="section-title">Kinerja &amp; tujuan pengiriman per distrik</div></div>' +
-    treeHTML(buildTree(shipRows(m, sc), ['dist', 'distr', 'toko']), ['dist', 'distr', 'toko'], {tgt: {dist: summarize('dist', m, sc)}}) +
+    treeHTML(annotateDistrTargets(buildTree(shipRows(m, sc), ['dist', 'distr', 'toko']), m, {prov: pi}, {}, ['distr']), ['dist', 'distr', 'toko'], {tgt: {dist: summarize('dist', m, sc)}}) +
     '<div class="dp-cols even">' + sourcePanel(sc) + '<div class="dp-panel"><div class="pt">Bulan penuh</div>' +
       '<div class="tgt-panel" style="margin:0;border:0;padding:0"><div class="tgt-item"><div class="tl">Target bulan</div><div class="tv">' + (me.hasTgt ? fmt(me.tgtFull) : '–') + ' t</div></div><div class="tgt-item"><div class="tl">Realisasi ' + incName() + '</div><div class="tv">' + fmt(me.frc) + ' t</div></div><div class="tgt-item"><div class="tl">Sisa bulan</div><div class="tv ' + (me.tgtFull - me.frc > 0 ? 'bad' : 'good') + '">' + (me.hasTgt ? fmt(Math.max(0, me.tgtFull - me.frc)) : '–') + ' t</div></div></div></div></div>' +
     '</div>', 'wilayah');
