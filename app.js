@@ -2117,62 +2117,116 @@ function pageKapal(){
       (rows.length ? groups : '<div class="dp-review">Tidak ada pengiriman laut pada filter ini (plant, kemasan, periode).</div>') + '</div>', 'armada');
   } finally { F.inc = sv[0]; F.moda = sv[1]; }
 }
-/* Truck list grouped by main ekspeditur (the one with most trips): one collapsible sub-header per ekspeditur, biggest first. */
-function trucksByEksp(cols, trucks){
-  const g = new Map();
-  trucks.forEach(r => { const e = [...r.eksp.entries()].sort((a, b) => b[1] - a[1])[0][0]; (g.get(e) || g.set(e, []).get(e)).push(r); });
-  const groups = [...g.entries()].map(([e, rows]) => ({e, rows: rows.sort((a, b) => b.trips - a.trips || b.ton - a.ton), trips: rows.reduce((a, r) => a + r.trips, 0), ton: rows.reduce((a, r) => a + r.ton, 0),
-    dS: rows.reduce((a, r) => a + r.dwS, 0), dN: rows.reduce((a, r) => a + r.dwN, 0)})).sort((a, b) => b.ton - a.ton);
-  return groups.map((x, i) => '<details class="trk-grp"' + (i === 0 ? ' open' : '') + '><summary><span class="gn">' + esc(ekspLbl(x.e)) + '</span>' +
-    '<span class="gs"><b>' + fmt(x.rows.length) + '</b> truk</span><span class="gs"><b>' + fmt(x.trips) + '</b> trip</span><span class="gs"><b>' + fmt(x.ton) + '</b> t</span><span class="gs">SLA <b>' + (x.dN ? fmt1(x.dS / x.dN) : '–') + '</b> jam</span></summary>' +
-    table(cols.filter(c => c.h !== 'Ekspeditur'), x.rows, {limit: 400}) + '</details>').join('');
+/* ===================== Armada =====================
+   Three questions, per the agreed concept:
+   1. Kinerja muat di plant: trucks loaded per day, time in the plant (SLA masuk -> keluar) and queue (antri -> masuk), per plant.
+   2. Koridor (plant -> tujuan): cycle time (days between two trips of the same truck), t/trip and fleet need = trip/hari x siklus.
+      Destination = province; Sumatera Barat from Indarung per district (Padang vs Pasaman/Dharmasraya differ too much).
+   3. Scorecard ekspeditur: judged against the median cycle of the corridors it serves, not the overall average.
+   Truck rows: [day, truck, inc, eksp, src, prov, trips, ton, dwS, dwN, kem, dist, waitS, waitN] */
+// trucks only: sea incoterms (vessel loads in NOPOL) and loads above 45 t/trip are not truck trips
+const truckOk = t => incOk(t[2]) && srcOk(t[4]) && kemOk(t[10]) && areaProvOk(t[5]) && (F.moda === 'LAUT' || modaOf(INCS()[t[2]]) !== 'LAUT') && t[7] <= 45 * Math.max(1, t[6]);
+const corrKey = t => { const sn = B.dims.src[t[4]] || '', pn = B.dims.prov[t[5]] || ''; return t[4] + '|' + t[5] + (/INDARUNG/.test(sn) && pn === 'SUMATERA BARAT' && t[11] != null ? '|' + t[11] : ''); };
+const corrLbl = k => { const [si, pi, di] = k.split('|'); return tc(B.dims.src[si] || '?').replace(/^(Cp|Pp|Gp|Dc|Vp) /, '') + ' → ' + (di != null ? tc(B.dims.dist[di]) : tc(B.dims.prov[pi])); };
+const median = a => { if(!a.length) return null; const b = a.slice().sort((x, y) => x - y), m = b.length >> 1; return b.length % 2 ? b[m] : (b[m - 1] + b[m]) / 2; };
+/* cycle gaps over the 60 days up to the period end: gap between consecutive loading days of a truck (1..12 days),
+   booked on the corridor and ekspeditur of the earlier trip */
+function cycleGaps(per){
+  const endI = B.days.indexOf(per.to) >= 0 ? B.days.indexOf(per.to) : B.days.length - 1, startI = Math.max(0, endI - 59);
+  const by = new Map();
+  B.trucks.forEach(t => { if(t[0] < startI || t[0] > endI || !truckOk(t)) return; (by.get(t[1]) || by.set(t[1], []).get(t[1])).push(t); });
+  const corr = new Map(), ek = new Map();
+  by.forEach(rs => {
+    rs.sort((a, b) => a[0] - b[0]);
+    for(let i = 1; i < rs.length; i++){
+      const g = rs[i][0] - rs[i - 1][0]; if(g < 1 || g > 12) continue;
+      const k = corrKey(rs[i - 1]); (corr.get(k) || corr.set(k, []).get(k)).push(g);
+      const e = rs[i - 1][3]; (ek.get(e) || ek.set(e, []).get(e)).push([k, g]);
+    }
+  });
+  const med = new Map([...corr.entries()].map(([k, a]) => [k, median(a)]));
+  return {med, n: new Map([...corr.entries()].map(([k, a]) => [k, a.length])), ek};
 }
 function pageArmada(){
-  const m = PER(), t = total(m), trucks = trucksFor(m).sort((a, b) => b.trips - a.trips);
-  const buckets = [['1', 1, 1], ['2–3', 2, 3], ['4–6', 4, 6], ['7–10', 7, 10], ['11–20', 11, 20], ['>20', 21, 1e9]];
-  const bdata = buckets.map(b => ({label: b[0] + ' trip', long: b[0] + ' trip per truk', vol: trucks.filter(x => x.trips >= b[1] && x.trips <= b[2]).length, tgt: null, pct: null}));
-  const dow = [1, 2, 3, 4, 5, 6, 0].map(d => {
-    let s = 0, n = 0;
-    B.facts.forEach(f => { if(inPer(f[0], m) && D.dayDow[f[0]] === d && incOk(f[1]) && srcOk(f[2]) && kemOk(f[10]) && areaProvOk(f[3])){ s += f[8]; n += f[9]; } });
-    return {label: DAYS[d].slice(0, 3), long: DAYS[d], vol: n ? s / n : 0, tgt: null, pct: null, dec: true};
-  });
-  const dowNum = [1, 2, 3, 4, 5, 6, 0];
-  dow.forEach(d => { d.unit = 'jam'; d.color = slaColor(d.vol); d.tgt = SLA_TARGET; });
-  TRENDS.ab = {id: 'ab', data: bdata, click: i => {
-    const b = buckets[i], list = trucks.filter(x => x.trips >= b[1] && x.trips <= b[2]);
-    openModal('Truk dengan ' + b[0] + ' trip', fmt(list.length) + ' truk · ' + esc(periodSub()), table(cols, list, {limit: 500}));
+  const m = PER(), rows = B.trucks.filter(t => inPer(t[0], m) && truckOk(t));
+  const dayIdx = [...new Set(rows.map(t => t[0]))].sort((a, b) => a - b), nDays = Math.max(1, dayIdx.length);
+  const sum = (rs, i) => rs.reduce((a, t) => a + t[i], 0);
+  const trips = sum(rows, 6), ton = sum(rows, 7), dwS = sum(rows, 8), dwN = sum(rows, 9), wS = sum(rows, 12) || 0, wN = sum(rows, 13) || 0;
+  const perDayTrucks = dayIdx.map(d => new Set(rows.filter(t => t[0] === d).map(t => t[1])).size);
+  const truckDays = new Map(); rows.forEach(t => { const k = t[0] + ':' + t[1]; const o = truckDays.get(k) || {s: 0, n: 0}; o.s += t[8]; o.n += t[9]; truckDays.set(k, o); });
+  const over4 = rs => { const td = new Map(); rs.forEach(t => { if(!t[9]) return; const k = t[0] + ':' + t[1]; const o = td.get(k) || {s: 0, n: 0}; o.s += t[8]; o.n += t[9]; td.set(k, o); }); const v = [...td.values()]; return v.length ? pctOf(v.filter(o => o.s / o.n > SLA_TARGET).length, v.length) : null; };
+  const pctCol = (h, f) => ({h, num:true, val: f, html: r => { const v = f(r); return v == null ? '–' : '<span style="color:' + (v > 25 ? 'var(--red)' : v > 10 ? 'var(--amber)' : 'var(--green)') + '">' + pctTxt(v) + '</span>'; }});
+  const jam = (h, f, colored) => ({h, num:true, val: f, html: r => { const v = f(r); return v == null ? '–' : colored ? '<b style="color:' + slaColor(v) + '">' + fmt1(v) + '</b>' : fmt1(v); }});
+
+  // 1. Kinerja muat di plant
+  const bySrc = new Map(); rows.forEach(t => (bySrc.get(t[4]) || bySrc.set(t[4], []).get(t[4])).push(t));
+  const plantRows = [...bySrc.entries()].map(([si, rs]) => { const ds = [...new Set(rs.map(t => t[0]))];
+    return {key: si, n: tc(B.dims.src[si] || '(tanpa plant)'), tpd: median(ds.map(d => new Set(rs.filter(t => t[0] === d).map(t => t[1])).size)), trips: sum(rs, 6), ton: sum(rs, 7), tpt: sum(rs, 7) / Math.max(1, sum(rs, 6)),
+      sla: sum(rs, 9) ? sum(rs, 8) / sum(rs, 9) : null, o4: over4(rs), wait: sum(rs, 13) ? sum(rs, 12) / sum(rs, 13) : null}; }).sort((a, b) => b.ton - a.ton);
+  const plantTbl = plantRows.length ? table([{h:'Plant', cls:'name', val: r => r.n}, {h:'Truk / hari', num:true, val: r => r.tpd, html: r => fmt(r.tpd)}, {h:'Trip', num:true, val: r => r.trips, html: r => fmt(r.trips)},
+    {h:'t / trip', num:true, val: r => r.tpt, html: r => fmt1(r.tpt)}, jam('Antri (jam)', r => r.wait), jam('Di plant (jam)', r => r.sla, true), pctCol('> ' + SLA_TARGET + ' jam', r => r.o4)], plantRows, {sort: 2, go: r => B.dims.src[r.key] ? plantHref(B.dims.src[r.key]) : null}) : '';
+  // daily: time in plant per day (all plants in the filter), click = per ekspeditur that day
+  const dData = dayIdx.map(d => { const rs = rows.filter(t => t[0] === d), n = sum(rs, 9), v = n ? sum(rs, 8) / n : 0;
+    return {label: dayIdx.length > 20 ? String(+B.days[d].slice(8)) : shortDate(B.days[d]).replace(/ \w+$/, ''), long: dayLabel(B.days[d]), vol: v, unit: 'jam', color: slaColor(v), tgt: SLA_TARGET, pct: null, d}; });
+  TRENDS.ad = {id: 'ad', data: dData, click: i => {
+    const d = dData[i].d, per = new Map();
+    rows.forEach(t => { if(t[0] !== d) return; const o = per.get(t[3]) || {key: t[3], s: 0, n: 0, trips: 0, vol: 0}; o.s += t[8]; o.n += t[9]; o.trips += t[6]; o.vol += t[7]; per.set(t[3], o); });
+    const rs = [...per.values()].filter(o => o.n).map(o => Object.assign(o, {dw: o.s / o.n}));
+    openModal('Waktu di plant · ' + dayLabel(B.days[d]), 'per ekspeditur', rs.length ? table([{h:'Ekspeditur', cls:'name', val: o => ekspLbl(o.key)}, {h:'Rata-rata (jam)', num:true, cls:'pc', val: o => o.dw, html: o => fmt1(o.dw), style: o => 'color:' + slaColor(o.dw)}, {h:'Trip', num:true, val: o => o.trips}, {h:'Tonase', num:true, val: o => o.vol, html: o => fmt(o.vol)}], rs, {go: o => ekspHref(o.key), sort: 1}) : '<div class="dp-review">Tidak ada data.</div>');
   }};
-  TRENDS.ad = {id: 'ad', data: dow, click: i => {
-    const wd = dowNum[i];
-    const build = () => {
-      const per = new Map();
-      B.facts.forEach(f => { if(inPer(f[0], m) && D.dayDow[f[0]] === wd && incOk(f[1]) && srcOk(f[2]) && kemOk(f[10]) && areaProvOk(f[3])){ const o = per.get(f[5]) || {key: f[5], s: 0, n: 0, trips: 0, vol: 0}; o.s += f[8]; o.n += f[9]; o.trips += f[7]; o.vol += f[6]; per.set(f[5], o); } });
-      const rows = [...per.values()].filter(o => o.n).map(o => Object.assign(o, {dw: o.s / o.n}));
-      return rows.length ? table([{h:'Ekspeditur', cls:'name', val: o => ekspLbl(o.key)}, {h:'Rata-rata SLA (jam)', num:true, cls:'pc', val: o => o.dw, html: o => fmt1(o.dw), style: o => 'color:' + slaColor(o.dw)}, {h:'Trip', num:true, val: o => o.trips}, {h:'Tonase', num:true, val: o => o.vol, html: o => fmt(o.vol)}], rows, {go: o => ekspHref(o.key), sort: 1}) : '';
-    };
-    openModal('SLA hari ' + DAYS[wd], esc(periodSub()) + ' · per ekspeditur', incGroups(build) || '<div class="dp-review">Tidak ada data.</div>');
-  }};
-  const dwellBars = barsHTML('ad', dow);
-  const one = trucks.filter(x => x.trips === 1).length;
-  const cols = [{h:'#', cls:'rank', val: r => r.trips, html: (r, i) => '#' + (i + 1)}, {h:'Nopol', cls:'name', val: r => B.dims.truck[r.truck]},
-    {h:'Ekspeditur', val: r => [...r.eksp.keys()].map(e => B.dims.eksp[e] ? ekspLbl(e) : 'FOT').join(', ')}, {h:'Trip', num:true, val: r => r.trips}, {h:'Tonase', num:true, val: r => r.ton, html: r => fmt(r.ton)},
-    {h:'Hari aktif', num:true, val: r => r.days}, {h:'SLA (jam)', num:true, val: r => r.dwN ? r.dwS / r.dwN : null, html: r => r.dwN ? fmt1(r.dwS / r.dwN) : '–'},
-    {h:'Aktif', val: r => r.first, html: r => activeTxt(r)}, {h:'Provinsi utama', val: r => tc(B.dims.prov[r.prov])}];
+
+  // 2. Koridor
+  const CG = cycleGaps(m);
+  const byC = new Map(); rows.forEach(t => { const k = corrKey(t); (byC.get(k) || byC.set(k, []).get(k)).push(t); });
+  const corrRows = [...byC.entries()].map(([k, rs]) => { const tr = sum(rs, 6), cyc = CG.med.get(k), tpd = tr / nDays;
+    return {k, n: corrLbl(k), trips: tr, ton: sum(rs, 7), tpt: sum(rs, 7) / Math.max(1, tr), cyc, cn: CG.n.get(k) || 0, tpd, need: cyc != null ? tpd * cyc : null, used: new Set(rs.map(t => t[1])).size,
+      sla: sum(rs, 9) ? sum(rs, 8) / sum(rs, 9) : null}; }).filter(r => r.trips >= 5).sort((a, b) => b.ton - a.ton);
+  const corrTbl = corrRows.length ? table([{h:'Koridor', cls:'name', val: r => r.n}, {h:'Trip', num:true, val: r => r.trips, html: r => fmt(r.trips)}, {h:'t / trip', num:true, val: r => r.tpt, html: r => fmt1(r.tpt)},
+    {h:'Siklus (hari)', num:true, val: r => r.cyc, html: r => r.cyc == null || r.cn < 10 ? '–' : '<b>' + fmt1(r.cyc) + '</b>'}, {h:'Trip / hari', num:true, val: r => r.tpd, html: r => fmt1(r.tpd)},
+    {h:'Armada dibutuhkan', num:true, val: r => r.need, html: r => r.need == null || r.cn < 10 ? '–' : fmt(r.need)}, {h:'Truk dipakai', num:true, val: r => r.used, html: r => fmt(r.used)},
+    jam('Di plant (jam)', r => r.sla, true)], corrRows, {sort: 1, limit: 60}) : '';
+
+  // 3. Scorecard ekspeditur (per incoterm when several are active)
+  const scoreTbl = () => {
+    const rs = rows.filter(t => incOk(t[2])), be = new Map();
+    rs.forEach(t => { if(t[3] === D.eksEmpty) return; (be.get(t[3]) || be.set(t[3], []).get(t[3])).push(t); });
+    if(!be.size) return '';
+    const S = summarize('eksp', m);
+    const list = [...be.entries()].map(([e, ts]) => {
+      const trk = new Map(); ts.forEach(t => trk.set(t[1], (trk.get(t[1]) || 0) + t[6]));
+      const ds = [...new Set(ts.map(t => t[0]))];
+      const gaps = (CG.ek.get(e) || []).filter(([k]) => CG.med.get(k) && (CG.n.get(k) || 0) >= 10).map(([k, g]) => g / CG.med.get(k));
+      const o = S.get(e) || {};
+      return {key: e, trucks: trk.size, tpd: median(ds.map(d => new Set(ts.filter(t => t[0] === d).map(t => t[1])).size)), trips: sum(ts, 6), ton: sum(ts, 7),
+        cyc: gaps.length >= 5 ? gaps.reduce((a, g) => a + Math.min(g, 3), 0) / gaps.length * 100 : null,   // mean ratio to the corridor median (capped at 3x per gap) one: pctOf([...trk.values()].filter(v => v === 1).length, trk.size),
+        sla: sum(ts, 9) ? sum(ts, 8) / sum(ts, 9) : null, o4: over4(ts), wait: sum(ts, 13) ? sum(ts, 12) / sum(ts, 13) : null, pct: o.pct, hasTgt: o.hasTgt, tgt: o.tgt};
+    }).sort((a, b) => b.ton - a.ton);
+    return table([{h:'Ekspeditur', cls:'name', val: r => ekspLbl(r.key)}, {h:'Truk', num:true, val: r => r.trucks}, {h:'Truk / hari', num:true, val: r => r.tpd, html: r => fmt(r.tpd)},
+      {h:'Trip', num:true, val: r => r.trips, html: r => fmt(r.trips)}, {h:'Ton', num:true, val: r => r.ton, html: r => fmt(r.ton)},
+      {h:'Siklus vs koridor', num:true, val: r => r.cyc, html: r => r.cyc == null ? '–' : '<b style="color:' + (r.cyc <= 100 ? 'var(--green)' : r.cyc <= 120 ? 'var(--amber)' : 'var(--red)') + '">' + pctTxt(r.cyc) + '</b>'},
+      {h:'Truk 1 trip', num:true, val: r => r.one, html: r => pctTxt(r.one)}, jam('Antri (jam)', r => r.wait), jam('Di plant (jam)', r => r.sla, true), pctCol('> ' + SLA_TARGET + ' jam', r => r.o4),
+      C.pct], list, {go: r => ekspHref(r.key), sort: 4});
+  };
+
+  const tpdAll = median(perDayTrucks);
   page('<div class="wrap">' + crumb([['Armada']]) +
-    '<div class="dp-head"><div><div class="nm">Armada' + (F.moda === 'LAUT' ? ' · truk ke pelabuhan' : '') + '</div><div class="sub">Truk aktif, trip dan SLA · ' + incName() + ' · ' + periodSub() + '</div></div><div class="badges"><div class="dp-badge">' + fmt(trucks.length) + ' truk aktif</div></div></div>' +
+    '<div class="dp-head"><div><div class="nm">Armada' + (F.moda === 'LAUT' ? ' · truk ke pelabuhan' : '') + '</div><div class="sub">Muat di plant, koridor &amp; ekspeditur · ' + incName() + ' · ' + periodSub() + '</div></div></div>' +
     '<div class="dp-grid4">' +
-      kpi('truck', 'var(--black)', 'Truk aktif', fmt(trucks.length), {hint: one + ' truk baru 1 trip'}) +
-      kpi('trend', 'var(--black)', 'Trip', fmt(t.trips), {hint: fmt1(t.trips / Math.max(1, trucks.length)) + ' trip / truk'}) +
-      kpi('clock', 'var(--amber)', 'Rata-rata SLA', t.dwell == null ? '–' : fmt1(t.dwell) + ' <small>jam</small>', {hint: 'masuk → keluar pabrik'}) +
-      kpi('box', 'var(--black)', 'Ton / trip', fmt1(t.vol / Math.max(1, t.trips))) +
+      kpi('truck', 'var(--black)', 'Truk dimuat / hari', fmt(tpdAll), {hint: 'median · ' + fmt(new Set(rows.map(t => t[1])).size) + ' truk berbeda'}) +
+      kpi('trend', 'var(--black)', 'Trip', fmt(trips), {hint: fmt1(ton / Math.max(1, trips)) + ' t / trip'}) +
+      kpi('clock', 'var(--amber)', 'Waktu di plant', dwN ? fmt1(dwS / dwN) + ' <small>jam</small>' : '–', {hint: 'masuk → keluar · ' + pctTxt(over4(rows)) + ' truk > ' + SLA_TARGET + ' jam'}) +
+      kpi('clock', 'var(--black)', 'Antri', wN ? fmt1(wS / wN) + ' <small>jam</small>' : '–', {hint: 'antri → masuk pabrik'}) +
     '</div>' +
-    '<div class="dp-cols even"><div class="dp-panel"><div class="pt">Sebaran trip per truk</div>' + barsHTML('ab', bdata) + '<div class="trend-detail" id="ab-d">Banyak truk 1 trip = armada tidak kontinu. Klik batang untuk daftar truknya.</div></div>' +
-    '<div class="dp-panel"><div class="pt">Rata-rata SLA per hari (jam) — makin rendah makin baik</div>' + dwellBars + '<div class="trend-legend"><span><i style="background:var(--green)"></i>&le;' + SLA_TARGET + ' jam (memenuhi target)</span><span><i style="background:var(--red)"></i>&gt;' + SLA_TARGET + ' jam</span><span><i class="dash"></i>target ' + SLA_TARGET + ' jam</span><span>klik batang = SLA per ekspeditur</span></div></div></div>' +
-    '<div class="section-head"><div class="section-title">Daftar truk per ekspeditur</div><div class="section-link"><a data-grp="1">Buka semua</a> · <a data-grp="0">Tutup semua</a></div></div>' + (incGroups(() => { const tk = trucksFor(m).sort((a, b) => b.trips - a.trips); return tk.length ? trucksByEksp(cols, tk) : ''; }, () => fmt(trucksFor(m).length) + ' truk') || '<div class="dp-review">Tidak ada truk untuk filter ini.</div>') +
+    '<div class="section-head"><div class="section-title">1 · Kinerja muat di plant</div></div>' +
+    '<div class="dp-panel" style="margin-bottom:14px"><div class="pt">Waktu di plant per hari (jam)</div>' + barsHTML('ad', dData) +
+      '<div class="trend-legend"><span><i style="background:var(--green)"></i>&le;' + SLA_TARGET + ' jam</span><span><i style="background:var(--red)"></i>&gt;' + SLA_TARGET + ' jam</span><span><i class="dash"></i>target ' + SLA_TARGET + ' jam</span><span>klik batang = per ekspeditur</span></div></div>' +
+    (plantTbl || '<div class="dp-review">Tidak ada data truk untuk filter ini.</div>') +
+    '<div class="section-head"><div class="section-title">2 · Koridor plant → tujuan</div><div class="section-sub">siklus = median jeda hari antar trip truk yang sama (60 hari terakhir) · armada dibutuhkan = trip/hari × siklus</div></div>' +
+    (corrTbl || '<div class="dp-review">Tidak ada data.</div>') +
+    '<div class="section-head"><div class="section-title">3 · Scorecard ekspeditur</div><div class="section-sub">siklus vs koridor: 100% = sama dengan median koridor yang dilayani; &lt;100% lebih cepat</div></div>' +
+    (incGroups(scoreTbl) || '<div class="dp-review">Tidak ada data.</div>') +
     '</div>', 'armada');
 }
-
-/* ===================== Data quality (for whoever maintains the master Excel) ===================== */
 function qTable(head, rows){
   return '<div class="tbl-wrap"><table class="tbl"><thead><tr>' + head.map((h, i) => '<th' + (i ? ' class="num"' : '') + '>' + h + '</th>').join('') + '</tr></thead><tbody>' +
     (rows.length ? rows.map(r => '<tr>' + r.map((c, i) => '<td' + (i ? ' class="num"' : '') + '>' + c + '</td>').join('') + '</tr>').join('') : '<tr><td colspan="' + head.length + '">Tidak ada.</td></tr>') + '</tbody></table></div>';

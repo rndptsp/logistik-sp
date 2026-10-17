@@ -251,7 +251,7 @@ def build(cfg):
     # ---------------- Realisasi (data/rilis.csv.gz) ----------------
     facts = defaultdict(lambda: [0.0, 0, 0.0, 0])
     ship = defaultdict(lambda: [0.0, 0])
-    trucks = defaultdict(lambda: [0, 0.0, 0.0, 0])
+    trucks = defaultdict(lambda: [0, 0.0, 0.0, 0, 0.0, 0])   # trips, ton, dwellSum, dwellN, waitSum, waitN
     hours = defaultdict(lambda: [0.0, 0])   # (exit date, src, inc, hour, kem) -> [ton, trips]: release per hour, last 62 days
     hour_from = (datetime.date.today() - datetime.timedelta(days=62)).isoformat()
     last_day = {}
@@ -320,10 +320,13 @@ def build(cfg):
             hg[0] += ton; hg[1] += 1
         nopol = up(r.get("NOPOL"))
         if nopol:
-            tk = trucks[(d.isoformat(), truck(nopol), inc, e, s, p, kem)]
+            tk = trucks[(d.isoformat(), truck(nopol), inc, e, s, p, kem, di)]
             tk[0] += 1; tk[1] += ton
             if ok_dwell:
                 tk[2] += num(dwell); tk[3] += 1
+            wait = r.get("WAITING_TIME_JAM")   # queue before entering the plant (antri -> masuk)
+            if wait not in (None, "") and 0 <= num(wait) <= 72:
+                tk[4] += num(wait); tk[5] += 1
     print(f"  realisasi rows: {n_real:,}")
     for k, v in sorted(check.items()):
         print(f"    cek: {k}: {v:,}")
@@ -450,8 +453,9 @@ def build(cfg):
         # [day, inc, src, prov, dist, distr, eksp, toko, ton, trips, kem, kapal (-1 = none)]
         "ship": [[day_idx[k[0]], INCOTERMS.index(k[1]), k[2], k[3], k[4], k[5], k[6], k[7], round(v[0], 2), v[1], k[8], k[9]]
                  for k, v in ship.items()],
-        # per day, so any date range can be cut exactly: [day, truck, inc, eksp, src, prov, trips, ton, dwellSum, dwellN]
-        "trucks": [[day_idx[k[0]], k[1], INCOTERMS.index(k[2]), k[3], k[4], k[5], v[0], round(v[1], 2), round(v[2], 2), v[3], k[6]]
+        # per day, so any date range can be cut exactly:
+        # [day, truck, inc, eksp, src, prov, trips, ton, dwellSum, dwellN, kem, dist, waitSum, waitN]
+        "trucks": [[day_idx[k[0]], k[1], INCOTERMS.index(k[2]), k[3], k[4], k[5], v[0], round(v[1], 2), round(v[2], 2), v[3], k[6], k[7], round(v[4], 2), v[5]]
                    for k, v in trucks.items()],
         "targets": targets,
         "tdistr": tdistr,
