@@ -422,8 +422,8 @@ function barsHTML(id, data, opt){
     const pin = d.pct != null && h >= 30, pout = d.pct != null && !pin, pTxt = d.pct != null ? Math.round(d.pct) + '%' : '';
     return '<div class="bcol click" data-bar="' + id + ':' + i + '" title="' + esc((d.long || d.label) + (d.pct != null ? ' · ' + pTxt + ' dari target' : '')) + ' — klik untuk rincian">' +
       (d.c ? deltaHTML(d.vol, d.c.vol) : '') +
-      '<div class="bwrap"><div class="b" style="height:' + h + '%;background:' + (d.color || c) + ';animation-delay:' + (i * 50) + 'ms">' + (pin ? '<span class="bin">' + pTxt + '</span>' : '') + '</div>' +
-      '<div class="btop" style="bottom:' + h + '%"><span class="bval">' + unit + (pout ? ' <b style="color:' + c + '">' + pTxt + '</b>' : '') + '</span></div>' +
+      '<div class="bwrap"><div class="b" style="height:' + (d.future ? '0%;min-height:0' : h + '%') + ';background:' + (d.color || c) + ';animation-delay:' + (i * 50) + 'ms">' + (pin ? '<span class="bin">' + pTxt + '</span>' : '') + '</div>' +
+      (d.future ? '' : '<div class="btop" style="bottom:' + h + '%"><span class="bval">' + unit + (pout ? ' <b style="color:' + c + '">' + pTxt + '</b>' : '') + '</span></div>') +
       (d.c ? '<div class="b b2" style="height:' + Math.max(2, d.c.vol / max * HR) + '%;animation-delay:' + (i * 50 + 25) + 'ms"></div>' : '') +
       (th != null ? '<div class="tick" style="bottom:' + th + '%"></div>' : '') + '</div>' +
       '<div class="blabel">' + esc(d.label) + '</div></div>';
@@ -1917,7 +1917,7 @@ function pageForecast(gran){
     const days = [...Array(7)].map((_, i) => { const d = new Date(mon); d.setDate(mon.getDate() + i); return d; });
     const data = days.map(d => {
       const s = iso(d), future = d > end, r = future ? rangeTotals(s, s) : rangeTotals(s, s);
-      return {from: s, to: s, label: DAYS[d.getDay()].slice(0, 3) + ' ' + d.getDate(), long: DAYS[d.getDay()] + ', ' + dayLabel(s) + (future ? ' (belum terjadi)' : ''), vol: future ? 0 : r.vol, frc: future ? 0 : r.frc, tgt: r.pct == null && !future ? null : r.tgt, pct: future ? null : r.pct};
+      return {from: s, to: s, label: DAYS[d.getDay()].slice(0, 3) + ' ' + d.getDate(), long: DAYS[d.getDay()] + ', ' + dayLabel(s) + (future ? ' (belum terjadi)' : ''), vol: future ? 0 : r.vol, frc: future ? 0 : r.frc, tgt: r.pct == null && !future ? null : r.tgt, pct: future ? null : r.pct, future};
     });
     const sofar = data.filter((d, i) => days[i] <= end);
     const sReal = sofar.reduce((a, d) => a + d.frc, 0), sTgt = sofar.reduce((a, d) => a + (d.tgt || 0), 0), wTgt = data.reduce((a, d) => a + (d.tgt || 0), 0);
