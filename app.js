@@ -2119,7 +2119,7 @@ function pageKapal(){
 }
 /* ===================== Armada =====================
    Three questions, per the agreed concept:
-   1. Kinerja muat di plant: trucks loaded per day, time in the plant (SLA masuk -> keluar) and queue (antri -> masuk), per plant.
+   1. Kinerja rilis: trucks loaded per day, time in the plant (SLA masuk -> keluar) and queue (antri -> masuk), per plant.
    2. Koridor (plant -> tujuan): cycle time (days between two trips of the same truck), t/trip and fleet need = trip/hari x siklus.
       Destination = province; Sumatera Barat from Indarung per district (Padang vs Pasaman/Dharmasraya differ too much).
    3. Scorecard ekspeditur: judged against the median cycle of the corridors it serves, not the overall average.
@@ -2210,14 +2210,14 @@ function pageArmada(){
 
   const tpdAll = median(perDayTrucks);
   page('<div class="wrap">' + crumb([['Armada']]) +
-    '<div class="dp-head"><div><div class="nm">Armada' + (F.moda === 'LAUT' ? ' · truk ke pelabuhan' : '') + '</div><div class="sub">Muat di plant, koridor &amp; ekspeditur · ' + incName() + ' · ' + periodSub() + '</div></div></div>' +
+    '<div class="dp-head"><div><div class="nm">Armada' + (F.moda === 'LAUT' ? ' · truk ke pelabuhan' : '') + '</div><div class="sub">Kinerja rilis, koridor &amp; ekspeditur · ' + incName() + ' · ' + periodSub() + '</div></div></div>' +
     '<div class="dp-grid4">' +
       kpi('truck', 'var(--black)', 'Truk dimuat / hari', fmt(tpdAll), {hint: 'median · ' + fmt(new Set(rows.map(t => t[1])).size) + ' truk berbeda'}) +
       kpi('trend', 'var(--black)', 'Trip', fmt(trips), {hint: fmt1(ton / Math.max(1, trips)) + ' t / trip'}) +
       kpi('clock', 'var(--amber)', 'Waktu di plant', dwN ? fmt1(dwS / dwN) + ' <small>jam</small>' : '–', {hint: 'masuk → keluar · ' + pctTxt(over4(rows)) + ' truk > ' + SLA_TARGET + ' jam'}) +
       kpi('clock', 'var(--black)', 'Antri', wN ? fmt1(wS / wN) + ' <small>jam</small>' : '–', {hint: 'antri → masuk pabrik'}) +
     '</div>' +
-    '<div class="section-head"><div class="section-title">1 · Kinerja muat di plant</div></div>' +
+    '<div class="section-head"><div class="section-title">1 · Kinerja rilis</div></div>' +
     '<div class="dp-panel" style="margin-bottom:14px"><div class="pt">Waktu di plant per hari (jam)</div>' + barsHTML('ad', dData) +
       '<div class="trend-legend"><span><i style="background:var(--green)"></i>&le;' + SLA_TARGET + ' jam</span><span><i style="background:var(--red)"></i>&gt;' + SLA_TARGET + ' jam</span><span><i class="dash"></i>target ' + SLA_TARGET + ' jam</span><span>klik batang = per ekspeditur</span></div></div>' +
     (plantTbl || '<div class="dp-review">Tidak ada data truk untuk filter ini.</div>') +
