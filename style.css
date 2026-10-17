@@ -756,3 +756,13 @@ table.tree tr.lv0 td.fz{background:var(--white)}
 .kq.off{color:var(--red)}
 .kq b{font-weight:700}
 .tbl td.num small{display:block;font-size:10.5px;color:var(--sub);font-weight:400}
+/* tabs for long pages: sticky under header + filter strip */
+.tabbar{position:sticky;top:var(--stick,0);z-index:40;display:flex;gap:2px;overflow-x:auto;scrollbar-width:none;background:var(--white);border-bottom:2px solid var(--line);margin:22px 0 18px;padding-top:6px}
+.tabbar::-webkit-scrollbar{display:none}
+.tab{flex:none;border:0;background:none;padding:10px 16px;font:inherit;font-size:13px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--sub);cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;white-space:nowrap}
+.tab:hover{color:var(--black)}
+.tab.on{color:var(--black);border-bottom-color:var(--red)}
+.tab small{margin-left:6px;font-size:11px;font-weight:700;color:var(--sub);background:var(--gray-l);padding:1px 6px;border-radius:9px}
+.tabpane>.section-head:first-child{margin-top:4px}
+@media (max-width:600px){.tab{padding:9px 11px;font-size:12px}.tabbar{margin:16px -16px 14px;padding:4px 16px 0}}
+.tab-note{font-size:12px;color:var(--sub);margin:-4px 0 12px;line-height:1.45}

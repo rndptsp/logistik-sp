@@ -1321,12 +1321,12 @@ function pageDistr(name){
       kpi('trend', 'var(--black)', 'Trip', fmt(s.trips), {hint: s.last >= 0 ? 'terakhir ' + dayLabel(B.days[s.last]) : ''}) +
       kpi('pin', 'var(--amber)', 'Toko / gudang', fmt(s.toko.size), {hint: s.prov.size + ' provinsi · ' + s.dist.size + ' distrik'}) +
     '</div>' +
+    tabsHTML('distr', [{k: 'ringkas', label: 'Incoterm & pengangkut', html:
     '<div class="section-head"><div class="section-title">Target &amp; realisasi per incoterm</div><div class="section-sub">' + incName() + ' · ' + periodSub() + '</div></div>' +
     (incRows.length ? table(incCols, incRows, {total: incRows.length > 1}) : '<div class="dp-review">Tidak ada realisasi maupun target untuk periode ini.</div>') +
     '<div class="dp-cols"><div class="dp-panel"><div class="pt">Volume bulanan (ton)<span class="pt-sub">' + (data.some(d => d.tgt) ? 'garis = target distributor' : '') + '</span></div>' + barsHTML('dm', data) + '<div class="trend-detail">Klik batang untuk tujuan kirim bulan itu.</div></div>' +
-    '<div class="dp-panel"><div class="pt">Diangkut oleh<span class="pt-sub">' + fmt(ekspTree.filter(n => B.dims.eksp[n.key]).length) + ' ekspeditur</span></div>' + (incGroups(() => volTable(buildTree(shipRows(m, sc), ['eksp']), 'Ekspeditur', n => ekspLbl(n.key), n => nodeHref(n)), () => fmt(shipRows(m, sc).reduce((a, r) => a + r[8], 0)) + ' t') || '<div class="empty">Tidak ada pengiriman untuk filter ini.</div>') + '</div></div>' +
-    '<div class="section-head"><div class="section-title">Tujuan pengiriman</div></div>' +
-    (rows.length ? treeHTML(annotateDistrTargets(buildTree(rows, ['prov', 'dist', 'toko']), m, {distr: di}), ['prov', 'dist', 'toko'], {distrTgt: true}) : '<div class="dp-review">Tidak ada pengiriman untuk filter ini.</div>') +
+    '<div class="dp-panel"><div class="pt">Diangkut oleh<span class="pt-sub">' + fmt(ekspTree.filter(n => B.dims.eksp[n.key]).length) + ' ekspeditur</span></div>' + (incGroups(() => volTable(buildTree(shipRows(m, sc), ['eksp']), 'Ekspeditur', n => ekspLbl(n.key), n => nodeHref(n)), () => fmt(shipRows(m, sc).reduce((a, r) => a + r[8], 0)) + ' t') || '<div class="empty">Tidak ada pengiriman untuk filter ini.</div>') + '</div></div>' },
+    {k: 'tujuan', label: 'Tujuan pengiriman', html: (rows.length ? treeHTML(annotateDistrTargets(buildTree(rows, ['prov', 'dist', 'toko']), m, {distr: di}), ['prov', 'dist', 'toko'], {distrTgt: true}) : '<div class="dp-review">Tidak ada pengiriman untuk filter ini.</div>')}]) +
     '</div>', 'wilayah');
 }
 
@@ -1395,7 +1395,7 @@ function applyPageBg(){
   h.style.setProperty('--bg', 'url("assets/bg/' + bg.f + '")');
   h.insertAdjacentHTML('beforeend', '<a class="bg-credit" href="#/kredit" title="' + esc(bg.t + ' — ' + bg.a + ' (' + bg.l + ')') + '">Foto: ' + esc(bg.t) + '</a>');
 }
-function page(html, nav){ view().innerHTML = '<div class="page-fade">' + html + '</div>'; applyPageBg(); setActiveNav(nav); window.scrollTo(0, 0); }
+function page(html, nav){ view().innerHTML = '<div class="page-fade">' + html + '</div>'; applyPageBg(); setActiveNav(nav); setStick(); window.scrollTo(0, 0); }
 /* Photo credits (licence requirement for CC BY / CC BY-SA photos). */
 function pageCredits(){
   const rows = Object.entries(Object.assign({}, window.BG || {}, window.LOGO || {})).map(([k, v]) => '<tr><td class="name">' + esc(v.t) + '<small>' + esc(k) + '</small></td><td>' + esc(v.a) + '</td><td>' + esc(v.l) + '</td><td><a href="' + esc(v.u) + '" target="_blank" rel="noopener">Sumber &rsaquo;</a></td></tr>').join('');
@@ -1531,15 +1531,14 @@ function pageProv(name){
       kpi('gap', me.gap < 0 ? 'var(--red)' : 'var(--green)', me.gap < 0 ? 'Sisa ke target' : 'Lebih dari target', me.hasTgt ? fmt(Math.abs(me.gap)) + ' <small>ton</small>' : '–') +
       kpi('box', 'var(--amber)', 'SO / Real÷SO', me.so ? fmt(me.so) + ' <small>t · ' + pctTxt(me.of) + '</small>' : '–') +
     '</div>'
-    )) + incPerf(m, sc) +
-    '<div class="dp-cols">' + trendPanel(sc, 'mingguan') +
-      '<div class="dp-panel"><div class="pt">Ekspeditur di provinsi ini<span class="pt-sub">capaian target · Real/SO</span></div>' + (incGroups(() => capTable(ekspRows(m, sc), 'Ekspeditur', o => ekspLbl(o.key), o => ekspHref(o.key), true), ekspSub(m, sc)) || '<div class="empty">Tidak ada data.</div>') + '</div>' +
-    '</div>' +
-    '<div class="section-head"><div class="section-title">Distributor di provinsi ini</div><a class="section-link" href="#/distributor">Semua distributor &rsaquo;</a></div>' + distrTable(m, sc, 60).html +
-    '<div class="section-head"><div class="section-title">Kinerja &amp; tujuan pengiriman per distrik</div></div>' +
-    treeHTML(annotateDistrTargets(buildTree(shipRows(m, sc), ['dist', 'distr', 'toko']), m, {prov: pi}, {}, ['distr']), ['dist', 'distr', 'toko'], {tgt: {dist: summarize('dist', m, sc)}}) +
-    '<div class="dp-cols even">' + sourcePanel(sc) + '<div class="dp-panel"><div class="pt">Bulan penuh</div>' +
-      '<div class="tgt-panel" style="margin:0;border:0;padding:0"><div class="tgt-item"><div class="tl">Target bulan</div><div class="tv">' + (me.hasTgt ? fmt(me.tgtFull) : '–') + ' t</div></div><div class="tgt-item"><div class="tl">Realisasi ' + incName() + '</div><div class="tv">' + fmt(me.frc) + ' t</div></div><div class="tgt-item"><div class="tl">Sisa bulan</div><div class="tv ' + (me.tgtFull - me.frc > 0 ? 'bad' : 'good') + '">' + (me.hasTgt ? fmt(Math.max(0, me.tgtFull - me.frc)) : '–') + ' t</div></div></div></div></div>' +
+    )) + tabsHTML('prov', [{k: 'tren', label: 'Tren & incoterm', html: incPerf(m, sc) +
+    '<div class="dp-cols">' + trendPanel(sc, 'mingguan') + '</div>' +
+    '<div class="dp-cols even">' + sourcePanel(sc) + '<div class="dp-panel"><div class="pt">Bulan penuh</div>' + ('<div class="tgt-panel" style="margin:0;border:0;padding:0"><div class="tgt-item"><div class="tl">Target bulan</div><div class="tv">' + (me.hasTgt ? fmt(me.tgtFull) : '–') + ' t</div></div><div class="tgt-item"><div class="tl">Realisasi ' + incName() + '</div><div class="tv">' + fmt(me.frc) + ' t</div></div><div class="tgt-item"><div class="tl">Sisa bulan</div><div class="tv ' + (me.tgtFull - me.frc > 0 ? 'bad' : 'good') + '">' + (me.hasTgt ? fmt(Math.max(0, me.tgtFull - me.frc)) : '–') + ' t</div></div></div>') + '</div></div>'},
+    {k: 'distrik', label: 'Distrik', n: dist.filter(o => o.vol > 0).length, html: treeHTML(annotateDistrTargets(buildTree(shipRows(m, sc), ['dist', 'distr', 'toko']), m, {prov: pi}, {}, ['distr']), ['dist', 'distr', 'toko'], {tgt: {dist: summarize('dist', m, sc)}})},
+    {k: 'eksp', label: 'Ekspeditur', html:
+      '<div class="dp-panel"><div class="pt">Ekspeditur di provinsi ini<span class="pt-sub">capaian target · Real/SO</span></div>' + (incGroups(() => capTable(ekspRows(m, sc), 'Ekspeditur', o => ekspLbl(o.key), o => ekspHref(o.key), true), ekspSub(m, sc)) || '<div class="empty">Tidak ada data.</div>') + '</div>'
+    },
+    {k: 'distr', label: 'Distributor', html: distrTable(m, sc, 60).html}]) +
     '</div>', 'wilayah');
 }
 
@@ -1780,12 +1779,14 @@ function pagePlant(name){
   page('<div class="wrap">' + crumb([['Plant', '#/plant'], [name]]) +
     '<div class="dp-head"><div><div class="nm">' + esc(name) + '</div><div class="sub">Plant / packing plant asal pengiriman · ' + esc(scopeTxt) + ' · ' + periodSub() + '</div></div></div>' +
     (F.srcOff.has(name) ? '<div class="dp-review">Plant ini tidak dicentang di filter plant: halaman ini tetap menampilkan datanya, tetapi Ringkasan dan halaman lain tidak menghitungnya sampai dicentang.</div>' : '') +
-    hero + chart + hourSec + cmp +
-    '<div class="dp-cols">' +
+    hero + tabsHTML('plant', [
+    {k: 'kinerja', label: 'Tren & incoterm', html: chart + cmp},
+    ...(hourSec ? [{k: 'kapal', label: 'Kapal', html: hourSec}] : []),
+    {k: 'tujuan', label: 'Tujuan & ekspeditur', html: '<div class="dp-cols">' +
       '<div class="dp-panel"><div class="pt">Provinsi tujuan<span class="pt-sub">capaian target · ' + esc(incName()) + '</span></div>' + (capTable(provs, 'Provinsi', o => tc(B.dims.prov[o.key]), o => '#/provinsi/' + enc(B.dims.prov[o.key])) || '<div class="empty">Tidak ada data.</div>') + '</div>' +
       '<div class="dp-panel"><div class="pt">Ekspeditur / pengangkut<span class="pt-sub">' + esc(incName()) + '</span></div>' + (incGroups(() => capTable(ekspRows(m, sc), 'Ekspeditur', o => ekspLbl(o.key), o => ekspHref(o.key)), ekspSub(m, sc)) || '<div class="empty">Tidak ada data.</div>') + '</div>' +
-    '</div>' +
-    '<div class="section-head"><div class="section-title">Distributor dari plant ini</div><a class="section-link" href="#/distributor">Semua distributor &rsaquo;</a></div>' + DT.html +
+    '</div>'},
+    {k: 'distr', label: 'Distributor', html: DT.html}]) +
     '</div>', 'plant');
 }
 
@@ -1807,12 +1808,10 @@ function pageDist(name){
       kpi('gap', me.gap < 0 ? 'var(--red)' : 'var(--green)', 'Gap', me.hasTgt ? signed(me.gap) + ' <small>ton</small>' : '–') +
       kpi('box', 'var(--amber)', 'SO / Real÷SO', me.so ? fmt(me.so) + ' <small>t · ' + pctTxt(me.of) + '</small>' : '–') +
     '</div>' +
-    mapS)) + incPerf(m, sc) +
-    '<div class="dp-cols">' + trendPanel(sc, 'harian') + '</div>' +
-    '<div class="section-head"><div class="section-title">Tujuan pengiriman: distributor &rsaquo; toko / gudang</div></div>' +
-    treeHTML(annotateDistrTargets(buildTree(shipRows(m, sc), ['distr', 'toko']), m, {dist: di}), ['distr', 'toko'], {distrTgt: true}) +
-    '<div class="section-head"><div class="section-title">Ekspeditur di distrik ini</div></div>' +
-    (incGroups(() => { const l = ekspRows(m, sc); return l.length ? table(ekCols, l, {go: r => ekspHref(r.key), sort: 1}) : ''; }, ekspSub(m, sc)) || '<div class="dp-review">Tidak ada ekspeditur untuk filter ini.</div>') +
+    mapS)) + tabsHTML('dist', [
+    {k: 'tren', label: 'Tren & incoterm', html: incPerf(m, sc) + '<div class="dp-cols">' + trendPanel(sc, 'harian') + '</div>'},
+    {k: 'tujuan', label: 'Distributor & toko', html: treeHTML(annotateDistrTargets(buildTree(shipRows(m, sc), ['distr', 'toko']), m, {dist: di}), ['distr', 'toko'], {distrTgt: true})},
+    {k: 'eksp', label: 'Ekspeditur', html: incGroups(() => { const l = ekspRows(m, sc); return l.length ? table(ekCols, l, {go: r => ekspHref(r.key), sort: 1}) : ''; }, ekspSub(m, sc)) || '<div class="dp-review">Tidak ada ekspeditur untuk filter ini.</div>'}]) +
     '</div>', 'wilayah');
 }
 
@@ -1871,16 +1870,14 @@ function pageEksp(code){
       kpi('target', 'var(--black)', 'Target MTD', me.hasTgt ? fmt(me.tgt) + ' <small>ton</small>' : '–', {hint: me.hasTgt ? 'bulan penuh ' + fmt(me.tgtFull) + ' t' : ''}) +
       kpi('truck', 'var(--black)', 'Truk aktif', fmt(trucks.length), {hint: fmt1(me.trips / Math.max(1, trucks.length)) + ' trip / truk'}) +
       kpi('clock', 'var(--amber)', 'Rata-rata SLA', me.dwell == null ? '–' : fmt1(me.dwell) + ' <small>jam</small>', {hint: me.so ? 'Real/SO ' + pctTxt(me.of) : ''}) +
-    '</div>' + incPerf(m, sc) +
+    '</div>' + tabsHTML('eksp', [{k: 'kinerja', label: 'Kinerja & provinsi', html: incPerf(m, sc) +
     '<div class="dp-cols">' + trendPanel(sc, 'mingguan') +
       '<div class="dp-panel"><div class="pt">Capaian per provinsi<span class="pt-sub">capaian target · Real/SO</span></div>' + (provs.length ? incGroups(() => capTable([...summarize('prov', m, sc).values()].filter(o => o.vol > 0 || o.tgt > 0).sort((a, b) => b.vol - a.vol), 'Provinsi', o => tc(B.dims.prov[o.key]), o => '#/provinsi/' + enc(B.dims.prov[o.key]), true), ekspSub(m, sc)) : '<div class="empty">Tidak ada data untuk filter ini.</div>') + '</div>' +
     '</div>' +
     '<div class="section-head"><div class="section-title">Target bulan berjalan</div></div>' +
-    '<div class="tgt-panel"><div class="tgt-item"><div class="tl">Target bulan</div><div class="tv">' + (me.hasTgt ? fmt(me.tgtFull) : '–') + ' t</div></div><div class="tgt-item"><div class="tl">Target MTD</div><div class="tv">' + (me.hasTgt ? fmt(me.tgt) : '–') + ' t</div></div><div class="tgt-item"><div class="tl">Realisasi</div><div class="tv">' + fmt(me.frc) + ' t</div></div><div class="tgt-item"><div class="tl">Sisa ke target bulan</div><div class="tv ' + (me.tgtFull - me.frc > 0 ? 'bad' : 'good') + '">' + (me.hasTgt ? fmt(Math.max(0, me.tgtFull - me.frc)) : '–') + ' t</div></div></div>' +
-    '<div class="section-head"><div class="section-title">Pengiriman per provinsi &rsaquo; distrik &rsaquo; distributor &rsaquo; toko</div></div>' +
-    treeHTML(buildTree(shipRows(m, sc), ['prov', 'dist', 'distr', 'toko']), ['prov', 'dist', 'distr', 'toko'], {tgt: {prov: summarize('prov', m, sc), dist: summarize('dist', m, sc)}}) +
-    '<div class="section-head"><div class="section-title">Truk ' + esc(code) + ' (' + fmt(trucks.length) + ')</div><a class="section-link" href="#/armada">Semua armada &rsaquo;</a></div>' +
-    table(truckCols, trucks, {limit: 300}) +
+    '<div class="tgt-panel"><div class="tgt-item"><div class="tl">Target bulan</div><div class="tv">' + (me.hasTgt ? fmt(me.tgtFull) : '–') + ' t</div></div><div class="tgt-item"><div class="tl">Target MTD</div><div class="tv">' + (me.hasTgt ? fmt(me.tgt) : '–') + ' t</div></div><div class="tgt-item"><div class="tl">Realisasi</div><div class="tv">' + fmt(me.frc) + ' t</div></div><div class="tgt-item"><div class="tl">Sisa ke target bulan</div><div class="tv ' + (me.tgtFull - me.frc > 0 ? 'bad' : 'good') + '">' + (me.hasTgt ? fmt(Math.max(0, me.tgtFull - me.frc)) : '–') + ' t</div></div></div>'},
+    {k: 'tujuan', label: 'Tujuan pengiriman', html: treeHTML(buildTree(shipRows(m, sc), ['prov', 'dist', 'distr', 'toko']), ['prov', 'dist', 'distr', 'toko'], {tgt: {prov: summarize('prov', m, sc), dist: summarize('dist', m, sc)}})},
+    {k: 'truk', label: 'Truk', n: trucks.length, html: '<div class="tab-note"><a class="section-link" href="#/armada">Semua armada &rsaquo;</a></div>' + table(truckCols, trucks, {limit: 300})}]) +
     '</div>', 'ekspeditur');
 }
 
@@ -2100,14 +2097,15 @@ function pageKapal(){
     const all = agg(rows), named = all.filter(o => o.k !== '\u0000'), unk = all.find(o => o.k === '\u0000');
     // grouping: per dermaga (loading point = source plant); vessel names exist for FOB only, so an incoterm split adds nothing
     const srcs = [...new Set(rows.map(r => r[2]))].map(si => ({si, rs: rows.filter(r => r[2] === si)})).map(g => Object.assign(g, {vol: g.rs.reduce((a, r) => a + r[8], 0)})).sort((a, b) => b.vol - a.vol);
-    const groups = srcs.map(g => {
+    const groups = tabsHTML('kapal', srcs.map(g => {
       const list = agg(g.rs), c = cols.map(x => Object.assign({}, x)), n = list.filter(o => o.k !== '\u0000');
       c[2].total = fmt(list.reduce((a, o) => a + (o.voy || 0), 0)); c[3].total = fmt(g.vol);
       const tl = shipGantt(m, null, {src: g.si, bare: true, noKey: true});
-      return '<section class="krm-grp"><div class="krm-h"><b>' + esc(dermagaLbl(g.si)) + '</b><small>' + fmt(n.length) + ' kapal · ' + fmt(g.vol) + ' t · ' + pctTxt(pctOf(g.vol, tot)) + ' tonase laut · ' + esc(periodSub()) + '</small></div>' +
+      const h = '<section class="krm-grp"><div class="krm-h"><b>' + esc(dermagaLbl(g.si)) + '</b><small>' + fmt(n.length) + ' kapal · ' + fmt(g.vol) + ' t · ' + pctTxt(pctOf(g.vol, tot)) + ' tonase laut · ' + esc(periodSub()) + '</small></div>' +
         '<div class="krm-sub">Timeline 30 hari</div>' + (tl || '<div class="dp-review">Tidak ada kapal bernama dalam 30 hari terakhir.</div>') +
         '<div class="krm-sub">Detail kapal</div>' + table(c, list, {total: true, limit: 400, go: o => o.k === '\u0000' ? null : '#/kapal/' + enc(o.nm)}) + '</section>';
-    }).join('');
+      return {k: String(g.si), label: dermagaLbl(g.si), n: n.length, html: h};
+    }));
     const e30 = Math.max(0, B.days.indexOf(m.to) >= 0 ? B.days.indexOf(m.to) : B.days.length - 1);
     page('<div class="wrap">' + crumb([['Kapal']]) +
       '<div class="dp-head"><div><div class="nm">Kapal · moda laut</div><div class="sub">' + fmt(named.length) + ' kapal di ' + fmt(srcs.length) + ' dermaga · voyage: kapal reguler (rata-rata < ' + VOY_SMALL + ' t/hari muat) = tiap hari muat; kapal kargo = hari muat berjeda ≤ ' + VOY_GAP + ' hari · ' + periodSub() + '</div></div></div>' +
@@ -2147,6 +2145,28 @@ function cycleGaps(per){
   const med = new Map([...corr.entries()].map(([k, a]) => [k, median(a)]));
   return {med, n: new Map([...corr.entries()].map(([k, a]) => [k, a.length])), ek};
 }
+/* ===================== Tabs (long pages) =====================
+   tabsHTML(id, [{k, label, html, n}]): one bar + panes; empty panes are dropped; the chosen tab is remembered per page
+   (sessionStorage, best effort). The bar sticks under the header + filter strip (--stick, set by setStick). */
+function tabsHTML(id, list){
+  list = list.filter(t => t && t.html);
+  if(list.length < 2) return list.map(t => t.html).join('');
+  let act = null; try { act = sessionStorage.getItem('tab:' + id); } catch(e){}
+  if(!list.some(t => t.k === act)) act = list[0].k;
+  return '<div class="tabbar" role="tablist" data-tabs="' + id + '">' + list.map(t => '<button class="tab' + (t.k === act ? ' on' : '') + '" role="tab" data-tab="' + id + ':' + t.k + '">' + esc(t.label) + (t.n != null ? '<small>' + t.n + '</small>' : '') + '</button>').join('') + '</div>' +
+    list.map(t => '<div class="tabpane" data-pane="' + id + ':' + t.k + '"' + (t.k === act ? '' : ' hidden') + '>' + t.html + '</div>').join('');
+}
+function tabClick(btn){
+  const [id, k] = btn.dataset.tab.split(':');
+  $$('[data-tab^="' + id + ':"]').forEach(b => b.classList.toggle('on', b === btn));
+  $$('[data-pane^="' + id + ':"]').forEach(p => { p.hidden = p.dataset.pane !== id + ':' + k; });
+  try { sessionStorage.setItem('tab:' + id, k); } catch(e){}
+  const bar = btn.closest('.tabbar'), top = bar.getBoundingClientRect().top, stick = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--stick')) || 0;
+  if(top < stick - 1) window.scrollBy(0, top - stick);   // bar is stuck: bring the new pane's start into view
+}
+function setStick(){ const h = ($('header') ? $('header').offsetHeight : 0) + ($('#filterStrip') ? $('#filterStrip').offsetHeight : 0); document.documentElement.style.setProperty('--stick', h + 'px'); }
+window.addEventListener('resize', setStick);
+
 /* ===================== Kontrak angkutan (slot "kontrak") =====================
    B.kontrak: [eksp, src, [dist..], sub, kuota, volEksThn, amendVol, amendFrom, from, to, lead, cycle, dedRute, toa, distName]
    Contract = jasa transportasi darat semen SAK (ZAK + jumbo bag), FRC only, and only for the awarded ekspeditur x route.
@@ -2171,11 +2191,25 @@ function kontrakModel(){
     o.real += f[6]; const x = o.rt.get(ri) || {est: 0, real: 0, so: 0}; x.real += f[6]; o.rt.set(ri, x);
     const dk = B.days[f[0]] + '|' + f[4] + '|' + f[5]; dayReal.set(dk, (dayReal.get(dk) || 0) + f[6]);
   });
+  /* SO per contract proportion (Rendy): all FRC sak SO of a contracted district, whoever it was booked to, is split over
+     that district's winners by their contract volume for the month (= kuota; amendments and released routes included).
+     Real vs this "SO kontrak" shows who carries more or less than its share. */
+  const byDist = new Map();   // dist -> [{i, e}]
+  K.forEach((r, i) => r[2].forEach(di => { const g = byDist.get(di) || []; g.push(i); byDist.set(di, g); }));
+  const shareCache = new Map();
+  const shares = (di, m) => { const k = di + '|' + m; if(shareCache.has(k)) return shareCache.get(k);
+    const ix = byDist.get(di) || [], v = ix.map(i => estM(K[i], m)), t = v.reduce((a, x) => a + x, 0);
+    const out = t > 0 ? ix.map((i, j) => [i, v[j] / t]) : []; shareCache.set(k, out); return out; };
+  const soDay = new Map();
   (B.sod || []).forEach(r => {   // [date, prov, dist, eksp, ton, kem]
-    const m = r[0].slice(0, 7); if(m < first || !eSet.has(r[3]) || !awD.has(r[3] + '|' + r[2]) || !sak(r[5])) return;
-    const o = cell(r[3], m); o.so += r[4];
-    const rl = dayReal.get(r[0] + '|' + r[2] + '|' + r[3]) || 0; o.soDay += r[4]; o.okDay += Math.min(rl, r[4]);
+    const m = r[0].slice(0, 7); if(m < first || !byDist.has(r[2]) || !sak(r[5])) return;
+    shares(r[2], m).forEach(([i, f]) => {
+      const e = K[i][0], o = cell(e, m), v = r[4] * f; o.so += v;
+      const x = o.rt.get(i) || {est: 0, real: 0, so: 0}; x.so += v; o.rt.set(i, x);
+      const k = r[0] + '|' + r[2] + '|' + e; soDay.set(k, (soDay.get(k) || 0) + v);
+    });
   });
+  soDay.forEach((v, k) => { const [day, , e] = k.split('|'), o = cell(+e, day.slice(0, 7)); const rl = dayReal.get(k) || 0; o.soDay += v; o.okDay += Math.min(rl, v); });
   // route share on shared routes (kuota vs aktual), per month
   return {K, months, eks, cell, asM};
 }
@@ -2199,7 +2233,7 @@ function kontrakSection(){
   const shTbl = shared.length ? table([{h:'Rute (dari ' + tc(B.dims.src[KM.K[0][1]] || 'plant') + ')', cls:'name', val: r => r.n, html: r => esc(r.n) + '<small>' + fmt(r.tot) + ' t</small>'},
     {h:'Kuota kontrak → porsi aktual', val: r => r.tot, html: r => r.parts.sort((a, b) => b.real - a.real).map(p => { const a = pctOf(p.real, r.tot) || 0, q = (p.kuota || 0) * 100, off = Math.abs(a - q) > 15;
       return '<span class="kq' + (off ? ' off' : '') + '"><b>' + esc(B.dims.eksp[p.e]) + '</b> ' + pctTxt(q) + ' → ' + pctTxt(a) + '</span>'; }).join('')}], shared, {sort: 0}) : '';
-  return '<div class="section-head"><div class="section-title">4 · Kontrak ekspeditur per bulan</div><div class="section-sub">realisasi rute pemenang vs estimasi kontrak (volume tahunan ÷ 12; amandemen dihitung dari bulannya) · semen sak, FRC · * bulan berjalan pro-rata s.d. ' + shortDate(B.asOf) + ' · klik baris untuk rincian rute ' + monthShort(mSel) + '</div></div>' +
+  return '<div class="tab-note">realisasi rute pemenang vs estimasi kontrak (volume tahunan ÷ 12; amandemen dari bulannya) · R/SO = realisasi vs SO rute yang dibagi sesuai proporsi kontrak · semen sak, FRC · * bulan berjalan pro-rata s.d. ' + shortDate(B.asOf) + ' · klik baris untuk rincian rute ' + monthShort(mSel) + '</div>' +
     table(cols, rows, {go: r => 'kontrak:' + r.key, sort: months.length}) +
     (shTbl ? '<div class="section-head"><div class="section-title">Rute bersama · kuota vs porsi aktual · ' + monthLabel(mSel) + '</div><div class="section-sub">merah = selisih lebih dari 15 poin dari kuota</div></div>' + shTbl : '');
 }
@@ -2211,6 +2245,8 @@ function kontrakDetail(e){
     {h:'Rute', cls:'name', val: x => x.r[14], html: x => esc(tc(x.r[14])) + '<small>' + esc(tc(B.dims.src[x.r[1]] || '')) + (x.r[4] != null && x.r[4] < 1 ? ' · kuota ' + pctTxt(x.r[4] * 100) : '') + (x.r[9] ? ' · s.d. ' + monthShort(x.r[9]) : '') + (x.r[6] ? ' · amandemen' : '') + '</small>'},
     {h:'Estimasi (t)', num:true, val: x => x.est, html: x => fmt(x.est)}, {h:'Realisasi (t)', num:true, val: x => x.real, html: x => fmt(x.real)},
     {h:'Capaian', num:true, cls:'pc', val: x => x.est ? x.real / x.est * 100 : null, html: x => x.est ? pctTxt(x.real / x.est * 100) : '–', style: x => 'color:' + tierColor(x.est ? x.real / x.est * 100 : null)},
+    {h:'SO kontrak (t)', num:true, val: x => x.so, html: x => x.so ? fmt(x.so) : '–'},
+    {h:'Real / SO', num:true, cls:'pc', val: x => x.so ? x.real / x.so * 100 : null, html: x => x.so ? pctTxt(x.real / x.so * 100) : '–', style: x => 'color:' + tierColor(x.so ? x.real / x.so * 100 : null)},
     {h:'Lead / siklus (hari)', num:true, val: x => x.r[10], html: x => (x.r[10] != null ? fmt1(x.r[10]) : '–') + ' / ' + (x.r[11] != null ? fmt1(x.r[11]) : '–')},
     {h:'TOA (Rp/t)', num:true, val: x => x.r[13], html: x => x.r[13] ? fmt(x.r[13]) : '–'}], rs, {sort: 1}) +
     (o.luar ? '<div class="dp-review">Di luar rute pemenang: ' + fmt(o.luar) + ' t pada bulan ini.</div>' : ''));
@@ -2284,16 +2320,15 @@ function pageArmada(){
       kpi('trend', 'var(--black)', 'Trip', fmt(trips), {hint: fmt1(ton / Math.max(1, trips)) + ' t / trip'}) +
       kpi('clock', 'var(--amber)', 'Waktu di plant', dwN ? fmt1(dwS / dwN) + ' <small>jam</small>' : '–', {hint: 'masuk → keluar · ' + pctTxt(over4(rows)) + ' truk > ' + SLA_TARGET + ' jam'}) +
       kpi('clock', 'var(--black)', 'Antri', wN ? fmt1(wS / wN) + ' <small>jam</small>' : '–', {hint: 'antri → masuk pabrik'}) +
-    '</div>' +
-    '<div class="section-head"><div class="section-title">1 · Kinerja rilis</div></div>' +
+    '</div>' + tabsHTML('armada', [{k: 'rilis', label: 'Kinerja rilis', html:
     '<div class="dp-panel" style="margin-bottom:14px"><div class="pt">Waktu di plant per hari (jam)</div>' + barsHTML('ad', dData) +
       '<div class="trend-legend"><span><i style="background:var(--green)"></i>&le;' + SLA_TARGET + ' jam</span><span><i style="background:var(--red)"></i>&gt;' + SLA_TARGET + ' jam</span><span><i class="dash"></i>target ' + SLA_TARGET + ' jam</span><span>klik batang = per ekspeditur</span></div></div>' +
-    (plantTbl || '<div class="dp-review">Tidak ada data truk untuk filter ini.</div>') +
-    '<div class="section-head"><div class="section-title">2 · Koridor plant → tujuan</div><div class="section-sub">siklus = median jeda hari antar trip truk yang sama (60 hari terakhir) · armada dibutuhkan = trip/hari × siklus</div></div>' +
-    (corrTbl || '<div class="dp-review">Tidak ada data.</div>') +
-    '<div class="section-head"><div class="section-title">3 · Scorecard ekspeditur</div><div class="section-sub">siklus vs koridor: 100% = sama dengan median koridor yang dilayani; &lt;100% lebih cepat</div></div>' +
-    (incGroups(scoreTbl) || '<div class="dp-review">Tidak ada data.</div>') +
-    kontrakSection() +
+    (plantTbl || '<div class="dp-review">Tidak ada data truk untuk filter ini.</div>')},
+    {k: 'koridor', label: 'Koridor', html: '<div class="tab-note">Siklus = median jeda hari antar trip truk yang sama (60 hari terakhir) · armada dibutuhkan = trip/hari × siklus</div>' +
+    (corrTbl || '<div class="dp-review">Tidak ada data.</div>')},
+    {k: 'eksp', label: 'Ekspeditur', html: '<div class="tab-note">Siklus vs koridor: 100% = sama dengan median koridor yang dilayani; &lt;100% lebih cepat</div>' +
+    (incGroups(scoreTbl) || '<div class="dp-review">Tidak ada data.</div>')},
+    {k: 'kontrak', label: 'Kontrak', html: kontrakSection()}]) +
     '</div>', 'armada');
 }
 function qTable(head, rows){
@@ -2461,6 +2496,8 @@ function bindEvents(){
     const pd = e.target.closest('[data-plantday]');
     if(pd){ e.preventDefault(); plantHourDay = +pd.dataset.plantday; const sec = $('#plantHours'); if(sec) sec.outerHTML = plantHourSection(); return; }
     const go = e.target.closest('[data-href]');
+    const tb = e.target.closest('[data-tab]');
+    if(tb){ tabClick(tb); return; }
     if(go && /^kontrak:/.test(go.dataset.href || '')){ kontrakDetail(+go.dataset.href.slice(8)); return; }
     if(go && go.dataset.href && go.dataset.href !== 'null'){ location.hash = go.dataset.href; return; }
     if(!e.target.closest('#mainNav')) closeNav();
