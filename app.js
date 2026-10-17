@@ -981,7 +981,7 @@ const heroTier = p => p == null ? '#C9D3D9' : p >= 100 ? '#5FD08F' : p >= 85 ? '
 const heroChip = (l, v, sub, color) => '<div class="mh-chip"><div class="l">' + l + '</div><div class="v"' + (color ? ' style="color:' + color + '"' : '') + '>' + v + '</div>' + (sub ? '<div class="s">' + sub + '</div>' : '') + '</div>';
 function heroPanel(o){
   const bg = (window.BG || {})[provBg(o.photo)];
-  return '<section class="map-hero mh-page' + (o.cls ? ' ' + o.cls : '') + '"><div class="mh-bg"' + (bg ? ' style="background-image:linear-gradient(90deg,rgba(15,26,33,.96) 0%,rgba(15,26,33,.86) 45%,rgba(15,26,33,.6) 100%),url(&quot;assets/bg/' + bg.f + '&quot;)"' : '') + '></div><div class="mh-inner">' +
+  return '<section class="map-hero mh-page' + (o.cls ? ' ' + o.cls : '') + '"><div class="mh-bg"' + (bg ? ' style="background-image:linear-gradient(90deg,rgba(15,26,33,.95) 0%,rgba(15,26,33,.8) 42%,rgba(15,26,33,.38) 100%),url(&quot;assets/bg/' + bg.f + '&quot;)"' : '') + '></div><div class="mh-inner">' +
     '<div class="mh-left"><div class="eyebrow">' + o.eyebrow + '</div><h2 class="mh-h">' + o.head + '</h2>' +
       '<div class="mh-chips">' + o.chips.join('') + '</div>' +
       '<div class="mh-list"><div class="mh-lh"><span>' + o.listHead + '</span></div><div class="mh-row mh-head' + (o.listCols.length === 2 ? ' mh-row2' : '') + '"><span></span><span></span>' + o.listCols.map((c, i) => '<span class="' + ['mh-tn', 'mh-pc', 'mh-so'][i] + '">' + c + '</span>').join('') + '</div><div class="mh-scroll">' + o.rows + '</div></div>' +
@@ -1380,7 +1380,9 @@ function regionLogo(){
   const list = Object.values(L).filter(o => o.p === prov && o.n), i = matchDistrict(b, list);
   return i >= 0 ? list[i] : provLogo || null;
 }
-function applyPageBg(){
+// focal point per header photo (the subject, not the sky): wide headers show only a band of the photo
+const BG_POS = {'moda-darat': 'center 92%', 'moda-laut': 'center 88%', 'moda-kontainer': 'center 62%', 'plant-indarung': 'center 68%', 'prov-sumatera-utara': 'center 60%', 'prov-sumatera-barat': 'center 75%'};
+function applyPageBg(nav){
   const h = $('#view .dp-head'), lg = h && regionLogo();
   if(lg){
     h.classList.add('has-logo');
@@ -1393,9 +1395,26 @@ function applyPageBg(){
   if(!bg || !h) return;
   h.classList.add('has-bg');
   h.style.setProperty('--bg', 'url("assets/bg/' + bg.f + '")');
+  h.style.setProperty('--bgpos', BG_POS[pageBgKey()] || 'center 45%');
+  // eyebrow = the menu this page belongs to, so the title reads as "section > page"
+  const nb = nav && $('#mainNav [data-nav="' + nav + '"] .navbtn, #mainNav a[data-nav="' + nav + '"]'), eb = nb ? nb.textContent.replace(/[▼\s]+$/, '').trim() : '';
+  if(eb && h.firstElementChild) h.firstElementChild.insertAdjacentHTML('afterbegin', '<div class="dp-eyebrow">' + esc(eb) + '</div>');
   h.insertAdjacentHTML('beforeend', '<a class="bg-credit" href="#/kredit" title="' + esc(bg.t + ' — ' + bg.a + ' (' + bg.l + ')') + '">Foto: ' + esc(bg.t) + '</a>');
 }
-function page(html, nav){ view().innerHTML = '<div class="page-fade">' + html + '</div>'; applyPageBg(); setActiveNav(nav); setStick(); window.scrollTo(0, 0); }
+/* Visit log (admin page "Kunjungan"): one beacon per page view after unlock. Anonymous: random visitor id kept in
+   this browser, session id per tab, page path, device class. No name, no IP (the server keeps only city). */
+const rid = () => Math.random().toString(36).slice(2, 12).padEnd(10, '0');
+let lastView = '';
+function trackView(){
+  const p = location.hash.replace(/^#\/?/, '').split('/').slice(0, 2).map(x => { try { return decodeURIComponent(x); } catch(e){ return x; } }).join('/').slice(0, 120);
+  if(p === lastView || location.hostname === 'localhost') return; lastView = p;
+  let v = null, s = null;
+  try { v = localStorage.getItem('osp_vid'); if(!v){ v = rid(); localStorage.setItem('osp_vid', v); } } catch(e){ v = rid(); }
+  try { s = sessionStorage.getItem('osp_sid'); if(!s){ s = rid(); sessionStorage.setItem('osp_sid', s); } } catch(e){ s = rid(); }
+  const w = Math.min(screen.width, innerWidth), d = w < 700 ? 'hp' : w < 1100 ? 'tablet' : 'desktop';
+  try { navigator.sendBeacon('/api/hit', new Blob([JSON.stringify({v, s, p, d})], {type: 'text/plain'})); } catch(e){}
+}
+function page(html, nav){ view().innerHTML = '<div class="page-fade">' + html + '</div>'; applyPageBg(nav); setActiveNav(nav); setStick(); window.scrollTo(0, 0); }
 /* Photo credits (licence requirement for CC BY / CC BY-SA photos). */
 function pageCredits(){
   const rows = Object.entries(Object.assign({}, window.BG || {}, window.LOGO || {})).map(([k, v]) => '<tr><td class="name">' + esc(v.t) + '<small>' + esc(k) + '</small></td><td>' + esc(v.a) + '</td><td>' + esc(v.l) + '</td><td><a href="' + esc(v.u) + '" target="_blank" rel="noopener">Sumber &rsaquo;</a></td></tr>').join('');
@@ -1737,7 +1756,7 @@ function pagePlant(name){
       '<div class="ph-k"><span>Internal</span><b style="color:' + heroTier(pi) + '">' + (o.tgt ? pctTxt(pi) : '–') + '</b><small>' + (o.tgt ? 'T ' + fmt(o.tgt * TGT_INTERNAL) : '') + '</small></div></div>';
   }).join('') || '<div class="mh-miss">Tidak ada incoterm dengan rilis atau target.</div>';
   const bg = (window.BG || {})[plantBg(name)];
-  const hero = '<section class="map-hero mh-page plant-hero"><div class="mh-bg"' + (bg ? ' style="background-image:linear-gradient(90deg,rgba(15,26,33,.96) 0%,rgba(15,26,33,.88) 50%,rgba(15,26,33,.7) 100%),url(&quot;assets/bg/' + bg.f + '&quot;)"' : '') + '></div><div class="mh-inner">' +
+  const hero = '<section class="map-hero mh-page plant-hero"><div class="mh-bg"' + (bg ? ' style="background-image:linear-gradient(90deg,rgba(15,26,33,.95) 0%,rgba(15,26,33,.82) 48%,rgba(15,26,33,.5) 100%),url(&quot;assets/bg/' + bg.f + '&quot;)"' : '') + '></div><div class="mh-inner">' +
     '<div class="mh-left"><div class="eyebrow">Kinerja rilis · ' + esc(m.sub) + '</div><h2 class="mh-h">' + head + '</h2><div class="mh-chips">' + chips.join('') + '</div></div>' +
     '<div class="ph-cards"><div class="mh-lh"><span>KPI per incoterm · SNOP &amp; Internal</span></div>' + cards + '</div></div></section>';
   // daily trend: the standard trend panel (tier-coloured bars, % and value, target ticks, MTD/harian/mingguan/bulanan)
@@ -1847,12 +1866,12 @@ function pageEkspList(){
 }
 
 /* Nama lengkap ekspeditur (kamus master baru) bila kode hanya singkatan. */
-const ekspFull = c => { const n = (B.dims.ekspNama || [])[D.ekspIdx[c]]; return n && n !== c ? esc(n) + ' · ' : ''; };
+const ekspFull = c => { const n = coLbl((B.dims.ekspNama || [])[D.ekspIdx[c]] || ''); return n && n !== c ? esc(n) + ' · ' : ''; };
 function pageEksp(code){
   const ei = D.ekspIdx[code];
   if(ei == null) return notFound('Ekspeditur ' + code);
   const m = PER(), sc = {eksp: ei};
-  const all = ranked(summarize('eksp', m));
+  const all = ranked(new Map([...summarize('eksp', m)].filter(([k]) => D.frcEksp.has(k))));   // rank among FRC ekspeditur only (non-FRC 'eksp' = distributor)
   const me = all.find(o => o.key === ei) || Object.assign(blank(), {pct:null, of:null, gap:0, dwell:null});
   const provs = [...summarize('prov', m, sc).values()].filter(o => o.vol > 0 || o.tgt > 0).sort((a, b) => b.vol - a.vol);
   const dist = ranked(summarize('dist', m, sc));
@@ -2577,7 +2596,7 @@ function bindEvents(){
     tip.innerHTML = '<b>' + esc(a) + '</b>' + rest.map(x => '<br>' + esc(x)).join('');
     tip.style.display = 'block'; tip.style.left = (e.clientX + 14) + 'px'; tip.style.top = (e.clientY + 14) + 'px';
   });
-  window.addEventListener('hashchange', route);
+  window.addEventListener('hashchange', () => { route(); trackView(); });
   watchNewVersion();
 }
 
@@ -2644,7 +2663,7 @@ async function start(key, meta, remember){
   $('#gate').hidden = true; $('#app').hidden = false;
   buildNav(); buildSearch(); filterStrip();
   $('#foot').innerHTML = '<span>PT Semen Padang · Outbound Logistics · ' + esc(meta.build) + ' · data s.d. ' + dayLabel(B.asOf) + '</span><span><a href="#/kualitas">Kualitas data</a> · <a href="#/kredit">Kredit foto</a> · ' + (rememberKey() ? 'Tetap masuk di perangkat ini sampai ' + new Date(+localStorage.getItem('osp_re')).toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'}) : 'Sesi otomatis keluar setelah 15 menit tanpa aktivitas') + ' · <a data-act="logout">Keluar</a></span>';
-  bindEvents(); route();
+  bindEvents(); route(); trackView();
   ['click', 'keydown', 'scroll', 'mousemove', 'touchstart'].forEach(ev => window.addEventListener(ev, throttleTouch, {passive: true}));
   setInterval(() => { const t = +(sessionStorage.getItem('osp_t') || 0); if(Date.now() - t > IDLE_MS && !rememberKey()) logout(); }, 30000);
 }

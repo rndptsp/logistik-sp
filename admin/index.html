@@ -89,6 +89,9 @@ if(/\.github\.io$/.test(location.hostname)) location.replace('https://logistik-s
     <div class="msg" id="pwMsg"></div>
     <div class="note">Kunci dikunci ulang di browser ini; kata sandi tidak pernah dikirim ke server. Sesudahnya data dibangun ulang (±3–5 menit) dan kata sandi lama tidak berlaku lagi. Bagikan kata sandi baru ke tim secara pribadi.</div>
   </div>
+
+  <h2>6 · Kunjungan dashboard</h2>
+  <div class="card" id="visits"><div class="msg">Memuat…</div></div>
 </main>
 <script>
 const $ = s => document.querySelector(s);
@@ -252,7 +255,25 @@ $('#pwBtn').addEventListener('click', async () => {
   } catch(e) { msg.style.color = 'var(--red)'; msg.textContent = e.message; }
   $('#pwBtn').disabled = false;
 });
-load();
+/* visits: page views after the viewer unlocks the dashboard (anonymous visitor id per browser) */
+async function loadVisits(days){
+  const el = $('#visits');
+  try {
+    const r = await fetch('/api/admin/visits?days=' + days, {cache: 'no-store'}); if(!r.ok) throw new Error(r.status);
+    const v = await r.json(), max = Math.max(1, ...v.days.map(d => d.views));
+    const NAMES = {'': 'Ringkasan', ringkasan: 'Ringkasan', provinsi: 'Wilayah · provinsi', distrik: 'Wilayah · distrik', plant: 'Plant', ekspeditur: 'Ekspeditur', distributor: 'Distributor', armada: 'Armada truk', kapal: 'Kapal', kontrak: 'Kontrak', prognosa: 'Prognosa', kualitas: 'Kualitas data', kredit: 'Kredit foto'};
+    const tbl = (h, rows, f) => '<table><thead><tr><th>' + h + '</th><th class="n">Dilihat</th><th class="n">Pengunjung</th></tr></thead><tbody>' + (rows.length ? rows.map(o => '<tr><td>' + esc(f ? f(o.k) : o.k) + '</td><td class="n">' + o.views + '</td><td class="n">' + o.visitors + '</td></tr>').join('') : '<tr><td colspan="3">Belum ada kunjungan.</td></tr>') + '</tbody></table>';
+    el.innerHTML = '<div style="display:flex;gap:6px;margin-bottom:12px">' + [7, 30, 90].map(d => '<button class="vd" data-d="' + d + '" style="padding:4px 10px;' + (d === days ? '' : 'background:#fff;color:#111;border:1px solid var(--line)') + '">' + d + ' hari</button>').join('') + '</div>' +
+      '<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">' + [['Halaman dilihat', v.total.views], ['Pengunjung (browser)', v.total.visitors], ['Kembali lagi (≥2 hari)', v.total.returning], ['Sesi', v.total.sessions]].map(([l, n]) => '<div style="border:1px solid var(--line);padding:10px"><div style="font-size:11px;color:var(--sub);text-transform:uppercase">' + l + '</div><div style="font-size:22px;font-weight:800">' + n + '</div></div>').join('') + '</div>' +
+      '<div style="display:flex;align-items:flex-end;gap:2px;height:90px;border-bottom:1px solid var(--line);margin-bottom:4px">' + v.days.map(d => '<div title="' + d.d + ': ' + d.views + ' dilihat · ' + d.visitors + ' pengunjung" style="flex:1;background:' + (d.views ? '#E30613' : '#eee') + ';height:' + Math.max(2, d.views / max * 100) + '%"></div>').join('') + '</div>' +
+      '<div style="display:flex;justify-content:space-between;font-size:11px;color:var(--sub);margin-bottom:16px"><span>' + v.days[0].d + '</span><span>batang = halaman dilihat per hari</span><span>' + v.days[v.days.length - 1].d + '</span></div>' +
+      tbl('Bagian', v.sections, k => NAMES[k] || k) + '<br>' + tbl('Halaman', v.pages, k => k || 'Ringkasan') + '<br>' + tbl('Perangkat', v.devices) + '<br>' + tbl('Kota (perkiraan jaringan)', v.cities) +
+      '<br><table><thead><tr><th>Terakhir</th><th>Halaman</th><th class="n">Pengunjung</th></tr></thead><tbody>' + v.recent.map(h => '<tr><td>' + esc(h.day.slice(5) + ' ' + h.t.slice(0, 2) + ':' + h.t.slice(2, 4)) + '</td><td>' + esc(h.p || 'Ringkasan') + '</td><td class="n">#' + esc(h.v) + ' · ' + esc(h.d) + (h.c ? ' · ' + esc(h.c) : '') + '</td></tr>').join('') + '</tbody></table>' +
+      '<div class="note">Anonim: pengunjung = satu browser (id acak di browser itu), bukan nama orang. Tidak menyimpan IP; kota diperkirakan dari jaringan. Data dihapus otomatis setelah 120 hari.</div>';
+    el.querySelectorAll('.vd').forEach(b => b.onclick = () => loadVisits(+b.dataset.d));
+  } catch(e){ el.innerHTML = '<div class="msg">Gagal memuat kunjungan (' + esc(e.message) + ').</div>'; }
+}
+load(); loadVisits(30);
 </script>
 </body>
 </html>

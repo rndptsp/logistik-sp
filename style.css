@@ -368,7 +368,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12.5px;}
 
 /* ---------- Map hero (home) ---------- */
 .map-hero{position:relative;background:#0F1A21;color:#fff;overflow:hidden;}
-.mh-bg{position:absolute;inset:0;background:linear-gradient(90deg,rgba(15,26,33,.97) 0%,rgba(15,26,33,.88) 42%,rgba(15,26,33,.55) 100%),url('assets/hero-logistik.jpg') center/cover;opacity:1;}
+.mh-bg{position:absolute;inset:0;background:linear-gradient(90deg,rgba(15,26,33,.95) 0%,rgba(15,26,33,.82) 40%,rgba(15,26,33,.42) 100%),url('assets/hero-logistik.jpg') center/cover;opacity:1;}
 .mh-bg::after{content:"";position:absolute;inset:0;background:radial-gradient(circle at 70% 45%,rgba(245,51,63,.10),transparent 55%);}
 .mh-inner{position:relative;display:grid;grid-template-columns:minmax(340px,1fr) minmax(0,1.25fr);gap:28px;max-width:1360px;margin:0 auto;padding:34px 40px 30px;align-items:center;}
 .mh-left .eyebrow{font-size:11px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:#FF8A92;margin-bottom:10px;}
@@ -501,15 +501,23 @@ table.tree td.name small{display:block;color:var(--sub);font-weight:400;font-siz
 .dm-more:hover{color:var(--red);}
 
 /* Page header photo (assets/bg, see applyPageBg) */
-.dp-head.has-bg{position:relative;min-height:150px;align-items:flex-end;padding:30px 26px 26px;color:#fff;border-radius:2px;
-  background:linear-gradient(90deg,rgba(0,0,0,.78) 0%,rgba(0,0,0,.5) 55%,rgba(0,0,0,.25) 100%),var(--bg) center/cover no-repeat,#222;}
-.dp-head.has-bg .nm{color:#fff;text-shadow:0 1px 3px rgba(0,0,0,.4);}
-.dp-head.has-bg .sub{color:rgba(255,255,255,.85);}
+/* photo stays bright; only a scrim under the text (bottom-left) keeps the title readable */
+.dp-head.has-bg{position:relative;overflow:hidden;isolation:isolate;min-height:210px;align-items:flex-end;padding:30px 30px 30px;color:#fff;border-radius:6px;background:#1B262D;
+  box-shadow:0 10px 28px rgba(15,26,33,.18);}
+.dp-head.has-bg::before{content:"";position:absolute;inset:0;z-index:-2;background:var(--bg) var(--bgpos,center 45%)/cover no-repeat;filter:saturate(1.15) contrast(1.05);animation:bgZoom 1.4s ease-out both;}
+.dp-head.has-bg::after{content:"";position:absolute;inset:0;z-index:-1;
+  background:linear-gradient(90deg,rgba(10,16,20,.72) 0%,rgba(10,16,20,.42) 38%,rgba(10,16,20,0) 66%),linear-gradient(0deg,rgba(10,16,20,.55) 0%,rgba(10,16,20,0) 55%);}
+@keyframes bgZoom{from{transform:scale(1.07);}to{transform:scale(1);}}
+@media(prefers-reduced-motion:reduce){.dp-head.has-bg::before{animation:none;}}
+.dp-eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:11.5px;font-weight:800;letter-spacing:.14em;text-transform:uppercase;color:#fff;margin-bottom:8px;text-shadow:0 1px 3px rgba(0,0,0,.5);}
+.dp-eyebrow::before{content:"";width:22px;height:3px;background:var(--red);border-radius:2px;}
+.dp-head.has-bg .nm{color:#fff;font-size:36px;line-height:1.1;text-shadow:0 2px 12px rgba(0,0,0,.45),0 1px 2px rgba(0,0,0,.5);}
+.dp-head.has-bg .sub{color:rgba(255,255,255,.92);font-size:13.5px;margin-top:8px;max-width:720px;text-shadow:0 1px 4px rgba(0,0,0,.6);}
 .dp-head.has-bg .dp-badge{box-shadow:0 1px 4px rgba(0,0,0,.25);color:#111;}
 .dp-head.has-bg .dp-badge.good{color:var(--green);}.dp-head.has-bg .dp-badge.mid{color:var(--amber);}.dp-head.has-bg .dp-badge.bad{color:var(--red);}
 .bg-credit{position:absolute;right:10px;bottom:6px;font-size:10px;color:rgba(255,255,255,.7);max-width:60%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .bg-credit:hover{color:#fff;}
-@media(max-width:700px){.dp-head.has-bg{min-height:120px;padding:22px 16px 24px;}.dp-head.has-bg .nm{font-size:22px;}}
+@media(max-width:700px){.dp-head.has-bg{min-height:170px;padding:22px 16px 26px;border-radius:4px;}.dp-head.has-bg .nm{font-size:26px;}.dp-head.has-bg .sub{font-size:12.5px;}}
 
 /* Kecamatan map (district page) */
 .kmap .kec-lbl{font-weight:700;fill:#fff;paint-order:stroke;stroke:rgba(0,0,0,.45);stroke-width:.22em;}
