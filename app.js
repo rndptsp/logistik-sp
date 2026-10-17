@@ -744,7 +744,7 @@ function openFilter(){
   if(f.classList.contains('open')){ f.classList.remove('open'); return; }
   buildFilterPanel(); f.classList.add('open');
   const panel = $('#filterPanel');   // on narrow screens the panel is position:fixed under the strip
-  panel.style.top = window.innerWidth <= 1100 ? (f.getBoundingClientRect().bottom + 4) + 'px' : '';
+  panel.style.top = window.innerWidth <= 1180 ? (f.getBoundingClientRect().bottom + 4) + 'px' : '';
 }
 function restoreFilter(){
   try {
@@ -765,7 +765,7 @@ function buildSearch(){
   B.ship.forEach(r => { seenD.add(r[5]); if(B.dims.toko[r[7]] && B.dims.toko[r[7]][0] && !tokoDistr.has(r[7])) tokoDistr.set(r[7], r[5]); });
   seenD.forEach(i => { if(B.dims.distr[i]) searchIndex.push({t: distrLbl(i), k: 'Distributor', h: '#/distributor/' + enc(B.dims.distr[i])}); });
   tokoDistr.forEach((d, i) => { const t = B.dims.toko[i]; searchIndex.push({t: (t[1] || t[0]) + (t[2] ? ' — ' + t[2] : ''), k: 'Toko · ' + distrLbl(d).slice(0, 22), h: '#/distributor/' + enc(B.dims.distr[d])}); });
-  [['Ringkasan','#/'],['Semua provinsi','#/provinsi'],['Peringkat ekspeditur & scorecard','#/ekspeditur'],['Distributor & toko tujuan','#/distributor'],['Armada / truk / SLA','#/armada'],['Kualitas data (cek master)','#/kualitas'],['Prognosa minggu ini','#/prognosa/minggu-ini'],['Prognosa akhir bulan (proyeksi)','#/prognosa/akhir-bulan']]
+  [['Ringkasan','#/'],['Semua provinsi','#/provinsi'],['Peringkat ekspeditur & scorecard','#/ekspeditur'],['Distributor & toko tujuan','#/distributor'],['Armada / truk / SLA','#/armada'],['Kontrak angkutan (kuota, SO kontrak)','#/kontrak'],['Kualitas data (cek master)','#/kualitas'],['Prognosa minggu ini','#/prognosa/minggu-ini'],['Prognosa akhir bulan (proyeksi)','#/prognosa/akhir-bulan']]
     .forEach(x => searchIndex.push({t: x[0], k: 'Halaman', h: x[1]}));
 }
 function doSearch(q){
@@ -1364,7 +1364,7 @@ function pageBgKey(){
   if(a === 'plant') return b ? plantBg(b) : 'plant-indarung';
   if(a === 'kapal') return 'moda-laut';
   if(a === 'distributor') return F.moda === 'LAUT' ? 'moda-laut' : 'moda-darat';
-  if(a === 'ekspeditur' || a === 'armada' || a === 'prognosa') return 'moda-darat';
+  if(a === 'ekspeditur' || a === 'armada' || a === 'kontrak' || a === 'prognosa') return 'moda-darat';
   return null;
 }
 /* Region pages (provinsi / distrik) show the regional emblem in the header instead of a photo:
@@ -2233,9 +2233,43 @@ function kontrakSection(){
   const shTbl = shared.length ? table([{h:'Rute (dari ' + tc(B.dims.src[KM.K[0][1]] || 'plant') + ')', cls:'name', val: r => r.n, html: r => esc(r.n) + '<small>' + fmt(r.tot) + ' t</small>'},
     {h:'Kuota kontrak → porsi aktual', val: r => r.tot, html: r => r.parts.sort((a, b) => b.real - a.real).map(p => { const a = pctOf(p.real, r.tot) || 0, q = (p.kuota || 0) * 100, off = Math.abs(a - q) > 15;
       return '<span class="kq' + (off ? ' off' : '') + '"><b>' + esc(B.dims.eksp[p.e]) + '</b> ' + pctTxt(q) + ' → ' + pctTxt(a) + '</span>'; }).join('')}], shared, {sort: 0}) : '';
-  return '<div class="tab-note">realisasi rute pemenang vs estimasi kontrak (volume tahunan ÷ 12; amandemen dari bulannya) · R/SO = realisasi vs SO rute yang dibagi sesuai proporsi kontrak · semen sak, FRC · * bulan berjalan pro-rata s.d. ' + shortDate(B.asOf) + ' · klik baris untuk rincian rute ' + monthShort(mSel) + '</div>' +
-    table(cols, rows, {go: r => 'kontrak:' + r.key, sort: months.length}) +
-    (shTbl ? '<div class="section-head"><div class="section-title">Rute bersama · kuota vs porsi aktual · ' + monthLabel(mSel) + '</div><div class="section-sub">merah = selisih lebih dari 15 poin dari kuota</div></div>' + shTbl : '');
+  // whole contract period to date: who carries more / less than its contract share of the SO
+  const sum = rows.map(r => r.per.reduce((a, o) => ({key: r.key, est: a.est + o.est, real: a.real + o.real, so: a.so + o.so, ok: a.ok + o.okDay, sd: a.sd + o.soDay, luar: a.luar + o.luar}), {est: 0, real: 0, so: 0, ok: 0, sd: 0, luar: 0}));
+  const pcC = (v, h) => v == null ? '–' : '<b style="color:' + tierColor(v) + '">' + pctTxt(v) + '</b>' + (h || '');
+  const soCols = [{h:'Ekspeditur', cls:'name', val: r => ekspLbl(r.key)}, {h:'Estimasi (t)', num:true, val: r => r.est, html: r => fmt(r.est)}, {h:'Realisasi (t)', num:true, val: r => r.real, html: r => fmt(r.real)},
+    {h:'Capaian', num:true, val: r => pc(r.real, r.est), html: r => pcC(pc(r.real, r.est))}, {h:'SO kontrak (t)', num:true, val: r => r.so, html: r => fmt(r.so)},
+    {h:'Real / SO', num:true, val: r => pc(r.real, r.so), html: r => { const v = pc(r.real, r.so); return pcC(v, v == null ? '' : '<small>' + (v >= 105 ? 'lebih dari porsi' : v >= 90 ? 'sesuai porsi' : v >= 50 ? 'kurang dari porsi' : 'kritis') + '</small>'); }},
+    {h:'OF harian', num:true, val: r => pc(r.ok, r.sd), html: r => pcC(pc(r.ok, r.sd))},
+    {h:'Di luar rute (t)', num:true, val: r => r.luar, html: r => r.luar ? fmt(r.luar) : '–'}];
+  ['est', 'real', 'so', 'luar'].forEach((k, i) => soCols[[1, 2, 4, 7][i]].total = fmt(sum.reduce((a, r) => a + r[k], 0)));
+  soCols[0].total = '<b>Total</b>';
+  const T = sum.reduce((a, r) => ({est: a.est + r.est, real: a.real + r.real, so: a.so + r.so, ok: a.ok + r.ok, sd: a.sd + r.sd}), {est: 0, real: 0, so: 0, ok: 0, sd: 0});
+  soCols[3].total = pctTxt(pc(T.real, T.est)); soCols[5].total = pctTxt(pc(T.real, T.so)); soCols[6].total = pctTxt(pc(T.ok, T.sd));
+  return {mSel, months, cur: rows.map(r => r.cur), sum, T,
+    note: '<div class="tab-note">realisasi rute pemenang vs estimasi kontrak (volume tahunan ÷ 12; amandemen dari bulannya) · R/SO = realisasi vs SO rute yang dibagi sesuai proporsi kontrak · semen sak, FRC · * bulan berjalan pro-rata s.d. ' + shortDate(B.asOf) + ' · klik baris untuk rincian rute ' + monthShort(mSel) + '</div>',
+    monthly: table(cols, rows, {go: r => 'kontrak:' + r.key, sort: months.length}),
+    soTbl: '<div class="tab-note">' + monthShort(months[0]) + '–' + monthShort(months[months.length - 1]) + ' · SO kontrak = seluruh SO FRC sak di distrik kontrak, dibagi ke pemenang sesuai porsi volume kontrak · Real/SO &gt; 100% = mengangkut porsi ekspeditur lain · OF harian = SO terpenuhi di hari yang sama</div>' +
+      table(soCols, sum, {total: true, sort: 5, go: r => 'kontrak:' + r.key}),
+    shared: shTbl ? '<div class="tab-note">' + monthLabel(mSel) + ' · merah = porsi aktual selisih lebih dari 15 poin dari kuota</div>' + shTbl : ''};
+}
+function pageKontrak(){
+  const S = kontrakSection();
+  if(!S){ page('<div class="wrap">' + crumb([['Kontrak']]) + '<div class="dp-review">Data kontrak angkutan belum diupload (slot kontrak).</div></div>', 'kontrak'); return; }
+  const c = S.cur.reduce((a, o) => ({est: a.est + o.est, real: a.real + o.real, so: a.so + o.so, ok: a.ok + o.okDay, sd: a.sd + o.soDay, luar: a.luar + o.luar}), {est: 0, real: 0, so: 0, ok: 0, sd: 0, luar: 0});
+  const pc = (a, b) => b > 0 ? a / b * 100 : null, ml = monthLabel(S.mSel);
+  const low = S.sum.filter(r => pc(r.real, r.so) != null && pc(r.real, r.so) < 50).map(r => B.dims.eksp[r.key]);
+  page('<div class="wrap">' + crumb([['Kontrak']]) +
+    '<div class="dp-head"><div><div class="nm">Kontrak angkutan</div><div class="sub">' + fmt(S.sum.length) + ' ekspeditur pemenang · FRC truk, semen sak · rute sesuai pengumuman pemenang</div></div></div>' +
+    '<div class="dp-grid4">' +
+      kpi('target', tierColor(pc(c.real, c.est) || 0), 'Capaian kontrak · ' + ml, pctTxt(pc(c.real, c.est)), {hint: fmt(c.real) + ' dari estimasi ' + fmt(c.est) + ' t'}) +
+      kpi('box', tierColor(pc(c.real, c.so) || 0), 'Real / SO kontrak', pctTxt(pc(c.real, c.so)), {hint: 'SO ' + fmt(c.so) + ' t'}) +
+      kpi('clock', tierColor(pc(c.ok, c.sd) || 0), 'OF harian', pctTxt(pc(c.ok, c.sd)), {hint: 'SO terpenuhi di hari yang sama'}) +
+      kpi('pin', low.length ? 'var(--red)' : 'var(--black)', 'Kritis (Real/SO &lt; 50%)', fmt(low.length) + ' <small>ekspeditur</small>', {hint: low.length ? esc(low.join(', ')) + ' · sejak ' + monthShort(S.months[0]) : 'tidak ada'}) +
+    '</div>' + tabsHTML('kontrak', [
+      {k: 'so', label: 'Kinerja vs SO kontrak', html: S.soTbl},
+      {k: 'bulan', label: 'Capaian per bulan', html: S.note + S.monthly},
+      {k: 'rute', label: 'Rute bersama', html: S.shared}]) +
+    '</div>', 'kontrak');
 }
 function kontrakDetail(e){
   const T = TRENDS.kontrak; if(!T) return;
@@ -2327,8 +2361,7 @@ function pageArmada(){
     {k: 'koridor', label: 'Koridor', html: '<div class="tab-note">Siklus = median jeda hari antar trip truk yang sama (60 hari terakhir) · armada dibutuhkan = trip/hari × siklus</div>' +
     (corrTbl || '<div class="dp-review">Tidak ada data.</div>')},
     {k: 'eksp', label: 'Ekspeditur', html: '<div class="tab-note">Siklus vs koridor: 100% = sama dengan median koridor yang dilayani; &lt;100% lebih cepat</div>' +
-    (incGroups(scoreTbl) || '<div class="dp-review">Tidak ada data.</div>')},
-    {k: 'kontrak', label: 'Kontrak', html: kontrakSection()}]) +
+    (incGroups(scoreTbl) || '<div class="dp-review">Tidak ada data.</div>')}]) +
     '</div>', 'armada');
 }
 function qTable(head, rows){
@@ -2398,6 +2431,7 @@ function route(){
     else if(a === 'distributor') b ? pageDistr(b) : pageDistrList();
     else if(a === 'fot') location.replace('#/distributor');
     else if(a === 'armada') pageArmada();
+    else if(a === 'kontrak') pageKontrak();
     else if(a === 'kapal') b ? pageKapalDetail(b) : pageKapal();
     else if(a === 'kualitas') pageQuality();
     else if(a === 'kredit') pageCredits();
@@ -2429,7 +2463,7 @@ function bindEvents(){
       closeQuick(); closeNav(); closeFilter(); buildNav(); filterStrip(); route(); return;
     }
     if(e.target.closest('#navBurger')){ const hd = $('header'), o = hd.classList.toggle('nav-open'); $('#navBurger').setAttribute('aria-expanded', o ? 'true' : 'false'); if(!o) closeNav(); return; }
-    if(window.innerWidth <= 1100 && e.target.closest('#mainNav a[href]')) $('header').classList.remove('nav-open');
+    if(window.innerWidth <= 1180 && e.target.closest('#mainNav a[href]')) $('header').classList.remove('nav-open');
     const tgl = e.target.closest('[data-toggle]');
     if(tgl){
       const item = tgl.parentElement, was = item.classList.contains('open');
@@ -2437,7 +2471,7 @@ function bindEvents(){
       if(!was){
         closeFilter(); item.classList.add('open'); syncNavAria();
         const panel = item.querySelector('.dropdown,.mega,.filter-panel');   // on narrow screens panels are position:fixed under the header
-        if(panel) panel.style.top = window.innerWidth <= 1100 ? ($('header').getBoundingClientRect().bottom + 4) + 'px' : '';
+        if(panel) panel.style.top = window.innerWidth <= 1180 ? ($('header').getBoundingClientRect().bottom + 4) + 'px' : '';
       }
       return;
     }
@@ -2517,7 +2551,7 @@ function bindEvents(){
     if(e.key === '/' && !/^(INPUT|TEXTAREA|SELECT)$/.test((t && t.tagName) || '')){ const sbx = $('#searchBox'); if(sbx && sbx.offsetParent){ e.preventDefault(); sbx.focus(); } }
     if(e.key === 'Escape'){ const hd = $('header'); hd.classList.remove('nav-open'); $('#navBurger').setAttribute('aria-expanded', 'false');  closeNav(); closeFilter(); closeModal(); $('#searchResults').classList.remove('show'); } });
   /* desktop: open menus on hover with small intent delay */
-  if(window.matchMedia('(hover:hover)').matches){ let ht; $$('#mainNav .navitem').forEach(n => { if(!n.querySelector('[data-toggle]')) return; n.addEventListener('mouseenter', () => { if(window.innerWidth <= 1100) return; clearTimeout(ht); ht = setTimeout(() => { const b = n.querySelector('[data-toggle]'); if(!n.classList.contains('open')) b.click(); }, 120); }); n.addEventListener('mouseleave', () => { clearTimeout(ht); if(window.innerWidth > 1100) ht = setTimeout(() => { n.classList.remove('open'); syncNavAria(); }, 200); }); }); }
+  if(window.matchMedia('(hover:hover)').matches){ let ht; $$('#mainNav .navitem').forEach(n => { if(!n.querySelector('[data-toggle]')) return; n.addEventListener('mouseenter', () => { if(window.innerWidth <= 1180) return; clearTimeout(ht); ht = setTimeout(() => { const b = n.querySelector('[data-toggle]'); if(!n.classList.contains('open')) b.click(); }, 120); }); n.addEventListener('mouseleave', () => { clearTimeout(ht); if(window.innerWidth > 1180) ht = setTimeout(() => { n.classList.remove('open'); syncNavAria(); }, 200); }); }); }
   const sb = $('#searchBox');
   sb.addEventListener('input', () => doSearch(sb.value));
   sb.addEventListener('focus', () => doSearch(sb.value));

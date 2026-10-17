@@ -33,6 +33,7 @@ header{position:sticky;top:0;z-index:50;background:#fff;display:flex;align-items
 .brand .name small{display:block;font-weight:400;font-size:11px;color:var(--sub);text-transform:none;letter-spacing:0;}
 nav{display:flex;align-items:stretch;gap:4px;font-size:13px;font-weight:700;color:var(--sub);text-transform:uppercase;letter-spacing:.01em;margin-left:14px;}
 @media(max-width:1500px){header{padding:0 20px;} .brand .name{font-size:13px;white-space:nowrap;} .search input{width:150px;} .headerright{gap:12px;}}
+@media(min-width:1181px) and (max-width:1400px){nav{margin-left:8px;gap:0;font-size:12px;} .navitem>.navbtn{padding:0 7px;} .search input{width:120px;} .daylabel{display:none;}}
 .navitem{position:relative;display:flex;}
 .navitem>.navbtn{display:flex;align-items:center;gap:5px;padding:0 10px;white-space:nowrap;cursor:pointer;border-bottom:3px solid transparent;user-select:none;}
 .navitem>.navbtn .caret{font-size:9px;transform:translateY(1px);transition:transform .15s;}
@@ -302,7 +303,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12.5px;}
 .page-fade{animation:fadeInUp .35s ease both;}
 
 /* ---------- Responsive ---------- */
-@media(max-width:1100px){
+@media(max-width:1180px){
   header{padding:0 20px;flex-wrap:wrap;}
   nav{margin-left:0;order:3;width:100%;overflow-x:auto;}
   .headerright{padding:8px 0;}
@@ -421,7 +422,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12.5px;}
 .filter-strip.open .edit{background:var(--red);color:#fff;}
 .filter-strip .filter-panel{left:auto;right:40px;top:100%;z-index:60;max-height:calc(100vh - 150px);overflow-y:auto;overscroll-behavior:contain;}
 .filter-strip.open .filter-panel{display:block;animation:dropIn .14s ease both;}
-@media(max-width:1100px){
+@media(max-width:1180px){
   .filter-strip{position:relative;top:auto;}
   .filter-strip .filter-panel{position:fixed;left:16px !important;right:16px !important;width:auto;max-height:calc(100vh - 160px);overflow:auto;}
 }
@@ -474,7 +475,7 @@ table.tree td.name small{display:block;color:var(--sub);font-weight:400;font-siz
 .navitem>.navbtn:focus-visible,.navburger:focus-visible{outline:2px solid var(--red);outline-offset:-2px;}
 .navburger{display:none;width:40px;height:40px;border:1px solid var(--line);background:#fff;border-radius:4px;cursor:pointer;padding:0;flex-direction:column;align-items:center;justify-content:center;gap:4px;}
 .navburger span{display:block;width:18px;height:2px;background:var(--black);}
-@media(max-width:1100px){
+@media(max-width:1180px){
   header{flex-wrap:wrap;position:sticky;}
   .brand{order:1;}
   .headerright{order:2;margin-left:auto;}
