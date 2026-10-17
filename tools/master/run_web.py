@@ -33,7 +33,7 @@ def main():
     if cfg.exists():
         (Path(home) / 'config').mkdir(parents=True, exist_ok=True); (Path(home) / 'config' / 'settings.json').write_bytes(cfg.read_bytes())
     env = dict(os.environ)
-    inbox = Path(a.inbox); f = {k: inbox / (k + '.xlsx') for k in ('rilis', 'so', 'tactical', 'snop', 'monitoring', 'gudang', 'kapal')}
+    inbox = Path(a.inbox); f = {k: inbox / (k + '.xlsx') for k in ('rilis', 'so', 'tactical', 'snop', 'monitoring', 'gudang', 'kapal', 'kontrak')}
     have = {k: p.exists() for k, p in f.items()}
     part = [k for k in ('tactical', 'snop', 'monitoring') if have[k]]
     if part and len(part) < 3:
@@ -49,6 +49,7 @@ def main():
     steps.append(('rapikan', ['update_master.py', 'rapikan']))
     if have['gudang']: steps.append(('gudang', ['update_gudang.py', '--input', f['gudang']]))
     if have['kapal']: steps.append(('kapal', ['update_kapal.py', '--input', f['kapal']]))
+    if have['kontrak']: steps.append(('kontrak', ['update_kontrak.py', '--input', f['kontrak']]))
     print('Rencana:', ' -> '.join(n for n, _ in steps), '| bulan target:', mn)
     for n, args in steps:
         if not run(args, env):

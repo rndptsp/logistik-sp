@@ -121,7 +121,7 @@ async function load(){
 }
 
 const PART = 16 * 1024 * 1024;
-const SLOT_ORDER = [['rilis', 'Harian'], ['so', 'Harian'], ['tactical', 'Awal bulan'], ['snop', 'Awal bulan'], ['monitoring', 'Awal bulan'], ['gudang', 'Bila ada gudang baru / koordinat baru (opsional)'], ['kapal', 'Bila ada kapal baru (opsional)']];
+const SLOT_ORDER = [['rilis', 'Harian'], ['so', 'Harian'], ['tactical', 'Awal bulan'], ['snop', 'Awal bulan'], ['monitoring', 'Awal bulan'], ['gudang', 'Bila ada gudang baru / koordinat baru (opsional)'], ['kapal', 'Bila ada kapal baru (opsional)'], ['kontrak', 'Bila ada kontrak / amandemen baru (opsional)']];
 let S = null, busy = false;
 const api = (q, init) => fetch('/api/admin/' + q, init);
 

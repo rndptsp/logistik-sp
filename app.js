@@ -2147,6 +2147,74 @@ function cycleGaps(per){
   const med = new Map([...corr.entries()].map(([k, a]) => [k, median(a)]));
   return {med, n: new Map([...corr.entries()].map(([k, a]) => [k, a.length])), ek};
 }
+/* ===================== Kontrak angkutan (slot "kontrak") =====================
+   B.kontrak: [eksp, src, [dist..], sub, kuota, volEksThn, amendVol, amendFrom, from, to, lead, cycle, dedRute, toa, distName]
+   Contract = jasa transportasi darat semen SAK (ZAK + jumbo bag), FRC only, and only for the awarded ekspeditur x route.
+   Estimasi bulanan = volume tahunan ekspeditur / 12 (amandemen dari bulannya); bulan berjalan pro-rata s.d. data terakhir. */
+function kontrakModel(){
+  const K = B.kontrak || []; if(!K.length) return null;
+  const frc = INCS().indexOf('FRC'), sak = k => (KEMS()[k] || 'ZAK') !== 'CURAH';
+  const asM = B.asOf.slice(0, 7), first = K.map(r => r[8]).filter(Boolean).sort()[0] || asM;
+  const months = []; for(let m = first; m <= asM; m = nextMonth(m)) months.push(m);
+  const estM = (r, m) => { if((r[8] && m < r[8]) || (r[9] && m > r[9])) return 0; const v = (r[6] && r[7] && m >= r[7] ? r[6] : r[5]) || 0; return v / 12 * (m === asM ? +B.asOf.slice(8) / dim(m) : 1); };
+  const aw = new Map(); K.forEach((r, i) => r[2].forEach(di => aw.set(r[0] + '|' + r[1] + '|' + di, i)));
+  const awD = new Set(); K.forEach(r => r[2].forEach(di => awD.add(r[0] + '|' + di)));
+  const eks = [...new Set(K.map(r => r[0]))], M = new Map();
+  const cell = (e, m) => { const k = e + '|' + m; let o = M.get(k); if(!o){ o = {e, m, est: 0, real: 0, luar: 0, so: 0, okDay: 0, soDay: 0, rt: new Map()}; M.set(k, o); } return o; };
+  K.forEach((r, i) => months.forEach(m => { const o = cell(r[0], m), v = estM(r, m); o.est += v; const x = o.rt.get(i) || {est: 0, real: 0, so: 0}; x.est += v; o.rt.set(i, x); }));
+  const eSet = new Set(eks), dayReal = new Map();
+  B.facts.forEach(f => {
+    if(f[1] !== frc || !sak(f[10]) || !eSet.has(f[5])) return;
+    const m = B.days[f[0]].slice(0, 7); if(m < first) return;
+    const ri = aw.get(f[5] + '|' + f[2] + '|' + f[4]), o = cell(f[5], m);
+    if(ri == null){ o.luar += f[6]; return; }
+    o.real += f[6]; const x = o.rt.get(ri) || {est: 0, real: 0, so: 0}; x.real += f[6]; o.rt.set(ri, x);
+    const dk = B.days[f[0]] + '|' + f[4] + '|' + f[5]; dayReal.set(dk, (dayReal.get(dk) || 0) + f[6]);
+  });
+  (B.sod || []).forEach(r => {   // [date, prov, dist, eksp, ton, kem]
+    const m = r[0].slice(0, 7); if(m < first || !eSet.has(r[3]) || !awD.has(r[3] + '|' + r[2]) || !sak(r[5])) return;
+    const o = cell(r[3], m); o.so += r[4];
+    const rl = dayReal.get(r[0] + '|' + r[2] + '|' + r[3]) || 0; o.soDay += r[4]; o.okDay += Math.min(rl, r[4]);
+  });
+  // route share on shared routes (kuota vs aktual), per month
+  return {K, months, eks, cell, asM};
+}
+function kontrakSection(){
+  const KM = kontrakModel(); if(!KM) return '';
+  const {months, eks, cell} = KM, mSel = PER().month && months.includes(PER().month) ? PER().month : KM.asM;
+  const rows = eks.map(e => { const o = {key: e, per: months.map(m => cell(e, m))}; o.cur = cell(e, mSel); return o; }).sort((a, b) => b.cur.est - a.cur.est);
+  const pc = (a, b) => b > 0 ? a / b * 100 : null;
+  const cols = [{h:'Ekspeditur', cls:'name', val: r => ekspLbl(r.key)}].concat(months.map((m, i) => ({h: monthShort(m) + (m === KM.asM ? ' *' : ''), num:true, val: r => pc(r.per[i].real, r.per[i].est),
+      html: r => { const o = r.per[i], p = pc(o.real, o.est); return p == null ? '–' : '<b style="color:' + tierColor(p) + '">' + pctTxt(p) + '</b><small>R/SO ' + pctTxt(pc(o.real, o.so)) + '</small>'; }})),
+    [{h:'OF harian ' + monthShort(mSel), num:true, val: r => pc(r.cur.okDay, r.cur.soDay), html: r => { const p = pc(r.cur.okDay, r.cur.soDay); return p == null ? '–' : '<span style="color:' + tierColor(p) + '">' + pctTxt(p) + '</span>'; }},
+     {h:'Di luar rute ' + monthShort(mSel), num:true, val: r => r.cur.luar, html: r => r.cur.luar ? fmt(r.cur.luar) + ' t' : '–'}]);
+  TRENDS.kontrak = {rows, mSel, KM};
+  // shared routes: kuota vs aktual (selected month)
+  const byRoute = new Map();
+  KM.K.forEach((r, i) => { const k = r[1] + '|' + r[14]; const g = byRoute.get(k) || []; g.push(i); byRoute.set(k, g); });
+  const shared = [...byRoute.entries()].filter(([, ix]) => ix.length > 1).map(([k, ix]) => {
+    const parts = ix.map(i => { const r = KM.K[i], x = cell(r[0], mSel).rt.get(i) || {real: 0, est: 0}; return {e: r[0], kuota: r[4], real: x.real, est: x.est}; });
+    const tot = parts.reduce((a, p) => a + p.real, 0); return {k, n: tc(KM.K[ix[0]][14]), parts, tot};
+  }).filter(r => r.tot > 0).sort((a, b) => b.tot - a.tot);
+  const shTbl = shared.length ? table([{h:'Rute (dari ' + tc(B.dims.src[KM.K[0][1]] || 'plant') + ')', cls:'name', val: r => r.n, html: r => esc(r.n) + '<small>' + fmt(r.tot) + ' t</small>'},
+    {h:'Kuota kontrak → porsi aktual', val: r => r.tot, html: r => r.parts.sort((a, b) => b.real - a.real).map(p => { const a = pctOf(p.real, r.tot) || 0, q = (p.kuota || 0) * 100, off = Math.abs(a - q) > 15;
+      return '<span class="kq' + (off ? ' off' : '') + '"><b>' + esc(B.dims.eksp[p.e]) + '</b> ' + pctTxt(q) + ' → ' + pctTxt(a) + '</span>'; }).join('')}], shared, {sort: 0}) : '';
+  return '<div class="section-head"><div class="section-title">4 · Kontrak ekspeditur per bulan</div><div class="section-sub">realisasi rute pemenang vs estimasi kontrak (volume tahunan ÷ 12; amandemen dihitung dari bulannya) · semen sak, FRC · * bulan berjalan pro-rata s.d. ' + shortDate(B.asOf) + ' · klik baris untuk rincian rute ' + monthShort(mSel) + '</div></div>' +
+    table(cols, rows, {go: r => 'kontrak:' + r.key, sort: months.length}) +
+    (shTbl ? '<div class="section-head"><div class="section-title">Rute bersama · kuota vs porsi aktual · ' + monthLabel(mSel) + '</div><div class="section-sub">merah = selisih lebih dari 15 poin dari kuota</div></div>' + shTbl : '');
+}
+function kontrakDetail(e){
+  const T = TRENDS.kontrak; if(!T) return;
+  const o = T.KM.cell(e, T.mSel), K = T.KM.K;
+  const rs = [...o.rt.entries()].map(([i, x]) => ({r: K[i], ...x})).filter(x => x.est > 0 || x.real > 0).sort((a, b) => b.est - a.est);
+  openModal(ekspLbl(e) + ' · kontrak ' + monthLabel(T.mSel), 'per rute pemenang', table([
+    {h:'Rute', cls:'name', val: x => x.r[14], html: x => esc(tc(x.r[14])) + '<small>' + esc(tc(B.dims.src[x.r[1]] || '')) + (x.r[4] != null && x.r[4] < 1 ? ' · kuota ' + pctTxt(x.r[4] * 100) : '') + (x.r[9] ? ' · s.d. ' + monthShort(x.r[9]) : '') + (x.r[6] ? ' · amandemen' : '') + '</small>'},
+    {h:'Estimasi (t)', num:true, val: x => x.est, html: x => fmt(x.est)}, {h:'Realisasi (t)', num:true, val: x => x.real, html: x => fmt(x.real)},
+    {h:'Capaian', num:true, cls:'pc', val: x => x.est ? x.real / x.est * 100 : null, html: x => x.est ? pctTxt(x.real / x.est * 100) : '–', style: x => 'color:' + tierColor(x.est ? x.real / x.est * 100 : null)},
+    {h:'Lead / siklus (hari)', num:true, val: x => x.r[10], html: x => (x.r[10] != null ? fmt1(x.r[10]) : '–') + ' / ' + (x.r[11] != null ? fmt1(x.r[11]) : '–')},
+    {h:'TOA (Rp/t)', num:true, val: x => x.r[13], html: x => x.r[13] ? fmt(x.r[13]) : '–'}], rs, {sort: 1}) +
+    (o.luar ? '<div class="dp-review">Di luar rute pemenang: ' + fmt(o.luar) + ' t pada bulan ini.</div>' : ''));
+}
 function pageArmada(){
   const m = PER(), rows = B.trucks.filter(t => inPer(t[0], m) && truckOk(t));
   const dayIdx = [...new Set(rows.map(t => t[0]))].sort((a, b) => a - b), nDays = Math.max(1, dayIdx.length);
@@ -2225,6 +2293,7 @@ function pageArmada(){
     (corrTbl || '<div class="dp-review">Tidak ada data.</div>') +
     '<div class="section-head"><div class="section-title">3 · Scorecard ekspeditur</div><div class="section-sub">siklus vs koridor: 100% = sama dengan median koridor yang dilayani; &lt;100% lebih cepat</div></div>' +
     (incGroups(scoreTbl) || '<div class="dp-review">Tidak ada data.</div>') +
+    kontrakSection() +
     '</div>', 'armada');
 }
 function qTable(head, rows){
@@ -2392,6 +2461,7 @@ function bindEvents(){
     const pd = e.target.closest('[data-plantday]');
     if(pd){ e.preventDefault(); plantHourDay = +pd.dataset.plantday; const sec = $('#plantHours'); if(sec) sec.outerHTML = plantHourSection(); return; }
     const go = e.target.closest('[data-href]');
+    if(go && /^kontrak:/.test(go.dataset.href || '')){ kontrakDetail(+go.dataset.href.slice(8)); return; }
     if(go && go.dataset.href && go.dataset.href !== 'null'){ location.hash = go.dataset.href; return; }
     if(!e.target.closest('#mainNav')) closeNav();
     if(!e.target.closest('#filterStrip')) closeFilter();

@@ -218,6 +218,30 @@ def read_store(path):
 EKSP_NAMA_TETAP = {"SMBR": "PT Semen Baturaja Tbk (SMBR)"}   # fixed names, over the kamus (it maps SMBR to "ANGKUT SENDIRI")
 
 
+def kontrak_bundle(rows, eksp, src, dist):
+    """Contract rows -> bundle rows. Contract district names are matched to the Rilis names by their core name
+    (KAB/KOTA kept apart; Rilis truncates long names, so the first 15 letters decide)."""
+    def key(n):
+        u = str(n or "").upper().replace("KAB.TAPANULI", "KAB. TAPANULI")
+        kind = "KOTA" if u.strip().startswith("KOTA") else "KAB"
+        u = re.sub(r"\(.*?\)", "", u); u = re.sub(r"\b(KAB\.?|KABUPATEN|KOTA)\b", "", u)
+        u = re.sub(r"\bTNJ\b|\bTANJ\b", "TANJUNG", u).replace(" BRT", " BARAT").replace(" TIM", " TIMUR").replace("TIMURUR", "TIMUR")
+        u = re.sub(r"\s+", " ", re.sub(r"[^A-Z ]", "", u)).strip()
+        return kind, u[:15]
+    dk = {}
+    for i, n in enumerate(dist.items):
+        dk.setdefault(key(n), []).append(i)
+    out = []
+    for r in rows:
+        pl = up(r.get("PLANT"))
+        f = lambda c: num(r.get(c)) if r.get(c) not in (None, "") else None
+        out.append([eksp(up(r.get("EKSP_KODE"))), src.items.index(pl) if pl in src.items else -1, dk.get(key(r.get("DISTRIK")), []),
+                    str(r.get("SUB") or ""), f("KUOTA"), f("VOL_EKSP_THN"), f("AMEND_VOL_THN"), str(r.get("AMEND_MULAI") or ""),
+                    str(r.get("BERLAKU_MULAI") or ""), str(r.get("BERLAKU_SAMPAI") or ""), f("LEAD_HARI"), f("CYCLE_HARI"),
+                    f("TRUK_DEDICATED_RUTE"), f("TOA"), str(r.get("DISTRIK") or "")])
+    return out
+
+
 def build(cfg):
     t0 = time.time()
     base = cfg.get("master_baru") or os.environ.get("MASTER_BARU") or os.path.join(os.path.dirname(ROOT), "MASTER BARU")
@@ -247,6 +271,11 @@ def build(cfg):
         for r in read_store(kpath):
             kapal_info[up(r.get("NAMA_KAPAL"))] = {k.lower(): v for k, v in r.items() if k != "NAMA_KAPAL" and v not in (None, "")}
         print(f"  master kapal: {len(kapal_info):,} kapal")
+    # optional contract master (slot "kontrak"): one row per ekspeditur x awarded route; resolved to bundle indexes below
+    kpath2 = os.path.join(base, "data", "kontrak.csv.gz")
+    kontrak_rows = list(read_store(kpath2)) if os.path.exists(kpath2) else []
+    if kontrak_rows:
+        print(f"  kontrak: {len(kontrak_rows):,} baris")
 
     # ---------------- Realisasi (data/rilis.csv.gz) ----------------
     facts = defaultdict(lambda: [0.0, 0, 0.0, 0])
@@ -459,6 +488,8 @@ def build(cfg):
                    for k, v in trucks.items()],
         "targets": targets,
         "tdistr": tdistr,
+        # contract (slot kontrak): [eksp, src, [dist..], sub, kuota, volEksThn, amendVol, amendFrom, from, to, lead, cycle, dedRute, toa, distName]
+        "kontrak": kontrak_bundle(kontrak_rows, eksp, src, dist),
         # release per hour by truck exit time (WAKTU_KELUAR), last 62 days: [day index, src, inc, hour, ton, trips, kem]
         "hours": [[day_idx[k[0]], k[1], INCOTERMS.index(k[2]), k[3], round(v[0], 2), v[1], k[4]] for k, v in hours.items() if k[0] in day_idx],   # FRC targets per distributor, same layout as targets (distributor achievement only)
         "so": [[k[0], k[1], k[2], k[3], round(v, 2)] for k, v in so.items() if v],

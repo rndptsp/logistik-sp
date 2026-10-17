@@ -751,3 +751,8 @@ table.tree tr.lv0 td.fz{background:var(--white)}
   .ip-m{font-size:11px}
   .ip-s{font-size:10.5px}
 }
+/* contract: quota -> actual share chips */
+.kq{display:inline-block;margin:2px 10px 2px 0;font-size:12px;white-space:nowrap}
+.kq.off{color:var(--red)}
+.kq b{font-weight:700}
+.tbl td.num small{display:block;font-size:10.5px;color:var(--sub);font-weight:400}

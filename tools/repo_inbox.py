@@ -17,7 +17,7 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PUB = os.path.join(REPO, 'tools', 'inbox_pub.pem')
 DIR = os.path.join(REPO, 'inbox_repo')
-SLOTS = ('rilis', 'so', 'tactical', 'snop', 'monitoring', 'gudang', 'kapal')
+SLOTS = ('rilis', 'so', 'tactical', 'snop', 'monitoring', 'gudang', 'kapal', 'kontrak')
 OAEP = padding.OAEP(mgf=padding.MGF1(hashes.SHA256()), algorithm=hashes.SHA256(), label=None)
 b64, unb64 = (lambda b: base64.b64encode(b).decode()), base64.b64decode
 
