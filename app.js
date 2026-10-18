@@ -2187,7 +2187,11 @@ function tabClick(btn){
   const bar = btn.closest('.tabbar'), top = bar.getBoundingClientRect().top, stick = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--stick')) || 0;
   if(top < stick - 1) window.scrollBy(0, top - stick);   // bar is stuck: bring the new pane's start into view
 }
-function setStick(){ const h = ($('header') ? $('header').offsetHeight : 0) + ($('#filterStrip') ? $('#filterStrip').offsetHeight : 0); document.documentElement.style.setProperty('--stick', h + 'px'); }
+// tab bar sticks right under whatever stays on screen: the header, plus the filter strip only where it is sticky (desktop; on phones it scrolls away)
+function setStick(){
+  const stuck = el => el && /sticky|fixed/.test(getComputedStyle(el).position) ? el.getBoundingClientRect().height : 0;
+  document.documentElement.style.setProperty('--stick', Math.round(stuck($('header')) + stuck($('#filterStrip'))) + 'px');
+}
 window.addEventListener('resize', setStick);
 
 /* ===================== Kontrak angkutan (slot "kontrak") =====================
