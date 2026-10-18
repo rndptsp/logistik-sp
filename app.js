@@ -971,8 +971,15 @@ function distMapHTML(pname, m, opt){
 }
 /* Map panels in the home-hero style: dark band with the province photo, headline + chips + ranking on the left. */
 /** The page KPIs as hero chips: realisasi, target MTD, sisa/lebih, capaian, Real/SO (t = total()). */
+// realisasi not counted in capaian (non-kinerja provinces, incoterm/kemasan without target): said on the Realisasi tile,
+// otherwise "realisasi > target but capaian < 100%" looks wrong (Rendy)
+function exclTxt(t){
+  const x = (t.vol || 0) - (t.frc || 0); if(!t.hasTgt || x < 1) return '';
+  const nk = [...NKP()].map(i => tc(B.dims.prov[i])).join(', ');
+  return ' · ' + fmt(x) + ' t tidak dihitung capaian' + (nk ? ' (' + esc(nk) + ': non-kinerja)' : '');
+}
 function kpiChips(t){
-  return [heroChip('Realisasi', fmt(t.vol) + ' <small>t</small>', fmt(t.trips) + ' trip'),
+  return [heroChip('Realisasi', fmt(t.vol) + ' <small>t</small>', fmt(t.trips) + ' trip' + exclTxt(t)),
     heroChip('Target ' + tgtLbl() + ' MTD', t.hasTgt ? fmt(t.tgt) + ' <small>t</small>' : '–', t.hasTgt ? 'bulan penuh ' + fmt(t.tgtFull) + ' t' : 'tidak ada target'),
     heroChip(t.gap < 0 ? 'Sisa ke target' : 'Lebih dari target', t.hasTgt ? fmt(Math.abs(t.gap)) + ' <small>t</small>' : '–', t.hasTgt ? (t.gap < 0 ? 'belum terkirim' : 'di atas target') : '', t.hasTgt ? (t.gap < 0 ? '#FF6B74' : '#5FD08F') : null),
     heroChip('Capaian', pctTxt(t.pct), incName(), heroTier(t.pct)),
@@ -1496,7 +1503,7 @@ function mapHero(provRows, t, head, chg, isLatest){
     '<div class="mh-left"><div class="eyebrow">Peta capaian · ' + esc(m.sub) + '</div>' +
       '<h1>' + head + '</h1>' +
       '<div class="mh-chips">' +
-        chip('Realisasi', fmt(t.vol) + ' <small>t</small>', fmt(t.trips) + ' trip') +
+        chip('Realisasi', fmt(t.vol) + ' <small>t</small>', fmt(t.trips) + ' trip' + exclTxt(t)) +
         chip('Target ' + tgtLbl() + (isLatest ? ' MTD' : ''), t.hasTgt ? fmt(t.tgt) + ' <small>t</small>' : '–', t.hasTgt ? 'gap ' + signed(t.gap) + ' t' : '') +
         chip('Capaian', pctTxt(t.pct), incName() + ' vs ' + tgtLbl(), t.pct == null ? null : t.pct >= 100 ? '#5FD08F' : t.pct >= 85 ? '#E8B04A' : '#FF6B74') +
         chip(m.kind === 'month' ? 'vs bulan lalu' : 'vs periode lalu', chg == null ? '–' : (chg >= 0 ? '▲ ' : '▼ ') + Math.abs(Math.round(chg)) + '%', 'periode sama', chg == null ? null : chg >= 0 ? '#5FD08F' : '#FF6B74') +
