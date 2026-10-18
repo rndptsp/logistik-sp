@@ -1211,7 +1211,7 @@ function treeToggle(row){
 function treeAll(id, open){
   $$('#' + id + ' tbody tr').forEach(r => {
     if(r.dataset.parent) r.classList.toggle('tr-hide', !open);
-    if(r.classList.contains('has-kids')){ r.classList.toggle('open', open); $('.caret-t', r).textContent = open ? '▾' : '▸'; }
+    if(r.classList.contains('has-kids') && !(r.dataset.lazy && !r.dataset.loaded)){ r.classList.toggle('open', open); $('.caret-t', r).textContent = open ? '▾' : '▸'; }
   });
 }
 function distrSummary(rows){
@@ -2152,17 +2152,18 @@ function cycleGaps(per){
   const endI = B.days.indexOf(per.to) >= 0 ? B.days.indexOf(per.to) : B.days.length - 1, startI = Math.max(0, endI - 59);
   const by = new Map();
   B.trucks.forEach(t => { if(t[0] < startI || t[0] > endI || !truckOk(t)) return; (by.get(t[1]) || by.set(t[1], []).get(t[1])).push(t); });
-  const corr = new Map(), ek = new Map();
+  const corr = new Map(), ek = new Map(), sub = new Map();
   by.forEach(rs => {
     rs.sort((a, b) => a[0] - b[0]);
     for(let i = 1; i < rs.length; i++){
       const g = rs[i][0] - rs[i - 1][0]; if(g < 1 || g > 12) continue;
       const k = corrKey(rs[i - 1]); (corr.get(k) || corr.set(k, []).get(k)).push(g);
       const e = rs[i - 1][3]; (ek.get(e) || ek.set(e, []).get(e)).push([k, g]);
+      [k + '#e' + e, k + '#t' + rs[i - 1][1], 's' + rs[i - 1][4]].forEach(x => (sub.get(x) || sub.set(x, []).get(x)).push(g));
     }
   });
   const med = new Map([...corr.entries()].map(([k, a]) => [k, median(a)]));
-  return {med, n: new Map([...corr.entries()].map(([k, a]) => [k, a.length])), ek};
+  return {med, n: new Map([...corr.entries()].map(([k, a]) => [k, a.length])), ek, sub};
 }
 /* ===================== Tabs (long pages) =====================
    tabsHTML(id, [{k, label, html, n}]): one bar + panes; empty panes are dropped; the chosen tab is remembered per page
@@ -2304,6 +2305,65 @@ function kontrakDetail(e){
     {h:'TOA (Rp/t)', num:true, val: x => x.r[13], html: x => x.r[13] ? fmt(x.r[13]) : '–'}], rs, {sort: 1}) +
     (o.luar ? '<div class="dp-review">Di luar rute pemenang: ' + fmt(o.luar) + ' t pada bulan ini.</div>' : ''));
 }
+/* Koridor tree (Rendy): plant > tujuan (koridor) > ekspeditur > truk; a truck row opens its trips per day.
+   Siklus = median gap between loading days of the same truck (cycleGaps); need = trips/day x corridor cycle.
+   Truck rows are built on first expand (thousands of trucks). */
+const ARMT = {};
+function armTree(rows, byC, corrRows, CG, nDays){
+  const id = 'at' + Math.random().toString(36).slice(2, 8), sum = (rs, i) => rs.reduce((a, t) => a + t[i], 0);
+  const med = k => { const a = CG.sub.get(k); return a && a.length >= 3 ? median(a) : null; };
+  const stat = (rs, cyc, need) => { const tr = sum(rs, 6), ton = sum(rs, 7), n = sum(rs, 9), wn = sum(rs, 13);
+    return {trips: tr, tpt: ton / Math.max(1, tr), cyc, tpd: tr / nDays, need, used: new Set(rs.map(t => t[1])).size, sla: n ? sum(rs, 8) / n : null, wait: wn ? sum(rs, 12) / wn : null}; };
+  const cell = (v, f) => '<td class="num">' + (v == null ? '–' : f ? f(v) : fmt1(v)) + '</td>';
+  const tr = (o, lbl, depth, path, parent, kids, extra) => '<tr class="lv' + depth + (depth ? ' tr-hide' : '') + (kids ? ' has-kids' : '') + '" data-path="' + path + '" data-parent="' + parent + '"' + (extra || '') + '>' +
+    '<td class="name fz fz0 fzl" style="--d:' + depth + '"><span class="caret-t">' + (kids ? '▸' : '') + '</span><span class="t-lbl">' + lbl + '</span>' + (kids ? '<span class="t-cnt">' + kids + '</span>' : '') + '</td>' +
+    cell(o.trips, fmt) + cell(o.tpt) + cell(o.cyc, v => '<b>' + fmt1(v) + '</b>') + cell(o.tpd) + cell(o.need, fmt) + cell(o.used, fmt) +
+    '<td class="num">' + (o.sla == null ? '–' : '<b style="color:' + slaColor(o.sla) + '">' + fmt1(o.sla) + '</b>') + '</td>' + cell(o.wait) + '</tr>';
+  const lazy = {};
+  const plants = new Map(); corrRows.forEach(r => { const si = +r.k.split('|')[0]; (plants.get(si) || plants.set(si, []).get(si)).push(r); });
+  let body = '';
+  [...plants.entries()].map(([si, cs]) => ({si, cs, rs: cs.flatMap(c => byC.get(c.k))})).sort((a, b) => sum(b.rs, 7) - sum(a.rs, 7)).forEach((P, pi) => {
+    const need = P.cs.reduce((a, c) => a + (c.need != null && c.cn >= 10 ? c.need : 0), 0);
+    body += tr(stat(P.rs, med('s' + P.si), need || null), esc(tc(B.dims.src[P.si] || '?')), 0, String(pi), '', P.cs.length);
+    P.cs.forEach((c, ci) => {
+      const cp = pi + '-' + ci, crs = byC.get(c.k), cyc = c.cn >= 10 ? c.cyc : null;
+      const [, pv, di] = c.k.split('|'), lbl = di != null ? tc(B.dims.dist[di]) : tc(B.dims.prov[pv]);
+      const byE = new Map(); crs.forEach(t => (byE.get(t[3]) || byE.set(t[3], []).get(t[3])).push(t));
+      const es = [...byE.entries()].sort((a, b) => sum(b[1], 7) - sum(a[1], 7));
+      body += tr(stat(crs, cyc, cyc != null ? c.tpd * cyc : null), esc(lbl), 1, cp, String(pi), es.length);
+      es.forEach(([e, ers], ei) => {
+        const ep = cp + '-' + ei, nT = new Set(ers.map(t => t[1])).size, st = stat(ers, med(c.k + '#e' + e), cyc != null ? sum(ers, 6) / nDays * cyc : null);
+        lazy[ep] = {k: c.k, rs: ers};
+        body += tr(st, esc(ekspLbl(e)), 2, ep, cp, nT, ' data-lazy="' + id + ':' + ep + '"');
+      });
+    });
+  });
+  ARMT[id] = {lazy, med, stat, tr, sum};
+  return '<div class="tree-tools"><span>Plant &rsaquo; tujuan &rsaquo; ekspeditur &rsaquo; truk (klik truk = trip per hari)</span><span><a data-tree-all="' + id + ':1">Buka semua</a> · <a data-tree-all="' + id + ':0">Tutup semua</a></span></div>' +
+    '<div class="tbl-wrap tall"><table class="tbl tree" id="' + id + '"><thead><tr><th class="fz fz0 fzl">Koridor</th><th class="num">Trip</th><th class="num">t / trip</th><th class="num">Siklus (hari)</th><th class="num">Trip / hari</th><th class="num">Armada dibutuhkan</th><th class="num">Truk dipakai</th><th class="num">Di plant (jam)</th><th class="num">Antri (jam)</th></tr></thead><tbody>' +
+    body + '</tbody></table></div>';
+}
+function armLazy(row){
+  const [id, ep] = (row.dataset.lazy || '').split(':'), T = ARMT[id], L = T && T.lazy[ep];
+  if(!L || row.dataset.loaded) return; row.dataset.loaded = 1;
+  const byT = new Map(); L.rs.forEach(t => (byT.get(t[1]) || byT.set(t[1], []).get(t[1])).push(t));
+  const html = [...byT.entries()].sort((a, b) => T.sum(b[1], 6) - T.sum(a[1], 6)).map(([tk, rs], i) => {
+    const o = T.stat(rs, T.med(L.k + '#t' + tk), null); o.used = null;
+    return T.tr(o, esc(B.dims.truck[tk] || '?') + '<small>' + new Set(rs.map(t => t[0])).size + ' hari muat</small>', 3, ep + '-' + i, ep, 0, ' data-trk="' + tk + '" style="cursor:pointer"');
+  }).join('');
+  row.insertAdjacentHTML('afterend', html);
+}
+function truckTrips(tk){
+  const m = PER(), rs = B.trucks.filter(t => t[1] === tk && inPer(t[0], m)).sort((a, b) => b[0] - a[0]);
+  const cols = [{h:'Tanggal', cls:'name', val: t => t[0], html: t => dayLabel(B.days[t[0]])}, {h:'Plant', val: t => tc(B.dims.src[t[4]] || ''), html: t => esc(tc(B.dims.src[t[4]] || ''))},
+    {h:'Tujuan', val: t => tc((t[11] != null ? B.dims.dist[t[11]] : '') || B.dims.prov[t[5]] || ''), html: t => esc(tc((t[11] != null ? B.dims.dist[t[11]] : '') || B.dims.prov[t[5]] || ''))},
+    {h:'Ekspeditur', val: t => ekspLbl(t[3]), html: t => esc(ekspLbl(t[3]))}, {h:'Trip', num:true, val: t => t[6]}, {h:'Tonase', num:true, val: t => t[7], html: t => fmt(t[7])},
+    {h:'Di plant (jam)', num:true, val: t => t[9] ? t[8] / t[9] : -1, html: t => t[9] ? '<b style="color:' + slaColor(t[8] / t[9]) + '">' + fmt1(t[8] / t[9]) + '</b>' : '–'},
+    {h:'Antri (jam)', num:true, val: t => t[13] ? t[12] / t[13] : -1, html: t => t[13] ? fmt1(t[12] / t[13]) : '–'}];
+  const gaps = []; const d = [...new Set(rs.map(t => t[0]))].sort((a, b) => a - b); for(let i = 1; i < d.length; i++) gaps.push(d[i] - d[i - 1]);
+  openModal('Truk ' + (B.dims.truck[tk] || ''), rs.length + ' baris · ' + d.length + ' hari muat · ' + periodSub() + (gaps.length ? ' · jeda median periode ini ' + fmt1(median(gaps)) + ' hari' : ''),
+    rs.length ? table(cols, rs, {sort: 0}) : '<div class="dp-review">Tidak ada trip di periode ini.</div>');
+}
 function pageArmada(){
   const m = PER(), rows = B.trucks.filter(t => inPer(t[0], m) && truckOk(t));
   const dayIdx = [...new Set(rows.map(t => t[0]))].sort((a, b) => a - b), nDays = Math.max(1, dayIdx.length);
@@ -2338,10 +2398,7 @@ function pageArmada(){
   const corrRows = [...byC.entries()].map(([k, rs]) => { const tr = sum(rs, 6), cyc = CG.med.get(k), tpd = tr / nDays;
     return {k, n: corrLbl(k), trips: tr, ton: sum(rs, 7), tpt: sum(rs, 7) / Math.max(1, tr), cyc, cn: CG.n.get(k) || 0, tpd, need: cyc != null ? tpd * cyc : null, used: new Set(rs.map(t => t[1])).size,
       sla: sum(rs, 9) ? sum(rs, 8) / sum(rs, 9) : null}; }).filter(r => r.trips >= 5).sort((a, b) => b.ton - a.ton);
-  const corrTbl = corrRows.length ? table([{h:'Koridor', cls:'name', val: r => r.n}, {h:'Trip', num:true, val: r => r.trips, html: r => fmt(r.trips)}, {h:'t / trip', num:true, val: r => r.tpt, html: r => fmt1(r.tpt)},
-    {h:'Siklus (hari)', num:true, val: r => r.cyc, html: r => r.cyc == null || r.cn < 10 ? '–' : '<b>' + fmt1(r.cyc) + '</b>'}, {h:'Trip / hari', num:true, val: r => r.tpd, html: r => fmt1(r.tpd)},
-    {h:'Armada dibutuhkan', num:true, val: r => r.need, html: r => r.need == null || r.cn < 10 ? '–' : fmt(r.need)}, {h:'Truk dipakai', num:true, val: r => r.used, html: r => fmt(r.used)},
-    jam('Di plant (jam)', r => r.sla, true)], corrRows, {sort: 1, limit: 60}) : '';
+  const corrTbl = corrRows.length ? armTree(rows, byC, corrRows, CG, nDays) : '';
 
   // 3. Scorecard ekspeditur (per incoterm when several are active)
   const scoreTbl = () => {
@@ -2377,7 +2434,7 @@ function pageArmada(){
     '<div class="dp-panel" style="margin-bottom:14px"><div class="pt">Waktu di plant per hari (jam)</div>' + barsHTML('ad', dData) +
       '<div class="trend-legend"><span><i style="background:var(--green)"></i>&le;' + SLA_TARGET + ' jam</span><span><i style="background:var(--red)"></i>&gt;' + SLA_TARGET + ' jam</span><span><i class="dash"></i>target ' + SLA_TARGET + ' jam</span><span>klik batang = per ekspeditur</span></div></div>' +
     (plantTbl || '<div class="dp-review">Tidak ada data truk untuk filter ini.</div>')},
-    {k: 'koridor', label: 'Koridor', html: '<div class="tab-note">Siklus = median jeda hari antar trip truk yang sama (60 hari terakhir) · armada dibutuhkan = trip/hari × siklus</div>' +
+    {k: 'koridor', label: 'Koridor', html: '<div class="tab-note">Siklus = median jeda hari antar muat truk yang sama (60 hari terakhir) · armada dibutuhkan = trip/hari × siklus koridor · klik baris untuk membuka</div>' +
     (corrTbl || '<div class="dp-review">Tidak ada data.</div>')},
     {k: 'eksp', label: 'Ekspeditur', html: '<div class="tab-note">Siklus vs koridor: 100% = sama dengan median koridor yang dilayani; &lt;100% lebih cepat</div>' +
     (incGroups(scoreTbl) || '<div class="dp-review">Tidak ada data.</div>')}]) +
@@ -2541,8 +2598,10 @@ function bindEvents(){
     }
     const tall = e.target.closest('[data-tree-all]');
     if(tall){ const [id, o] = tall.dataset.treeAll.split(':'); treeAll(id, o === '1'); return; }
+    const trk = e.target.closest('table.tree tr[data-trk]');
+    if(trk){ truckTrips(+trk.dataset.trk); return; }
     const trow = e.target.closest('table.tree tr.has-kids');
-    if(trow && !e.target.closest('.t-go')){ treeToggle(trow); return; }
+    if(trow && !e.target.closest('.t-go')){ if(trow.dataset.lazy) armLazy(trow); treeToggle(trow); return; }
     const sort = e.target.closest('[data-sort]');
     if(sort){ const [id, i] = sort.dataset.sort.split(':'); const T = TABLES[id]; if(T.sort === +i) T.dir = -T.dir; else { T.sort = +i; T.dir = T.cols[+i].num ? -1 : 1; } $('#' + id).innerHTML = tableInner(id); return; }
     if(e.target.closest('[data-plantinc]')){ e.preventDefault(); plantAllInc = !plantAllInc; route(); return; }
