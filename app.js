@@ -200,6 +200,7 @@ const areaProvOk = p => !areaOn() || F.area === 'ALL' || (F.area === 'AP1') !== 
 const areaName = () => F.area === 'ALL' ? 'AP1 + NON AP1' : F.area === 'AP1' ? 'AP1' : 'NON AP1';
 // non-kinerja provinces (settings: provinsi_non_kinerja, e.g. Sumsel) stay out of the overall performance total
 // (unscoped 'all': Ringkasan, trend, incoterm cards) unless NON AP1 is chosen; they still show on their own pages and details (Rendy)
+const nkAch = p => F.area === 'NON' || !NKP().has(p);   // NON AP1 chosen: non-kinerja provinces count for everything, capaian included
 const unscoped = sc => !sc || Object.keys(sc).every(k => sc[k] == null);
 const nkSkip = (p, group, sc) => (!areaProvOk(p) && (sc || {}).prov !== p) || (group === 'all' && F.area !== 'NON' && unscoped(sc) && NKP().has(p));
 const FK = {prov: f => f[3], dist: f => f[4], eksp: f => f[5], src: f => f[2], all: () => 0};
@@ -230,7 +231,7 @@ function summarize(group, per, sc, opt){
     if(!inPer(f[0], per) || !srcOkS(f[2], sc) || !kemOk(f[10]) || !scopeOkF(f, sc) || nkSkip(f[3], group, sc)) return;
     const o = get(FK[group](f));
     if(f[1] === 0) o.frc0 += f[6];   // FRC TRUK (Real/SO)
-    if(achOk(f[1]) && achKem(f[10]) && !NKP().has(f[3])) o.frc += f[6];
+    if(achOk(f[1]) && achKem(f[10]) && nkAch(f[3])) o.frc += f[6];
     if(incOk(f[1])){ o.vol += f[6]; o.trips += f[7]; o.dwS += f[8]; o.dwN += f[9]; }
   });
   const m0 = per.from.slice(0, 7), m1 = fullTo.slice(0, 7);
@@ -298,7 +299,7 @@ function rangeGroup(fromISO, toISO, sc, group){
     const ds = B.days[f[0]];
     if(ds < fromISO || ds > toISO || !srcOkS(f[2], sc) || !kemOk(f[10]) || !scopeOkF(f, sc) || nkSkip(f[3], group, sc)) return;
     const o = get(FK[group](f));
-    if(achOk(f[1]) && achKem(f[10]) && !NKP().has(f[3])) o.frc += f[6];
+    if(achOk(f[1]) && achKem(f[10]) && nkAch(f[3])) o.frc += f[6];
     if(incOk(f[1])){ o.vol += f[6]; o.trips += f[7]; }
   });
   {
@@ -1640,7 +1641,7 @@ function plantReview(si, per, all){
       const b = Bk.get(bk(ds)); if(!b) return;
       b.inc.set(f[1], (b.inc.get(f[1]) || 0) + f[6]); b.tot += f[6]; b.trips += f[7]; b.dwS += f[8]; b.dwN += f[9];
       o.vol += f[6]; o.trips += f[7]; o.dwS += f[8]; o.dwN += f[9];
-      if(achKem(f[10]) && !NKP().has(f[3])) o.az += f[6];
+      if(achKem(f[10]) && nkAch(f[3])) o.az += f[6];
     } else if(ds >= pp.from && ds <= pp.to){
       o.prev += f[6];
       if(!monthly && per.kind === 'month'){ const b = Bk.get(per.month + ds.slice(7)); if(b) b.prev = (b.prev || 0) + f[6]; }
