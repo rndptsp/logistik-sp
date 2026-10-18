@@ -289,6 +289,17 @@ def build(cfg):
     toko_q = defaultdict(lambda: [0, 0])
     seen_spj = set()
     today = datetime.date.today()
+    spj_rows = []   # per-SPJ truck detail for the truck page, last 45 days (encrypted bundle only)
+    spj_from = today - datetime.timedelta(days=45)
+    def mins(v, d0):   # WAKTU_* -> minutes after 00:00 of the SPJ date (may be negative / > 1440), None if unreadable
+        m = re.match(r"(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})", str(v or ""))
+        if not m:
+            return None
+        try:
+            dd = datetime.date.fromisoformat(m.group(1))
+        except ValueError:
+            return None
+        return (dd - d0).days * 1440 + int(m.group(2)) * 60 + int(m.group(3))
     for r in read_store(os.path.join(base, "data", "rilis.csv.gz")):
         d = as_date(r.get("TGL_SPJ"))
         ton = num(r.get("TONASE"))
@@ -356,6 +367,10 @@ def build(cfg):
             wait = r.get("WAITING_TIME_JAM")   # queue before entering the plant (antri -> masuk)
             if wait not in (None, "") and 0 <= num(wait) <= 72:
                 tk[4] += num(wait); tk[5] += 1
+            if d >= spj_from:
+                spj_rows.append([d.isoformat(), truck(nopol), spj, s, INCOTERMS.index(inc), e, distr(up(r.get("DISTRIBUTOR"))), di, ti, round(ton, 2), kem,
+                                 mins(r.get("WAKTU_ANTRI"), d), mins(r.get("WAKTU_MASUK"), d), mins(r.get("WAKTU_KELUAR"), d),
+                                 int(num(r.get("BERAT_KOSONG"))) or None, int(num(r.get("BERAT_ISI"))) or None, up(r.get("PRODUK")) or None])
     print(f"  realisasi rows: {n_real:,}")
     for k, v in sorted(check.items()):
         print(f"    cek: {k}: {v:,}")
@@ -486,6 +501,9 @@ def build(cfg):
         # [day, truck, inc, eksp, src, prov, trips, ton, dwellSum, dwellN, kem, dist, waitSum, waitN]
         "trucks": [[day_idx[k[0]], k[1], INCOTERMS.index(k[2]), k[3], k[4], k[5], v[0], round(v[1], 2), round(v[2], 2), v[3], k[6], k[7], round(v[4], 2), v[5]]
                    for k, v in trucks.items()],
+        # truck page, last 45 days, one row per SPJ:
+        # [day, truck, spj, src, inc, eksp, distr, dist, toko, ton, kem, antri, masuk, keluar (minutes after SPJ-date 00:00), tare kg, gross kg, produk]
+        "spj": [[day_idx[r[0]]] + r[1:] for r in spj_rows if r[0] in day_idx],
         "targets": targets,
         "tdistr": tdistr,
         # contract (slot kontrak): [eksp, src, [dist..], sub, kuota, volEksThn, amendVol, amendFrom, from, to, lead, cycle, dedRute, toa, distName]
