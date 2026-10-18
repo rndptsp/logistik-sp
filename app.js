@@ -992,6 +992,8 @@ function heroPanel(o){
   '</div></section>';
 }
 
+let KMODE = null;
+function kmapMode(){ if(!KMODE){ try { KMODE = sessionStorage.getItem('kmode'); } catch(e){} } return ['distr', 'eksp', 'toko'].includes(KMODE) ? KMODE : 'distr'; }
 /* ===================== Kecamatan map (district page) ===================== */
 /* Kecamatan borders come from assets/kec/<province>.js (window.KEC[PROVINSI][district shape name] = {vb, d:[{n,d,cx,cy,w,h}]}),
    loaded when a district page opens. Kecamatan are shaded by tonnage (there are no targets below district level).
@@ -1051,9 +1053,22 @@ function kecMapSection(name, pname, m, di){
   const per = new Map();
   shipRows(m, {dist: di}).forEach(r => {
     let o = per.get(r[7]);
-    if(!o){ o = {ti: r[7], vol: 0, trips: 0, distr: new Set()}; per.set(r[7], o); }
+    if(!o){ o = {ti: r[7], vol: 0, trips: 0, distr: new Set(), byD: new Map(), byE: new Map()}; per.set(r[7], o); }
     o.vol += r[8]; o.trips += r[9]; o.distr.add(r[5]);
+    o.byD.set(r[5], (o.byD.get(r[5]) || 0) + r[8]); o.byE.set(r[6], (o.byE.get(r[6]) || 0) + r[8]);
   });
+  // list mode (Rendy): distributor (default) | ekspeditur | toko; pins take the colour of their main distributor / ekspeditur
+  const mode = kmapMode(), top = (mp, ok) => { let k = null, v = -1; mp.forEach((x, key) => { if(x > v && (!ok || ok(key))) { v = x; k = key; } }); return k; };
+  const sc = {dist: di};
+  let grp = [];
+  if(mode === 'distr'){
+    grp = annotateDistrTargets(buildTree(shipRows(m, sc), ['distr']), m, sc).filter(n => B.dims.distr[n.key]).sort((a, b) => b.vol - a.vol)
+      .map(n => ({key: n.key, n: distrLbl(n.key), vol: n.vol, pct: n.t && n.t.hasTgt ? n.t.pct : null, href: '#/distributor/' + enc(B.dims.distr[n.key])}));
+  } else if(mode === 'eksp'){
+    grp = ekspRows(m, sc).filter(o => D.frcEksp.has(o.key)).map(o => ({key: o.key, n: ekspLbl(o.key), vol: o.vol, pct: o.hasTgt ? o.pct : (o.vol ? 100 : null), of: o.of, href: ekspHref(o.key)}));
+  }
+  const PAL = ['#4E9BF5', '#F2A93B', '#B07CF0', '#3CC7B4', '#F06EA9'], colOf = new Map(grp.slice(0, 5).map((g, i) => [g.key, PAL[i]]));
+  [...per.values()].forEach(o => { o.gk = mode === 'distr' ? top(o.byD) : mode === 'eksp' ? top(o.byE, k => D.frcEksp.has(k)) : null; });
   const kecNames = B.dims.kec || [], byKec = new Map(), exact = [];
   const words = s => ' ' + String(s || '').toUpperCase().replace(/[^A-Z]+/g, ' ') + ' ';
   const byLen = K.d.map((g, i) => [words(g.n), i]).sort((a, b) => b[0].length - a[0].length);
@@ -1085,7 +1100,8 @@ function kecMapSection(name, pname, m, di){
   const pin = (o, x, y, approx) => {
     const t = B.dims.toko[o.ti], r = fs * (0.32 + 0.38 * Math.sqrt(o.vol / maxT));
     const tip = (t[1] || t[0]) + '|' + (t[2] ? t[2] + ' · ' : '') + (o.kec >= 0 ? 'Kec. ' + K.d[o.kec].n : '') + (approx ? ' (lokasi perkiraan)' : '') + '|' + fmt(o.vol) + ' t · ' + fmt(o.trips) + ' trip|' + [...o.distr].map(d => distrLbl(d)).filter(Boolean).join(', ');
-    return '<circle class="toko-pin' + (approx ? ' approx' : '') + '" cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + r.toFixed(2) + '" stroke-width="1.2" vector-effect="non-scaling-stroke" data-tip="' + esc(tip) + '"/>';
+    const fill = mode === 'toko' ? '' : ' style="fill:' + (colOf.get(o.gk) || '#8C9AA2') + '"';
+    return '<circle class="toko-pin' + (approx ? ' approx' : '') + '"' + fill + (o.gk != null ? ' data-k="' + o.gk + '"' : '') + ' cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + r.toFixed(2) + '" stroke-width="1.2" vector-effect="non-scaling-stroke" data-tip="' + esc(tip) + '"/>';
   };
   byKec.forEach((l, ki) => {
     const g = K.d[ki];
@@ -1102,7 +1118,7 @@ function kecMapSection(name, pname, m, di){
     l.sort((a, b) => b.vol - a.vol); l.forEach(o => o.shared = l.length);
     const v = l.reduce((x, o) => x + o.vol, 0), tr = l.reduce((x, o) => x + o.trips, 0), r = fs * (0.42 + 0.38 * Math.sqrt(Math.min(1, v / maxT))), o = l[0];
     const tip = 'Gudang bersama · ' + l.length + ' ship-to|' + (o.kec >= 0 ? 'Kec. ' + K.d[o.kec].n + '|' : '') + fmt(v) + ' t · ' + fmt(tr) + ' trip|' + l.map(q => { const t = B.dims.toko[q.ti]; return (t[1] || t[0]) + ': ' + fmt(q.vol) + ' t'; }).join('|');
-    pins += '<g class="toko-shared" data-tip="' + esc(tip) + '"><circle class="toko-pin" cx="' + o.x.toFixed(1) + '" cy="' + o.y.toFixed(1) + '" r="' + r.toFixed(2) + '" stroke-width="1.6" vector-effect="non-scaling-stroke"/>' +
+    pins += '<g class="toko-shared" data-tip="' + esc(tip) + '"><circle class="toko-pin"' + (mode === 'toko' ? '' : ' style="fill:' + (colOf.get(o.gk) || '#8C9AA2') + '"') + (o.gk != null ? ' data-k="' + o.gk + '"' : '') + ' cx="' + o.x.toFixed(1) + '" cy="' + o.y.toFixed(1) + '" r="' + r.toFixed(2) + '" stroke-width="1.6" vector-effect="non-scaling-stroke"/>' +
       '<text x="' + o.x.toFixed(1) + '" y="' + o.y.toFixed(1) + '" class="toko-n" style="font-size:' + (r * 1.1).toFixed(2) + 'px">' + l.length + '</text></g>';
   });
   const svg = '<svg class="map-svg" viewBox="' + K.vb.join(' ') + '" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Peta kecamatan dan toko/gudang tujuan di ' + esc(tc(name)) + '">' +
@@ -1116,11 +1132,20 @@ function kecMapSection(name, pname, m, di){
     (kecTop ? '; kecamatan terpadat: <b>' + esc(kecTop[0]) + '</b>.' : '.') : 'Belum ada toko/gudang tujuan tercatat di ' + esc(tc(name)) + ' untuk filter ini.';
   const dot = o => o.x != null ? 'var(--red)' : o.kec >= 0 ? '#F08A90' : '#5B6B74';
   const rows = list.map((o, r) => { const t = B.dims.toko[o.ti]; return '<div class="mh-row mh-row2"><span class="mh-rk">' + (r + 1) + '</span><span class="mh-nm"><b class="mh-dot" style="background:' + dot(o) + '"></b>' + esc(t[1] || t[0]) + '<small>' + esc(o.kec >= 0 ? 'Kec. ' + K.d[o.kec].n : (t[2] || 'lokasi belum diketahui')) + (o.shared ? ' · gudang bersama (' + o.shared + ')' : '') + '</small><i style="width:' + (o.vol / maxV * 100) + '%;background:#5FD08F"></i></span><span class="mh-tn">' + fmt(o.vol) + ' t</span><span class="mh-pc">' + pctTxt(pctOf(o.vol, tot)) + '</span></div>'; }).join('');
+  const gMax = Math.max(1, ...grp.map(g => g.vol)), gTot = grp.reduce((a, g) => a + g.vol, 0);
+  const nToko = k => list.filter(o => o.gk === k).length;
+  const gRows = grp.map((g, r) => '<' + (g.href ? 'a href="' + g.href + '"' : 'div') + ' class="mh-row" data-kd="' + g.key + '"><span class="mh-rk">' + (r + 1) + '</span><span class="mh-nm"><b class="mh-dot" style="background:' + (colOf.get(g.key) || '#8C9AA2') + '"></b>' + esc(g.n) +
+    '<small>' + (mode === 'distr' ? nToko(g.key) + ' toko utama · ' : '') + pctTxt(pctOf(g.vol, gTot)) + ' tonase</small><i style="width:' + (g.vol / gMax * 100) + '%;background:' + tierColor(g.pct) + '"></i></span>' +
+    '<span class="mh-tn">' + fmt(g.vol) + ' t</span><span class="mh-pc" style="color:' + heroTier(g.pct) + '">' + pctTxt(g.pct) + '</span><span class="mh-so">' + (mode === 'eksp' ? (g.of == null ? '–' : pctTxt(g.of)) : '') + '</span></' + (g.href ? 'a' : 'div') + '>').join('');
+  const modeBar = '<span class="kmode">' + [['distr', 'Distributor'], ['eksp', 'Ekspeditur'], ['toko', 'Toko']].map(([k, l]) => '<button class="' + (k === mode ? 'on' : '') + '" data-kmode="' + k + '">' + l + '</button>').join('') + '</span>';
+  const gKey = grp.slice(0, 5).map(g => '<span><i style="background:' + colOf.get(g.key) + ';border-radius:50%"></i>' + esc(g.n) + '</span>').join('') + (grp.length > 5 || mode === 'eksp' ? '<span><i style="background:#8C9AA2;border-radius:50%"></i>' + (mode === 'eksp' ? (grp.length > 5 ? 'lainnya / ' : '') + 'tanpa FRC (FOT, ambil sendiri)' : 'lainnya') + '</span>' : '');
   const note = list.length ? '<div class="mh-note">' + nEx + ' toko/gudang berkoordinat · ' + nAp + ' di pusat kecamatan (perkiraan)' + (nNo ? ' · ' + nNo + ' belum terpetakan' : '') + '. Koordinat bisa diupload di halaman admin, slot <i>Lokasi gudang / toko</i>.</div>' : '';
   return heroPanel({photo: pname, cls: 'kmap', eyebrow: 'Peta kecamatan &amp; toko/gudang tujuan · <a href="#/provinsi/' + enc(pname) + '">peta ' + esc(tc(pname)) + ' &rsaquo;</a>', head,
       chips: kpiChips(total(m, {dist: di})).concat(heroChip('Toko / gudang', fmt(list.length) + ' <small>di ' + byKec.size + '/' + K.d.length + ' kec.</small>', (list.length ? pctTxt(pctOf(nEx + nAp, list.length)) : '–') + ' terpetakan · ' + nEx + ' berkoordinat')),
-      listHead: 'Toko / gudang tujuan', listCols: ['Realisasi', 'Porsi'], rows,
-      key: '<span><i style="background:var(--red);border-radius:50%"></i>koordinat gudang</span><span><i style="background:#F08A90;border-radius:50%"></i>perkiraan</span><span><i style="background:linear-gradient(90deg,#265C3E,#5FD08F)"></i>tonase kecamatan (makin terang makin banyak)</span>',
+      listHead: modeBar, listCols: mode === 'toko' ? ['Realisasi', 'Porsi'] : mode === 'eksp' ? ['Realisasi', 'Capaian', 'Real/SO'] : ['Realisasi', 'Capaian', ''],
+      rows: mode === 'toko' ? rows : gRows || '<div class="mh-note">Tidak ada ' + (mode === 'eksp' ? 'ekspeditur FRC' : 'distributor') + ' untuk filter ini.</div>',
+      key: (mode === 'toko' ? '<span><i style="background:var(--red);border-radius:50%"></i>koordinat gudang</span><span><i style="background:#F08A90;border-radius:50%"></i>perkiraan</span>' : gKey + '<span>titik pudar = lokasi perkiraan</span>') +
+        '<span><i style="background:linear-gradient(90deg,#265C3E,#5FD08F)"></i>tonase kecamatan (makin terang makin banyak)</span>',
       note, map: svg, hint: 'Arahkan kursor ke titik untuk nama, alamat & tonase'});
 }
 
@@ -2678,6 +2703,8 @@ function bindEvents(){
     const pd = e.target.closest('[data-plantday]');
     if(pd){ e.preventDefault(); plantHourDay = +pd.dataset.plantday; const sec = $('#plantHours'); if(sec) sec.outerHTML = plantHourSection(); return; }
     const go = e.target.closest('[data-href]');
+    const km = e.target.closest('[data-kmode]');
+    if(km){ KMODE = km.dataset.kmode; try { sessionStorage.setItem('kmode', KMODE); } catch(x){} const y = scrollY; route(); scrollTo(0, y); return; }
     const tb = e.target.closest('[data-tab]');
     if(tb){ tabClick(tb); return; }
     if(go && /^kontrak:/.test(go.dataset.href || '')){ kontrakDetail(+go.dataset.href.slice(8)); return; }
@@ -2717,6 +2744,7 @@ function bindEvents(){
     $$('.map-hero .map-region.hl').forEach(x => x.classList.remove('hl'));
     const want = r && (r.dataset.hl || (r.dataset.prov ? '#/provinsi/' + enc(r.dataset.prov) : null));
     if(want) $$('.map-hero .map-region.live').forEach(x => { if(x.dataset.href === want) x.classList.add('hl'); });
+    const kd = r && r.dataset.kd; $$('.map-hero .toko-pin').forEach(x => x.classList.toggle('dim', kd != null && x.dataset.k !== kd));
   });
   // map tooltip
   const tip = document.createElement('div'); tip.className = 'map-tip'; document.body.appendChild(tip);

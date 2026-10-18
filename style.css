@@ -546,7 +546,7 @@ table.tree td.name small{display:block;color:var(--sub);font-weight:400;font-siz
 .mh-page .map-lbl,.mh-page .map-pct{stroke-width:.25em;}
 .mh-page .map-region.live:hover,.mh-page .map-region.hl{filter:brightness(1.18) drop-shadow(0 0 10px rgba(255,255,255,.35));}
 .mh-row2{grid-template-columns:22px 1fr 70px 50px;}
-.mh-row2 .mh-nm small{display:block;font-size:10.5px;font-weight:500;color:#8FA0AA;margin-top:1px;}
+.mh-row2 .mh-nm small,.kmap .mh-nm small{display:block;font-size:10.5px;font-weight:500;color:#8FA0AA;margin-top:1px;}
 .mh-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;vertical-align:1px;}
 .mh-note{font-size:11.5px;color:#9FB0BA;margin-top:12px;line-height:1.5;}
 .mh-note i{color:#C9D3D9;}
@@ -783,3 +783,9 @@ table.tree tr.lv0 td.fz{background:var(--white)}
 .tk-strip i{font-style:normal;font-size:9px;color:var(--sub);padding-bottom:2px;}
 .tk-strip span.on i{color:#fff;}
 @media(max-width:560px){.tk-strip i{font-size:7px;}}
+/* district hero: list mode (distributor | ekspeditur | toko) */
+.kmode{display:inline-flex;gap:2px;background:rgba(255,255,255,.08);border-radius:4px;padding:2px;}
+.kmode button{background:none;border:0;color:#C9D3D9;font:inherit;font-size:11px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;padding:5px 10px;border-radius:3px;cursor:pointer;}
+.kmode button.on{background:#fff;color:#0F1A21;}
+.toko-pin.approx[style]{opacity:.55;}
+.toko-pin.dim{opacity:.12;}
