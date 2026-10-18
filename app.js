@@ -2365,12 +2365,12 @@ function korEksp(d){   // d = district node
     return Object.assign(o, {key: e, rs, kontrak: !!pd});
   });
 }
-const korDiff = o => o.plan != null && o.rk != null ? o.rk - o.plan : null;
+const korDiff = o => o.plan != null && o.rk != null ? o.plan - o.rk : null;   // > 0 = armada kurang dari kebutuhan kontrak
 function korCols(first, extra){
   const n1 = (h, f, fm) => ({h, num: true, val: r => f(r) == null ? -1e9 : f(r), html: r => { const v = f(r); return v == null ? '–' : fm ? fm(v) : fmt1(v); }});
   return [first].concat(extra || [], [n1('Trip', r => r.trips, fmt), n1('t / trip', r => r.tpt), n1('Siklus aktual (hari)', r => r.cyc, v => '<b>' + fmt1(v) + '</b>'),
-    n1('Kebutuhan armada · plan kontrak', r => r.plan, fmt), n1('Kebutuhan armada · real', r => r.rk, fmt),
-    n1('Selisih (real − plan)', korDiff, v => Math.abs(v) < 0.5 ? '0' : '<b style="color:' + (v < 0 ? 'var(--red)' : 'var(--green)') + '">' + (v > 0 ? '+' : '−') + fmt(Math.abs(v)) + '</b>'),
+    n1('Kebutuhan armada · kontrak', r => r.plan, fmt), n1('Kebutuhan armada · real', r => r.rk, fmt),
+    n1('Kebutuhan armada · selisih', korDiff, v => Math.abs(v) < 0.5 ? '0' : '<b style="color:' + (v > 0 ? 'var(--red)' : 'var(--green)') + '">' + (v > 0 ? '+' : '−') + fmt(Math.abs(v)) + '</b>'),
     {h: 'Waktu muat (jam)', num: true, val: r => r.sla == null ? -1 : r.sla, html: r => r.sla == null ? '–' : '<b style="color:' + slaColor(r.sla) + '">' + fmt1(r.sla) + '</b>'},
     n1('Antri (jam)', r => r.wait)]);
 }
@@ -2400,7 +2400,8 @@ function korTables(rows, CG, nDays){
       o.ds.map((d, j) => '<tr class="lv1 tr-hide" data-path="' + i + '-' + j + '" data-parent="' + i + '" data-href="kor:' + d.key + '" style="cursor:pointer"><td class="name fz fz0 fzl" style="--d:1"><span class="caret-t"></span><span class="t-lbl">' + esc(d.lbl) + '</span></td>' + cells(d) + '</tr>').join('')).join('');
     const tot = Object.assign({trips: T.trips, tpt: T.ton / Math.max(1, T.trips), cyc: null, plan: T.plan, rk: T.rk, sla: null, wait: null});
     return {ton: T.ton, html: '<div class="inc-grp" style="--c:var(--red)"><b>' + esc(tc(B.dims.src[si] || '?')) + '</b><small>' + fmt(T.trips) + ' trip · ' + pl.length + ' provinsi</small><span style="margin-left:auto;font-size:11.5px;text-transform:none;letter-spacing:0"><a data-tree-all="' + id + ':1">Buka semua</a> · <a data-tree-all="' + id + ':0">Tutup semua</a></span></div>' +
-      '<div class="tbl-wrap' + (pl.length > 15 ? ' tall' : '') + '"><table class="tbl tree" id="' + id + '"><thead><tr>' + cols.map((c, k) => '<th class="' + (k ? 'num' : 'fz fz0 fzl') + '">' + c.h + '</th>').join('') + '</tr></thead><tbody>' + body +
+      '<div class="tbl-wrap' + (pl.length > 15 ? ' tall' : '') + '"><table class="tbl tree kor-tbl" id="' + id + '"><thead><tr>' + cols.map((c, k) => k >= 4 && k <= 6 ? (k === 4 ? '<th class="grp" colspan="3">Kebutuhan armada</th>' : '') : '<th rowspan="2" class="' + (k ? 'num' : 'fz fz0 fzl') + '">' + c.h + '</th>').join('') +
+        '</tr><tr><th class="num sub">Kontrak</th><th class="num sub">Real</th><th class="num sub">Selisih</th></tr></thead><tbody>' + body +
       (pl.length > 1 ? '<tr class="total"><td class="name fz fz0 fzl"><b>Total</b></td>' + cells(tot) + '</tr>' : '') + '</tbody></table></div>'};
   }).filter(x => x.html && x.ton > 0).sort((a, b) => b.ton - a.ton).map(x => x.html).join('');
 }
@@ -2540,7 +2541,7 @@ function pageArmada(){
     '<div class="dp-panel" style="margin-bottom:14px"><div class="pt">Waktu muat per hari (jam)</div>' + barsHTML('ad', dData) +
       '<div class="trend-legend"><span><i style="background:var(--green)"></i>&le;' + SLA_TARGET + ' jam</span><span><i style="background:var(--red)"></i>&gt;' + SLA_TARGET + ' jam</span><span><i class="dash"></i>target ' + SLA_TARGET + ' jam</span><span>klik batang = per ekspeditur</span></div></div>' +
     (plantTbl || '<div class="dp-review">Tidak ada data truk untuk filter ini.</div>')},
-    {k: 'koridor', label: 'Koridor', html: '<div class="tab-note">Kebutuhan armada = trip per hari × siklus aktual (median jeda antar muat truk yang sama, 60 hari) · kontrak hanya FRC, jadi <b>plan</b> dan <b>real</b> hanya ekspeditur pemenang rute: plan = volume kontrak per hari ÷ t/trip aktual, real = trip aktual pemenang per hari · merah = real kurang dari plan · klik provinsi → distrik → ekspeditur → truk</div>' +
+    {k: 'koridor', label: 'Koridor', html: '<div class="tab-note">Kebutuhan armada = trip per hari × siklus aktual (median jeda antar muat truk yang sama, 60 hari) · kontrak hanya FRC, jadi <b>kontrak</b> dan <b>real</b> hanya ekspeditur pemenang rute: kontrak = volume kontrak per hari ÷ t/trip aktual, real = trip aktual pemenang per hari · <b>selisih = kontrak − real</b>, merah = armada kurang · klik provinsi → distrik → ekspeditur → truk</div>' +
     (corrTbl || '<div class="dp-review">Tidak ada data.</div>')},
     {k: 'eksp', label: 'Ekspeditur', html: '<div class="tab-note">Siklus vs koridor: jeda rata-rata antar muat truk ekspeditur dibanding rata-rata koridor yang sama; 100% = sama, &lt;100% lebih cepat</div>' +
     (incGroups(scoreTbl) || '<div class="dp-review">Tidak ada data.</div>')}]) +

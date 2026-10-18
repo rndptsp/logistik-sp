@@ -789,3 +789,8 @@ table.tree tr.lv0 td.fz{background:var(--white)}
 .kmode button.on{background:#fff;color:#0F1A21;}
 .toko-pin.approx[style]{opacity:.55;}
 .toko-pin.dim{opacity:.12;}
+/* koridor: grouped header "Kebutuhan armada" over Kontrak | Real | Selisih */
+.kor-tbl thead th.grp{text-align:center;border-bottom:1px solid var(--line);}
+.kor-tbl thead th.sub{font-size:10.5px;}
+.kor-tbl td:nth-child(5),.kor-tbl thead th.grp,.kor-tbl thead tr:last-child th:first-child{border-left:1px solid var(--line);}
+.kor-tbl td:nth-child(7),.kor-tbl thead tr:last-child th:last-child{border-right:1px solid var(--line);}
