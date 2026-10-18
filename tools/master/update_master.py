@@ -288,7 +288,11 @@ def cmd_so(a):
             f1=old[k][0]['FLAG'];f2=l[0]['FLAG'];s1=old[k][0]['STATUS_QTY'];s2=l[0]['STATUS_QTY']
             if abs(a1-b1)>0.0005 or abs(a2-b2)>0.0005 or f1!=f2 or s1!=s2: chg.append((k,a1,b1,a2,b2,f1,f2))
     missing=[k for k in old if k not in out]
-    if old and len(old)-len(missing)<(1-SET['row_drop_pct']/100)*len(old) and not a.force: errs.append('guardrail: kunci file %d < 90%% kunci tersimpan %d'%(len(old)-len(missing),len(old)))
+    # guardrail only within the months the file covers: SO is an upsert (keys missing from the file stay stored),
+    # so a one-month file is normal; a file that drops >10% of the stored SO of its own months is suspicious
+    fm={str(x['BULAN_NO']) for l in out.values() for x in l if x.get('BULAN_NO') not in (None,'')}
+    in_m=[k for k in old if str(old[k][0].get('BULAN_NO')) in fm];miss_m=[k for k in in_m if k not in out]
+    if in_m and len(in_m)-len(miss_m)<(1-SET['row_drop_pct']/100)*len(in_m) and not a.force: errs.append('guardrail: kunci file pada bulan yang sama %d < %d%% kunci tersimpan %d'%(len(in_m)-len(miss_m),100-SET['row_drop_pct'],len(in_m)))
     log('SO BARU: %d | BERUBAH: %d | HILANG dari file (tetap disimpan): %d | tidak berubah: %d'%(len(newk),len(chg),len(missing),len(out)-len(newk)-len(chg)))
     nt=C.defaultdict(float);nn=C.Counter()
     for k in newk:
