@@ -594,7 +594,7 @@ const C = {
   so: {h:'SO (t)', num:true, val: r => r.so || null, html: r => r.so ? fmt(r.so) : '–'},
   of: {h:'Real/SO', num:true, val: r => r.of, html: r => pctTxt(r.of)},   // neutral: SO is a whole month, realisasi is MTD
   trips: {h:'Trip', num:true, val: r => r.trips, html: r => fmt(r.trips)},
-  dwell: {h:'SLA (jam)', num:true, val: r => r.dwell, html: r => r.dwell == null ? '–' : '<span style="color:' + slaColor(r.dwell) + '">' + fmt1(r.dwell) + '</span>'},
+  dwell: {h:'Waktu muat (jam)', num:true, val: r => r.dwell, html: r => r.dwell == null ? '–' : '<span style="color:' + slaColor(r.dwell) + '">' + fmt1(r.dwell) + '</span>'},
   note: {h:'Catatan', cls:'note-c', val: r => reviewText(r.pct), sortVal: r => r.pct}
 };
 
@@ -1450,7 +1450,7 @@ function pageHome(){
     '<div class="kpi-row">' +
       kpi('trend', 'var(--black)', 'Trip', fmt(t.trips), {href:'#/armada', hint: incTxt + ' · ' + esc(m.label)}) +
       kpi('truck', 'var(--black)', 'Truk aktif', fmt(trucks.length), {href:'#/armada', hint: fmt1(t.trips / Math.max(1, trucks.length)) + ' trip / truk'}) +
-      kpi('clock', 'var(--amber)', 'Rata-rata SLA', t.dwell == null ? '–' : fmt1(t.dwell) + ' <small>jam</small>', {href:'#/armada', hint:'masuk → keluar pabrik'}) +
+      kpi('clock', 'var(--amber)', 'Rata-rata waktu muat', t.dwell == null ? '–' : fmt1(t.dwell) + ' <small>jam</small>', {href:'#/armada', hint:'masuk → keluar pabrik'}) +
       kpi('check', 'var(--green)', 'Realisasi / SO', pctTxt(t.of), {href:'#/ekspeditur', hint: t.so ? 'SO ' + fmt(t.so) + ' t' + ' (bulan penuh yang tercakup)' : 'SO tidak tersedia'}) +
     '</div>' +
     '</div>', 'home');
@@ -1778,7 +1778,7 @@ function pagePlant(name){
     {h:'Gap SNOP (t)', num:true, val: r => r.tgt ? r.gap : 0, html: r => r.tgt ? '<span style="color:' + (r.gap < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(r.gap) + '</span>' : '–'},
     {h:(m.kind === 'month' ? 'Bulan lalu' : 'Periode lalu') + ' (t)', num:true, val: r => r.prev, html: r => r.prev ? fmt(r.prev) : '–'},
     {h:'Δ', num:true, val: r => r.chg == null ? -999 : r.chg, html: r => r.chg == null ? '–' : '<span style="color:' + (r.chg >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (r.chg >= 0 ? '+' : '−') + fmt1(Math.abs(r.chg)) + '%</span>'},
-    {h:'Trip', num:true, val: r => r.trips}, {h:'SLA (jam)', num:true, val: r => r.sla == null ? -1 : r.sla, html: r => r.sla == null ? '–' : fmt1(r.sla)}];
+    {h:'Trip', num:true, val: r => r.trips}, {h:'Waktu muat (jam)', num:true, val: r => r.sla == null ? -1 : r.sla, html: r => r.sla == null ? '–' : fmt1(r.sla)}];
   if(rows.length > 1){
     cols[0].total = '<b>Total</b>'; cols[1].total = '<b>' + fmt(vol) + '</b>'; cols[2].total = tgt ? '<b>' + fmt(tgt) + '</b>' : '–'; cols[3].total = pc(pS); cols[4].total = pc(pI);
     cols[5].total = tgt ? signed(az - tgt) : '–'; cols[6].total = prev ? fmt(prev) : '–'; cols[7].total = chg == null ? '–' : (chg >= 0 ? '+' : '−') + fmt1(Math.abs(chg)) + '%'; cols[8].total = fmt(trips); cols[9].total = dwN ? fmt1(dwS / dwN) : '–';
@@ -1879,7 +1879,7 @@ function pageEksp(code){
   const one = trucks.filter(t => t.trips === 1).length;
   const distCols = [C.rank, {h:'Distrik', cls:'name', val: r => tc(B.dims.dist[r.key]), html: r => esc(tc(B.dims.dist[r.key])) + '<small>' + esc(tc(B.dims.prov[B.dims.distProv[r.key]])) + '</small>'}, C.vol(), C.tgt, C.pct, C.gap, C.trips, C.note];
   const truckCols = [{h:'Nopol', cls:'name', val: r => B.dims.truck[r.truck]}, {h:'Trip', num:true, val: r => r.trips}, {h:'Tonase', num:true, val: r => r.ton, html: r => fmt(r.ton)},
-    {h:'Hari aktif', num:true, val: r => r.days}, {h:'SLA (jam)', num:true, val: r => r.dwN ? r.dwS / r.dwN : null, html: r => r.dwN ? fmt1(r.dwS / r.dwN) : '–'},
+    {h:'Hari aktif', num:true, val: r => r.days}, {h:'Waktu muat (jam)', num:true, val: r => r.dwN ? r.dwS / r.dwN : null, html: r => r.dwN ? fmt1(r.dwS / r.dwN) : '–'},
     {h:'Aktif', val: r => r.first, html: r => activeTxt(r)}, {h:'Provinsi utama', val: r => tc(B.dims.prov[r.prov])}];
   page('<div class="wrap">' + crumb([['Ekspeditur', '#/ekspeditur'], [code]]) +
     '<div class="dp-head"><div><div class="nm">' + esc(code) + '</div><div class="sub">' + ekspFull(code) + 'Mitra ekspeditur FRC · ' + periodSub() + '</div></div><div class="badges">' + (me.rank ? '<div class="dp-badge">Rank ' + me.rank + ' / ' + all.filter(o => D.frcEksp.has(o.key) && o.rank).length + '</div>' : '') + '<div class="dp-badge ' + tierClass(me.pct) + '">' + pctTxt(me.pct) + ' dari target</div></div></div>' +
@@ -1888,7 +1888,7 @@ function pageEksp(code){
       kpi('check', 'var(--green)', 'Realisasi', fmt(me.vol) + ' <small>ton</small>', {hint: fmt(me.trips) + ' trip'}) +
       kpi('target', 'var(--black)', 'Target MTD', me.hasTgt ? fmt(me.tgt) + ' <small>ton</small>' : '–', {hint: me.hasTgt ? 'bulan penuh ' + fmt(me.tgtFull) + ' t' : ''}) +
       kpi('truck', 'var(--black)', 'Truk aktif', fmt(trucks.length), {hint: fmt1(me.trips / Math.max(1, trucks.length)) + ' trip / truk'}) +
-      kpi('clock', 'var(--amber)', 'Rata-rata SLA', me.dwell == null ? '–' : fmt1(me.dwell) + ' <small>jam</small>', {hint: me.so ? 'Real/SO ' + pctTxt(me.of) : ''}) +
+      kpi('clock', 'var(--amber)', 'Rata-rata waktu muat', me.dwell == null ? '–' : fmt1(me.dwell) + ' <small>jam</small>', {hint: me.so ? 'Real/SO ' + pctTxt(me.of) : ''}) +
     '</div>' + tabsHTML('eksp', [{k: 'kinerja', label: 'Kinerja & provinsi', html: incPerf(m, sc) +
     '<div class="dp-cols">' + trendPanel(sc, 'mingguan') +
       '<div class="dp-panel"><div class="pt">Capaian per provinsi<span class="pt-sub">capaian target · Real/SO</span></div>' + (provs.length ? incGroups(() => capTable([...summarize('prov', m, sc).values()].filter(o => o.vol > 0 || o.tgt > 0).sort((a, b) => b.vol - a.vol), 'Provinsi', o => tc(B.dims.prov[o.key]), o => '#/provinsi/' + enc(B.dims.prov[o.key]), true), ekspSub(m, sc)) : '<div class="empty">Tidak ada data untuk filter ini.</div>') + '</div>' +
@@ -2309,38 +2309,61 @@ function kontrakDetail(e){
    Siklus = median gap between loading days of the same truck (cycleGaps); need = trips/day x corridor cycle.
    Truck rows are built on first expand (thousands of trucks). */
 const ARMT = {};
+function kontrakPlanDay(mon){
+  const out = new Map(), K = B.kontrak || [];
+  K.forEach(r => {
+    if((r[8] && mon < r[8]) || (r[9] && mon > r[9]) || !r[2].length) return;
+    const v = ((r[6] && r[7] && mon >= r[7] ? r[6] : r[5]) || 0) / 12 / dim(mon) / r[2].length;   // route volume split evenly over its districts
+    const sn = B.dims.src[r[1]] || '';
+    r[2].forEach(di => { const pv = B.dims.distProv[di], k = r[1] + '|' + pv + (/INDARUNG/.test(sn) && B.dims.prov[pv] === 'SUMATERA BARAT' ? '|' + di : '') + '#' + r[0]; out.set(k, (out.get(k) || 0) + v); });
+  });
+  return out;
+}
 function armTree(rows, byC, corrRows, CG, nDays){
   const id = 'at' + Math.random().toString(36).slice(2, 8), sum = (rs, i) => rs.reduce((a, t) => a + t[i], 0);
   const med = k => { const a = CG.sub.get(k); return a && a.length >= 3 ? median(a) : null; };
-  const stat = (rs, cyc, need) => { const tr = sum(rs, 6), ton = sum(rs, 7), n = sum(rs, 9), wn = sum(rs, 13);
-    return {trips: tr, tpt: ton / Math.max(1, tr), cyc, tpd: tr / nDays, need, used: new Set(rs.map(t => t[1])).size, sla: n ? sum(rs, 8) / n : null, wait: wn ? sum(rs, 12) / wn : null}; };
+  const PL = kontrakPlanDay(PER().to.slice(0, 7));
+  const stat = (rs, cyc, nd) => { const tr = sum(rs, 6), ton = sum(rs, 7), n = sum(rs, 9), wn = sum(rs, 13);
+    return Object.assign({trips: tr, tpt: ton / Math.max(1, tr), cyc, plan: null, real: null, rk: null, sla: n ? sum(rs, 8) / n : null, wait: wn ? sum(rs, 12) / wn : null}, nd || {}); };
+  const add = (a, b) => a == null ? b : b == null ? a : a + b;
   const cell = (v, f) => '<td class="num">' + (v == null ? '–' : f ? f(v) : fmt1(v)) + '</td>';
   const tr = (o, lbl, depth, path, parent, kids, extra) => '<tr class="lv' + depth + (depth ? ' tr-hide' : '') + (kids ? ' has-kids' : '') + '" data-path="' + path + '" data-parent="' + parent + '"' + (extra || '') + '>' +
     '<td class="name fz fz0 fzl" style="--d:' + depth + '"><span class="caret-t">' + (kids ? '▸' : '') + '</span><span class="t-lbl">' + lbl + '</span>' + (kids ? '<span class="t-cnt">' + kids + '</span>' : '') + '</td>' +
-    cell(o.trips, fmt) + cell(o.tpt) + cell(o.cyc, v => '<b>' + fmt1(v) + '</b>') + cell(o.tpd) + cell(o.need, fmt) + cell(o.used, fmt) +
+    cell(o.trips, fmt) + cell(o.tpt) + cell(o.cyc, v => '<b>' + fmt1(v) + '</b>') + cell(o.plan, fmt) + cell(o.real, fmt) +
+    cell(o.plan != null && o.rk != null ? o.rk - o.plan : null, v => Math.abs(v) < 0.5 ? '0' : '<b style="color:' + (v < 0 ? 'var(--red)' : 'var(--green)') + '">' + (v > 0 ? '+' : '−') + fmt(Math.abs(v)) + '</b>') +
     '<td class="num">' + (o.sla == null ? '–' : '<b style="color:' + slaColor(o.sla) + '">' + fmt1(o.sla) + '</b>') + '</td>' + cell(o.wait) + '</tr>';
   const lazy = {};
   const plants = new Map(); corrRows.forEach(r => { const si = +r.k.split('|')[0]; (plants.get(si) || plants.set(si, []).get(si)).push(r); });
   let body = '';
   [...plants.entries()].map(([si, cs]) => ({si, cs, rs: cs.flatMap(c => byC.get(c.k))})).sort((a, b) => sum(b.rs, 7) - sum(a.rs, 7)).forEach((P, pi) => {
-    const need = P.cs.reduce((a, c) => a + (c.need != null && c.cn >= 10 ? c.need : 0), 0);
-    body += tr(stat(P.rs, med('s' + P.si), need || null), esc(tc(B.dims.src[P.si] || '?')), 0, String(pi), '', P.cs.length);
-    P.cs.forEach((c, ci) => {
-      const cp = pi + '-' + ci, crs = byC.get(c.k), cyc = c.cn >= 10 ? c.cyc : null;
-      const [, pv, di] = c.k.split('|'), lbl = di != null ? tc(B.dims.dist[di]) : tc(B.dims.prov[pv]);
+    // kebutuhan armada at the actual corridor cycle: plan = contract t/day ÷ t/trip; real = trips/day; rk = real of contract ekspeditur only
+    const cor = P.cs.map(c => {
+      const crs = byC.get(c.k), cyc = c.cn >= 10 ? c.cyc : null;
       const byE = new Map(); crs.forEach(t => (byE.get(t[3]) || byE.set(t[3], []).get(t[3])).push(t));
-      const es = [...byE.entries()].sort((a, b) => sum(b[1], 7) - sum(a[1], 7));
-      body += tr(stat(crs, cyc, cyc != null ? c.tpd * cyc : null), esc(lbl), 1, cp, String(pi), es.length);
-      es.forEach(([e, ers], ei) => {
-        const ep = cp + '-' + ei, nT = new Set(ers.map(t => t[1])).size, st = stat(ers, med(c.k + '#e' + e), cyc != null ? sum(ers, 6) / nDays * cyc : null);
+      const es = [...byE.entries()].sort((a, b) => sum(b[1], 7) - sum(a[1], 7)).map(([e, ers]) => {
+        const tpt = sum(ers, 7) / Math.max(1, sum(ers, 6)) || c.tpt, pd = PL.get(c.k + '#' + e);
+        const real = cyc != null ? sum(ers, 6) / nDays * cyc : null, plan = cyc != null && pd ? pd / tpt * cyc : null;
+        return {e, ers, o: stat(ers, med(c.k + '#e' + e), {plan, real, rk: plan != null ? real : null})};
+      });
+      const o = stat(crs, cyc, {real: cyc != null ? c.tpd * cyc : null});
+      es.forEach(x => { o.plan = add(o.plan, x.o.plan); o.rk = add(o.rk, x.o.rk); });
+      return {c, cyc, es, o};
+    });
+    const po = stat(P.rs, med('s' + P.si)); cor.forEach(x => { po.plan = add(po.plan, x.o.plan); po.real = add(po.real, x.o.real); po.rk = add(po.rk, x.o.rk); });
+    body += tr(po, esc(tc(B.dims.src[P.si] || '?')), 0, String(pi), '', P.cs.length);
+    cor.forEach(({c, es, o}, ci) => {
+      const cp = pi + '-' + ci, [, pv, di] = c.k.split('|'), lbl = di != null ? tc(B.dims.dist[di]) : tc(B.dims.prov[pv]);
+      body += tr(o, esc(lbl), 1, cp, String(pi), es.length);
+      es.forEach(({e, ers, o: eo}, ei) => {
+        const ep = cp + '-' + ei, nT = new Set(ers.map(t => t[1])).size;
         lazy[ep] = {k: c.k, rs: ers};
-        body += tr(st, esc(ekspLbl(e)), 2, ep, cp, nT, ' data-lazy="' + id + ':' + ep + '"');
+        body += tr(eo, esc(ekspLbl(e)) + (eo.plan != null ? '<small>kontrak</small>' : ''), 2, ep, cp, nT, ' data-lazy="' + id + ':' + ep + '"');
       });
     });
   });
   ARMT[id] = {lazy, med, stat, tr, sum};
   return '<div class="tree-tools"><span>Plant &rsaquo; tujuan &rsaquo; ekspeditur &rsaquo; truk (klik truk = trip per hari)</span><span><a data-tree-all="' + id + ':1">Buka semua</a> · <a data-tree-all="' + id + ':0">Tutup semua</a></span></div>' +
-    '<div class="tbl-wrap tall"><table class="tbl tree" id="' + id + '"><thead><tr><th class="fz fz0 fzl">Koridor</th><th class="num">Trip</th><th class="num">t / trip</th><th class="num">Siklus (hari)</th><th class="num">Trip / hari</th><th class="num">Armada dibutuhkan</th><th class="num">Truk dipakai</th><th class="num">Di plant (jam)</th><th class="num">Antri (jam)</th></tr></thead><tbody>' +
+    '<div class="tbl-wrap tall"><table class="tbl tree" id="' + id + '"><thead><tr><th class="fz fz0 fzl">Koridor</th><th class="num">Trip</th><th class="num">t / trip</th><th class="num">Siklus aktual (hari)</th><th class="num">Kebutuhan armada · plan kontrak</th><th class="num">Kebutuhan armada · real</th><th class="num">Selisih (real − plan)</th><th class="num">Waktu muat (jam)</th><th class="num">Antri (jam)</th></tr></thead><tbody>' +
     body + '</tbody></table></div>';
 }
 function armLazy(row){
@@ -2348,7 +2371,7 @@ function armLazy(row){
   if(!L || row.dataset.loaded) return; row.dataset.loaded = 1;
   const byT = new Map(); L.rs.forEach(t => (byT.get(t[1]) || byT.set(t[1], []).get(t[1])).push(t));
   const html = [...byT.entries()].sort((a, b) => T.sum(b[1], 6) - T.sum(a[1], 6)).map(([tk, rs], i) => {
-    const o = T.stat(rs, T.med(L.k + '#t' + tk), null); o.used = null;
+    const o = T.stat(rs, T.med(L.k + '#t' + tk));
     return T.tr(o, esc(B.dims.truck[tk] || '?') + '<small>' + new Set(rs.map(t => t[0])).size + ' hari muat</small>', 3, ep + '-' + i, ep, 0, ' data-trk="' + tk + '" style="cursor:pointer"');
   }).join('');
   row.insertAdjacentHTML('afterend', html);
@@ -2358,7 +2381,7 @@ function truckTrips(tk){
   const cols = [{h:'Tanggal', cls:'name', val: t => t[0], html: t => dayLabel(B.days[t[0]])}, {h:'Plant', val: t => tc(B.dims.src[t[4]] || ''), html: t => esc(tc(B.dims.src[t[4]] || ''))},
     {h:'Tujuan', val: t => tc((t[11] != null ? B.dims.dist[t[11]] : '') || B.dims.prov[t[5]] || ''), html: t => esc(tc((t[11] != null ? B.dims.dist[t[11]] : '') || B.dims.prov[t[5]] || ''))},
     {h:'Ekspeditur', val: t => ekspLbl(t[3]), html: t => esc(ekspLbl(t[3]))}, {h:'Trip', num:true, val: t => t[6]}, {h:'Tonase', num:true, val: t => t[7], html: t => fmt(t[7])},
-    {h:'Di plant (jam)', num:true, val: t => t[9] ? t[8] / t[9] : -1, html: t => t[9] ? '<b style="color:' + slaColor(t[8] / t[9]) + '">' + fmt1(t[8] / t[9]) + '</b>' : '–'},
+    {h:'Waktu muat (jam)', num:true, val: t => t[9] ? t[8] / t[9] : -1, html: t => t[9] ? '<b style="color:' + slaColor(t[8] / t[9]) + '">' + fmt1(t[8] / t[9]) + '</b>' : '–'},
     {h:'Antri (jam)', num:true, val: t => t[13] ? t[12] / t[13] : -1, html: t => t[13] ? fmt1(t[12] / t[13]) : '–'}];
   const gaps = []; const d = [...new Set(rs.map(t => t[0]))].sort((a, b) => a - b); for(let i = 1; i < d.length; i++) gaps.push(d[i] - d[i - 1]);
   openModal('Truk ' + (B.dims.truck[tk] || ''), rs.length + ' baris · ' + d.length + ' hari muat · ' + periodSub() + (gaps.length ? ' · jeda median periode ini ' + fmt1(median(gaps)) + ' hari' : ''),
@@ -2381,7 +2404,7 @@ function pageArmada(){
     return {key: si, n: tc(B.dims.src[si] || '(tanpa plant)'), tpd: median(ds.map(d => new Set(rs.filter(t => t[0] === d).map(t => t[1])).size)), trips: sum(rs, 6), ton: sum(rs, 7), tpt: sum(rs, 7) / Math.max(1, sum(rs, 6)),
       sla: sum(rs, 9) ? sum(rs, 8) / sum(rs, 9) : null, o4: over4(rs), wait: sum(rs, 13) ? sum(rs, 12) / sum(rs, 13) : null}; }).sort((a, b) => b.ton - a.ton);
   const plantTbl = plantRows.length ? table([{h:'Plant', cls:'name', val: r => r.n}, {h:'Truk / hari', num:true, val: r => r.tpd, html: r => fmt(r.tpd)}, {h:'Trip', num:true, val: r => r.trips, html: r => fmt(r.trips)},
-    {h:'t / trip', num:true, val: r => r.tpt, html: r => fmt1(r.tpt)}, jam('Antri (jam)', r => r.wait), jam('Di plant (jam)', r => r.sla, true), pctCol('> ' + SLA_TARGET + ' jam', r => r.o4)], plantRows, {sort: 2, go: r => B.dims.src[r.key] ? plantHref(B.dims.src[r.key]) : null}) : '';
+    {h:'t / trip', num:true, val: r => r.tpt, html: r => fmt1(r.tpt)}, jam('Antri (jam)', r => r.wait), jam('Waktu muat (jam)', r => r.sla, true), pctCol('> ' + SLA_TARGET + ' jam', r => r.o4)], plantRows, {sort: 2, go: r => B.dims.src[r.key] ? plantHref(B.dims.src[r.key]) : null}) : '';
   // daily: time in plant per day (all plants in the filter), click = per ekspeditur that day
   const dData = dayIdx.map(d => { const rs = rows.filter(t => t[0] === d), n = sum(rs, 9), v = n ? sum(rs, 8) / n : 0;
     return {label: dayIdx.length > 20 ? String(+B.days[d].slice(8)) : shortDate(B.days[d]).replace(/ \w+$/, ''), long: dayLabel(B.days[d]), vol: v, unit: 'jam', color: slaColor(v), tgt: SLA_TARGET, pct: null, d}; });
@@ -2389,7 +2412,7 @@ function pageArmada(){
     const d = dData[i].d, per = new Map();
     rows.forEach(t => { if(t[0] !== d) return; const o = per.get(t[3]) || {key: t[3], s: 0, n: 0, trips: 0, vol: 0}; o.s += t[8]; o.n += t[9]; o.trips += t[6]; o.vol += t[7]; per.set(t[3], o); });
     const rs = [...per.values()].filter(o => o.n).map(o => Object.assign(o, {dw: o.s / o.n}));
-    openModal('Waktu di plant · ' + dayLabel(B.days[d]), 'per ekspeditur', rs.length ? table([{h:'Ekspeditur', cls:'name', val: o => ekspLbl(o.key)}, {h:'Rata-rata (jam)', num:true, cls:'pc', val: o => o.dw, html: o => fmt1(o.dw), style: o => 'color:' + slaColor(o.dw)}, {h:'Trip', num:true, val: o => o.trips}, {h:'Tonase', num:true, val: o => o.vol, html: o => fmt(o.vol)}], rs, {go: o => ekspHref(o.key), sort: 1}) : '<div class="dp-review">Tidak ada data.</div>');
+    openModal('Waktu muat · ' + dayLabel(B.days[d]), 'per ekspeditur', rs.length ? table([{h:'Ekspeditur', cls:'name', val: o => ekspLbl(o.key)}, {h:'Rata-rata (jam)', num:true, cls:'pc', val: o => o.dw, html: o => fmt1(o.dw), style: o => 'color:' + slaColor(o.dw)}, {h:'Trip', num:true, val: o => o.trips}, {h:'Tonase', num:true, val: o => o.vol, html: o => fmt(o.vol)}], rs, {go: o => ekspHref(o.key), sort: 1}) : '<div class="dp-review">Tidak ada data.</div>');
   }};
 
   // 2. Koridor
@@ -2418,7 +2441,7 @@ function pageArmada(){
     return table([{h:'Ekspeditur', cls:'name', val: r => ekspLbl(r.key)}, {h:'Truk', num:true, val: r => r.trucks}, {h:'Truk / hari', num:true, val: r => r.tpd, html: r => fmt(r.tpd)},
       {h:'Trip', num:true, val: r => r.trips, html: r => fmt(r.trips)}, {h:'Ton', num:true, val: r => r.ton, html: r => fmt(r.ton)},
       {h:'Siklus vs koridor', num:true, val: r => r.cyc, html: r => r.cyc == null ? '–' : '<b style="color:' + (r.cyc <= 100 ? 'var(--green)' : r.cyc <= 120 ? 'var(--amber)' : 'var(--red)') + '">' + pctTxt(r.cyc) + '</b>'},
-      {h:'Truk 1 trip', num:true, val: r => r.one, html: r => pctTxt(r.one)}, jam('Antri (jam)', r => r.wait), jam('Di plant (jam)', r => r.sla, true), pctCol('> ' + SLA_TARGET + ' jam', r => r.o4),
+      {h:'Truk 1 trip', num:true, val: r => r.one, html: r => pctTxt(r.one)}, jam('Antri (jam)', r => r.wait), jam('Waktu muat (jam)', r => r.sla, true), pctCol('> ' + SLA_TARGET + ' jam', r => r.o4),
       C.pct], list, {go: r => ekspHref(r.key), sort: 4});
   };
 
@@ -2428,13 +2451,13 @@ function pageArmada(){
     '<div class="dp-grid4">' +
       kpi('truck', 'var(--black)', 'Truk dimuat / hari', fmt(tpdAll), {hint: 'median · ' + fmt(new Set(rows.map(t => t[1])).size) + ' truk berbeda'}) +
       kpi('trend', 'var(--black)', 'Trip', fmt(trips), {hint: fmt1(ton / Math.max(1, trips)) + ' t / trip'}) +
-      kpi('clock', 'var(--amber)', 'Waktu di plant', dwN ? fmt1(dwS / dwN) + ' <small>jam</small>' : '–', {hint: 'masuk → keluar · ' + pctTxt(over4(rows)) + ' truk > ' + SLA_TARGET + ' jam'}) +
+      kpi('clock', 'var(--amber)', 'Waktu muat', dwN ? fmt1(dwS / dwN) + ' <small>jam</small>' : '–', {hint: 'masuk → keluar · ' + pctTxt(over4(rows)) + ' truk > ' + SLA_TARGET + ' jam'}) +
       kpi('clock', 'var(--black)', 'Antri', wN ? fmt1(wS / wN) + ' <small>jam</small>' : '–', {hint: 'antri → masuk pabrik'}) +
     '</div>' + tabsHTML('armada', [{k: 'rilis', label: 'Kinerja rilis', html:
-    '<div class="dp-panel" style="margin-bottom:14px"><div class="pt">Waktu di plant per hari (jam)</div>' + barsHTML('ad', dData) +
+    '<div class="dp-panel" style="margin-bottom:14px"><div class="pt">Waktu muat per hari (jam)</div>' + barsHTML('ad', dData) +
       '<div class="trend-legend"><span><i style="background:var(--green)"></i>&le;' + SLA_TARGET + ' jam</span><span><i style="background:var(--red)"></i>&gt;' + SLA_TARGET + ' jam</span><span><i class="dash"></i>target ' + SLA_TARGET + ' jam</span><span>klik batang = per ekspeditur</span></div></div>' +
     (plantTbl || '<div class="dp-review">Tidak ada data truk untuk filter ini.</div>')},
-    {k: 'koridor', label: 'Koridor', html: '<div class="tab-note">Siklus = median jeda hari antar muat truk yang sama (60 hari terakhir) · armada dibutuhkan = trip/hari × siklus koridor · klik baris untuk membuka</div>' +
+    {k: 'koridor', label: 'Koridor', html: '<div class="tab-note">Siklus aktual = median jeda hari antar muat truk yang sama di koridor itu (60 hari terakhir) · kebutuhan armada = trip per hari × siklus aktual · <b>plan kontrak</b> = volume kontrak per hari ÷ t/trip aktual, hanya ekspeditur pemenang rute (FRC) · <b>real</b> = trip aktual per hari · selisih dihitung atas ekspeditur kontrak saja, merah = armada real kurang dari yang dibutuhkan kontrak · klik baris untuk membuka</div>' +
     (corrTbl || '<div class="dp-review">Tidak ada data.</div>')},
     {k: 'eksp', label: 'Ekspeditur', html: '<div class="tab-note">Siklus vs koridor: 100% = sama dengan median koridor yang dilayani; &lt;100% lebih cepat</div>' +
     (incGroups(scoreTbl) || '<div class="dp-review">Tidak ada data.</div>')}]) +
