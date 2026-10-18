@@ -2367,9 +2367,8 @@ const korDiff = o => o.plan != null && o.rk != null ? o.rk - o.plan : null;
 function korCols(first, extra){
   const n1 = (h, f, fm) => ({h, num: true, val: r => f(r) == null ? -1e9 : f(r), html: r => { const v = f(r); return v == null ? '–' : fm ? fm(v) : fmt1(v); }});
   return [first].concat(extra || [], [n1('Trip', r => r.trips, fmt), n1('t / trip', r => r.tpt), n1('Siklus aktual (hari)', r => r.cyc, v => '<b>' + fmt1(v) + '</b>'),
-    n1('Kebutuhan armada · plan kontrak', r => r.plan, fmt), n1('Real · ekspeditur kontrak', r => r.rk, fmt),
+    n1('Kebutuhan armada · plan kontrak', r => r.plan, fmt), n1('Kebutuhan armada · real', r => r.rk, fmt),
     n1('Selisih (real − plan)', korDiff, v => Math.abs(v) < 0.5 ? '0' : '<b style="color:' + (v < 0 ? 'var(--red)' : 'var(--green)') + '">' + (v > 0 ? '+' : '−') + fmt(Math.abs(v)) + '</b>'),
-    n1('Real · semua truk', r => r.real, fmt),
     {h: 'Waktu muat (jam)', num: true, val: r => r.sla == null ? -1 : r.sla, html: r => r.sla == null ? '–' : '<b style="color:' + slaColor(r.sla) + '">' + fmt1(r.sla) + '</b>'},
     n1('Antri (jam)', r => r.wait)]);
 }
@@ -2389,7 +2388,7 @@ function korTables(byC, corrRows, CG, nDays){
   return [...plants.entries()].map(([si, list]) => ({si, list, ton: list.reduce((a, o) => a + o.ton, 0)})).sort((a, b) => b.ton - a.ton).map(P => {
     const T = P.list.reduce((a, o) => ({trips: a.trips + o.trips, plan: add(a.plan, o.plan), real: add(a.real, o.real), rk: add(a.rk, o.rk)}), {trips: 0, plan: null, real: null, rk: null});
     const cols = korCols({h: 'Tujuan', cls: 'name', val: r => r.lbl, html: r => esc(r.lbl) + (r.sub ? '<small>' + r.sub + '</small>' : '')});
-    cols[0].total = '<b>Total</b>'; cols[1].total = fmt(T.trips); cols[4].total = T.plan == null ? '–' : fmt(T.plan); cols[5].total = T.rk == null ? '–' : fmt(T.rk); cols[7].total = T.real == null ? '–' : fmt(T.real);
+    cols[0].total = '<b>Total</b>'; cols[1].total = fmt(T.trips); cols[4].total = T.plan == null ? '–' : fmt(T.plan); cols[5].total = T.rk == null ? '–' : fmt(T.rk);
     const d = korDiff(T); cols[6].total = d == null ? '–' : (d > 0 ? '+' : d < 0 ? '−' : '') + fmt(Math.abs(d));
     return '<div class="inc-grp" style="--c:var(--red)"><b>' + esc(tc(B.dims.src[P.si] || '?')) + '</b><small>' + fmt(T.trips) + ' trip · ' + P.list.length + ' tujuan</small></div>' +
       table(cols, P.list, {total: P.list.length > 1, sort: 1, go: r => 'kor:' + r.key});
@@ -2531,7 +2530,7 @@ function pageArmada(){
     '<div class="dp-panel" style="margin-bottom:14px"><div class="pt">Waktu muat per hari (jam)</div>' + barsHTML('ad', dData) +
       '<div class="trend-legend"><span><i style="background:var(--green)"></i>&le;' + SLA_TARGET + ' jam</span><span><i style="background:var(--red)"></i>&gt;' + SLA_TARGET + ' jam</span><span><i class="dash"></i>target ' + SLA_TARGET + ' jam</span><span>klik batang = per ekspeditur</span></div></div>' +
     (plantTbl || '<div class="dp-review">Tidak ada data truk untuk filter ini.</div>')},
-    {k: 'koridor', label: 'Koridor', html: '<div class="tab-note">Kebutuhan armada = trip per hari × siklus aktual (median jeda antar muat truk yang sama, 60 hari) · <b>plan kontrak</b> = volume kontrak per hari ÷ t/trip aktual · <b>real ekspeditur kontrak</b> = trip aktual pemenang rute (FRC), dibanding plan → selisih (merah = kurang) · <b>real semua truk</b> = seluruh truk di koridor (FRC + FOT/ambil sendiri, sesuai filter incoterm) · klik tujuan → ekspeditur → truk</div>' +
+    {k: 'koridor', label: 'Koridor', html: '<div class="tab-note">Kebutuhan armada = trip per hari × siklus aktual (median jeda antar muat truk yang sama, 60 hari) · kontrak hanya FRC, jadi <b>plan</b> dan <b>real</b> hanya ekspeditur pemenang rute: plan = volume kontrak per hari ÷ t/trip aktual, real = trip aktual pemenang per hari · merah = real kurang dari plan · klik tujuan → ekspeditur → truk</div>' +
     (corrTbl || '<div class="dp-review">Tidak ada data.</div>')},
     {k: 'eksp', label: 'Ekspeditur', html: '<div class="tab-note">Siklus vs koridor: jeda rata-rata antar muat truk ekspeditur dibanding rata-rata koridor yang sama; 100% = sama, &lt;100% lebih cepat</div>' +
     (incGroups(scoreTbl) || '<div class="dp-review">Tidak ada data.</div>')}]) +
