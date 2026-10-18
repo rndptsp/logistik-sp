@@ -198,11 +198,8 @@ const NKP = () => B._nk || (B._nk = new Set(B.dims.nonKin || []));
 const areaOn = () => NKP().size > 0;
 const areaProvOk = p => !areaOn() || F.area === 'ALL' || (F.area === 'AP1') !== NKP().has(p);
 const areaName = () => F.area === 'ALL' ? 'AP1 + NON AP1' : F.area === 'AP1' ? 'AP1' : 'NON AP1';
-// non-kinerja provinces (settings: provinsi_non_kinerja, e.g. Sumsel) stay out of the overall performance total
-// (unscoped 'all': Ringkasan, trend, incoterm cards) unless NON AP1 is chosen; they still show on their own pages and details (Rendy)
-const nkAch = p => F.area === 'NON' || !NKP().has(p);   // NON AP1 chosen: non-kinerja provinces count for everything, capaian included
-const unscoped = sc => !sc || Object.keys(sc).every(k => sc[k] == null);
-const nkSkip = (p, group, sc) => (!areaProvOk(p) && (sc || {}).prov !== p) || (group === 'all' && F.area !== 'NON' && unscoped(sc) && NKP().has(p));
+const nkAch = p => F.area !== 'AP1' || !NKP().has(p);   // non-kinerja provinces (Sumsel) count for capaian unless the filter is AP1 only (Rendy)
+const nkSkip = (p, group, sc) => !areaProvOk(p) && (sc || {}).prov !== p;   // AP1 only: non-kinerja provinces out of every total (except their own page)
 const FK = {prov: f => f[3], dist: f => f[4], eksp: f => f[5], src: f => f[2], all: () => 0};
 const TK = {prov: t => t[1], dist: t => t[2], eksp: t => t[3], src: t => t[4], all: () => 0};
 const SK = {prov: s => s[1], dist: s => s[2], eksp: s => s[3], src: () => null, all: () => 0};
