@@ -38,9 +38,18 @@ jobs:
       - name: Open sealed files from inbox_repo/ (encrypted to the store key; log goes to the admin page)
         run: python3 tools/repo_inbox.py open "$MASTER_HOME" "$INBOX" >> "$RUNNER_TEMP/build.log" 2>&1
       - name: Update master (log goes to the admin page)
-        run: python3 tools/master/run_web.py --inbox "$INBOX" >> "$RUNNER_TEMP/build.log" 2>&1
+        # on failure, print only the step outline and error kinds (no data values; the full log stays on the admin page)
+        run: |
+          python3 tools/master/run_web.py --inbox "$INBOX" >> "$RUNNER_TEMP/build.log" 2>&1 || {
+            grep -E '^(Rencana|GAGAL|BERHENTI|REKONSILIASI|Sheet |Tidak ada|Kolom wajib|Sudah ada|Skrip ini|File tidak ada|\$ )' "$RUNNER_TEMP/build.log" | sed -E 's#/[^ ]*/##g' | cut -c1-160
+            grep -oE '^[A-Za-z]+(Error|Exception)' "$RUNNER_TEMP/build.log" | sort -u
+            exit 1; }
       - name: Build site (log goes to the admin page)
-        run: MASTER_BARU="$MASTER_HOME" python3 tools/build_site_baru.py --master x >> "$RUNNER_TEMP/build.log" 2>&1
+        run: |
+          MASTER_BARU="$MASTER_HOME" python3 tools/build_site_baru.py --master x >> "$RUNNER_TEMP/build.log" 2>&1 || {
+            grep -oE '^[A-Za-z]+(Error|Exception)' "$RUNNER_TEMP/build.log" | sort -u
+            grep -E '^  File "[^"]*tools/' "$RUNNER_TEMP/build.log" | sed -E 's#.*(tools/[^"]*)", line ([0-9]+).*#\1:\2#' | tail -3
+            exit 1; }
       - name: Commit and push data
         run: |
           mkdir -p "$RUNNER_TEMP/out" && cp data/site.enc data/meta.json tools/inbox_pub.pem "$RUNNER_TEMP/out/"
