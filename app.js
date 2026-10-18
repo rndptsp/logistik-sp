@@ -2186,7 +2186,8 @@ function cycleGaps(per){
       const g = rs[i][0] - rs[i - 1][0]; if(g < 1 || g > 12) continue;
       const k = corrKey(rs[i - 1]); (corr.get(k) || corr.set(k, []).get(k)).push(g);
       const e = rs[i - 1][3]; (ek.get(e) || ek.set(e, []).get(e)).push([k, g]);
-      [k + '#e' + e, k + '#t' + rs[i - 1][1], 's' + rs[i - 1][4]].forEach(x => (sub.get(x) || sub.set(x, []).get(x)).push(g));
+      const dk = 'D' + rs[i - 1][4] + '|' + rs[i - 1][11];
+      [k + '#e' + e, k + '#t' + rs[i - 1][1], 's' + rs[i - 1][4], dk, dk + '#e' + e, 'T' + rs[i - 1][1]].forEach(x => (sub.get(x) || sub.set(x, []).get(x)).push(g));
     }
   });
   const med = new Map([...corr.entries()].map(([k, a]) => [k, median(a)]));
@@ -2337,29 +2338,30 @@ function kontrakDetail(e){
     {h:'TOA (Rp/t)', num:true, val: x => x.r[13], html: x => x.r[13] ? fmt(x.r[13]) : '–'}], rs, {sort: 1}) +
     (o.luar ? '<div class="dp-review">Di luar rute pemenang: ' + fmt(o.luar) + ' t pada bulan ini.</div>' : ''));
 }
-/* Koridor (Rendy): one table per plant, rows = tujuan (provinsi; distrik for Sumbar from Indarung).
-   Click a tujuan = its ekspeditur, click an ekspeditur = its trucks, click a truck = the truck page (#/truk/NOPOL).
-   Kebutuhan armada at the actual corridor cycle: plan = contract t/day ÷ t/trip; real = trips/day; selisih over contract ekspeditur only. */
-// contract plan per day keyed corridor#eksp: FRC awarded route volume / 12 / days in month, split evenly over the route's districts
+/* Koridor (Rendy): one table per plant, rows = provinsi, click a provinsi = its districts; click a district = its ekspeditur,
+   an ekspeditur = its trucks, a truck = the truck page (#/truk/NOPOL).
+   Kebutuhan armada is built per district (trips/day × siklus aktual of that district) and summed up to the province.
+   The contract is FRC only, so plan and real count only the awarded ekspeditur of each route. */
+// contract plan per day keyed plant|district#eksp: FRC awarded route volume / 12 / days in month, split evenly over the route's districts
 function kontrakPlanDay(mon){
   const out = new Map(), K = B.kontrak || [];
   K.forEach(r => {
     if((r[8] && mon < r[8]) || (r[9] && mon > r[9]) || !r[2].length) return;
     const v = ((r[6] && r[7] && mon >= r[7] ? r[6] : r[5]) || 0) / 12 / dim(mon) / r[2].length;
-    const sn = B.dims.src[r[1]] || '';
-    r[2].forEach(di => { const pv = B.dims.distProv[di], k = r[1] + '|' + pv + (/INDARUNG/.test(sn) && B.dims.prov[pv] === 'SUMATERA BARAT' ? '|' + di : '') + '#' + r[0]; out.set(k, (out.get(k) || 0) + v); });
+    r[2].forEach(di => { const k = r[1] + '|' + di + '#' + r[0]; out.set(k, (out.get(k) || 0) + v); });
   });
   return out;
 }
 let KOR = null;
 const korSum = (rs, i) => rs.reduce((a, t) => a + t[i], 0);
+const korAdd = (a, b) => a == null ? b : b == null ? a : a + b;
 function korStat(rs, cyc){ const tr = korSum(rs, 6), ton = korSum(rs, 7), n = korSum(rs, 9), wn = korSum(rs, 13);
-  return {trips: tr, ton, tpt: ton / Math.max(1, tr), cyc, plan: null, real: null, rk: null, trucks: new Set(rs.map(t => t[1])).size, sla: n ? korSum(rs, 8) / n : null, wait: wn ? korSum(rs, 12) / wn : null}; }
-function korEksp(c){
-  const K = KOR, byE = new Map(); K.byC.get(c.k).forEach(t => (byE.get(t[3]) || byE.set(t[3], []).get(t[3])).push(t));
+  return {trips: tr, ton, tpt: ton / Math.max(1, tr), cyc, plan: null, rk: null, trucks: new Set(rs.map(t => t[1])).size, sla: n ? korSum(rs, 8) / n : null, wait: wn ? korSum(rs, 12) / wn : null}; }
+function korEksp(d){   // d = district node
+  const K = KOR, byE = new Map(); d.rs.forEach(t => (byE.get(t[3]) || byE.set(t[3], []).get(t[3])).push(t));
   return [...byE.entries()].sort((a, b) => korSum(b[1], 7) - korSum(a[1], 7)).map(([e, rs]) => {
-    const o = korStat(rs, K.med(c.k + '#e' + e)), pd = K.PL.get(c.k + '#' + e);
-    o.real = c.cyc != null ? o.trips / K.nDays * c.cyc : null; o.plan = c.cyc != null && pd ? pd / (o.tpt || c.tpt) * c.cyc : null; o.rk = o.plan != null ? o.real : null;
+    const o = korStat(rs, K.med('D' + d.si + '|' + d.di + '#e' + e)), pd = K.PL.get(d.si + '|' + d.di + '#' + e);
+    if(pd && d.cyc != null){ o.plan = pd / (o.tpt || d.tpt) * d.cyc; o.rk = o.trips / K.nDays * d.cyc; }
     return Object.assign(o, {key: e, rs, kontrak: !!pd});
   });
 }
@@ -2372,44 +2374,52 @@ function korCols(first, extra){
     {h: 'Waktu muat (jam)', num: true, val: r => r.sla == null ? -1 : r.sla, html: r => r.sla == null ? '–' : '<b style="color:' + slaColor(r.sla) + '">' + fmt1(r.sla) + '</b>'},
     n1('Antri (jam)', r => r.wait)]);
 }
-function korTables(byC, corrRows, CG, nDays){
-  const med = k => { const a = CG.sub.get(k); return a && a.length >= 3 ? median(a) : null; };
-  KOR = {byC, CG, nDays, med, PL: kontrakPlanDay(PER().to.slice(0, 7)), corr: new Map()};
-  const add = (a, b) => a == null ? b : b == null ? a : a + b;
-  const plants = new Map();
-  corrRows.forEach(c => {
-    c.cyc = c.cn >= 10 ? c.cyc : null;
-    const o = korStat(byC.get(c.k), c.cyc), es = korEksp(c);
-    o.real = c.cyc != null ? c.tpd * c.cyc : null; es.forEach(x => { o.plan = add(o.plan, x.plan); o.rk = add(o.rk, x.rk); });
-    const [si, pv, di] = c.k.split('|');
-    Object.assign(o, {key: c.k, c, lbl: di != null ? tc(B.dims.dist[di]) : tc(B.dims.prov[pv]), sub: di != null ? 'Sumatera Barat' : ''});
-    KOR.corr.set(c.k, o); (plants.get(+si) || plants.set(+si, []).get(+si)).push(o);
-  });
-  return [...plants.entries()].map(([si, list]) => ({si, list, ton: list.reduce((a, o) => a + o.ton, 0)})).sort((a, b) => b.ton - a.ton).map(P => {
-    const T = P.list.reduce((a, o) => ({trips: a.trips + o.trips, plan: add(a.plan, o.plan), real: add(a.real, o.real), rk: add(a.rk, o.rk)}), {trips: 0, plan: null, real: null, rk: null});
-    const cols = korCols({h: 'Tujuan', cls: 'name', val: r => r.lbl, html: r => esc(r.lbl) + (r.sub ? '<small>' + r.sub + '</small>' : '')});
-    cols[0].total = '<b>Total</b>'; cols[1].total = fmt(T.trips); cols[4].total = T.plan == null ? '–' : fmt(T.plan); cols[5].total = T.rk == null ? '–' : fmt(T.rk);
-    const d = korDiff(T); cols[6].total = d == null ? '–' : (d > 0 ? '+' : d < 0 ? '−' : '') + fmt(Math.abs(d));
-    return '<div class="inc-grp" style="--c:var(--red)"><b>' + esc(tc(B.dims.src[P.si] || '?')) + '</b><small>' + fmt(T.trips) + ' trip · ' + P.list.length + ' tujuan</small></div>' +
-      table(cols, P.list, {total: P.list.length > 1, sort: 1, go: r => 'kor:' + r.key});
-  }).join('');
+function korTables(rows, CG, nDays){
+  const med = (k, n) => { const a = CG.sub.get(k); return a && a.length >= (n || 3) ? median(a) : null; };
+  KOR = {CG, nDays, med, PL: kontrakPlanDay(PER().to.slice(0, 7)), node: new Map()};
+  const P = new Map();   // plant -> prov -> dist -> rows
+  rows.forEach(t => { const pv = P.get(t[4]) || P.set(t[4], new Map()).get(t[4]), dv = pv.get(t[5]) || pv.set(t[5], new Map()).get(t[5]), di = t[11] == null ? -1 : t[11]; (dv.get(di) || dv.set(di, []).get(di)).push(t); });
+  const cols = korCols({h: 'Tujuan', cls: 'name'});
+  const cells = o => cols.slice(1).map(c => '<td class="num">' + c.html(o) + '</td>').join('');
+  return [...P.entries()].map(([si, provs]) => {
+    const pl = [...provs.entries()].map(([pv, dists]) => {
+      const ds = [...dists.entries()].map(([di, rs]) => {
+        const ck = CG.med.get(corrKey(rs[0])), cyc = med('D' + si + '|' + di, 10) ?? ((CG.n.get(corrKey(rs[0])) || 0) >= 10 ? ck : null);
+        const d = Object.assign(korStat(rs, cyc), {key: 'D' + si + '|' + di, si, di, rs, lbl: di >= 0 ? tc(B.dims.dist[di]) : '(distrik kosong)'});
+        korEksp(d).forEach(x => { d.plan = korAdd(d.plan, x.plan); d.rk = korAdd(d.rk, x.rk); });
+        KOR.node.set(d.key, d); return d;
+      }).sort((a, b) => b.trips - a.trips);
+      const all = ds.flatMap(d => d.rs), o = korStat(all, null), wc = ds.filter(d => d.cyc != null);
+      o.cyc = wc.length ? wc.reduce((a, d) => a + d.cyc * d.trips, 0) / wc.reduce((a, d) => a + d.trips, 0) : null;   // trip-weighted
+      ds.forEach(d => { o.plan = korAdd(o.plan, d.plan); o.rk = korAdd(o.rk, d.rk); });
+      return Object.assign(o, {pv, ds, lbl: tc(B.dims.prov[pv])});
+    }).filter(o => o.trips >= 5).sort((a, b) => b.trips - a.trips);
+    const T = pl.reduce((a, o) => ({trips: a.trips + o.trips, ton: a.ton + o.ton, plan: korAdd(a.plan, o.plan), rk: korAdd(a.rk, o.rk)}), {trips: 0, ton: 0, plan: null, rk: null});
+    const id = 'kt' + si;
+    const body = pl.map((o, i) => '<tr class="lv0 has-kids" data-path="' + i + '" data-parent=""><td class="name fz fz0 fzl" style="--d:0"><span class="caret-t">▸</span><span class="t-lbl">' + esc(o.lbl) + '</span><span class="t-cnt">' + o.ds.length + '</span></td>' + cells(o) + '</tr>' +
+      o.ds.map((d, j) => '<tr class="lv1 tr-hide" data-path="' + i + '-' + j + '" data-parent="' + i + '" data-href="kor:' + d.key + '" style="cursor:pointer"><td class="name fz fz0 fzl" style="--d:1"><span class="caret-t"></span><span class="t-lbl">' + esc(d.lbl) + '</span></td>' + cells(d) + '</tr>').join('')).join('');
+    const tot = Object.assign({trips: T.trips, tpt: T.ton / Math.max(1, T.trips), cyc: null, plan: T.plan, rk: T.rk, sla: null, wait: null});
+    return {ton: T.ton, html: '<div class="inc-grp" style="--c:var(--red)"><b>' + esc(tc(B.dims.src[si] || '?')) + '</b><small>' + fmt(T.trips) + ' trip · ' + pl.length + ' provinsi</small><span style="margin-left:auto;font-size:11.5px;text-transform:none;letter-spacing:0"><a data-tree-all="' + id + ':1">Buka semua</a> · <a data-tree-all="' + id + ':0">Tutup semua</a></span></div>' +
+      '<div class="tbl-wrap' + (pl.length > 15 ? ' tall' : '') + '"><table class="tbl tree" id="' + id + '"><thead><tr>' + cols.map((c, k) => '<th class="' + (k ? 'num' : 'fz fz0 fzl') + '">' + c.h + '</th>').join('') + '</tr></thead><tbody>' + body +
+      (pl.length > 1 ? '<tr class="total"><td class="name fz fz0 fzl"><b>Total</b></td>' + cells(tot) + '</tr>' : '') + '</tbody></table></div>'};
+  }).filter(x => x.html && x.ton > 0).sort((a, b) => b.ton - a.ton).map(x => x.html).join('');
 }
 function korEkspModal(k){
-  const c = KOR && KOR.corr.get(k); if(!c) return;
-  const es = korEksp(c.c); KOR.cur = {k, es};
+  const d = KOR && KOR.node.get(k); if(!d) return;
+  const es = korEksp(d); KOR.cur = {k, es};
   const cols = korCols({h: 'Ekspeditur', cls: 'name', val: r => ekspLbl(r.key), html: r => esc(ekspLbl(r.key)) + (r.kontrak ? '<small>pemenang kontrak</small>' : '')}, [{h: 'Truk', num: true, val: r => r.trucks}]);
-  openModal(tc(B.dims.src[k.split('|')[0]] || '') + ' → ' + c.lbl, 'Ekspeditur di koridor ini · ' + periodSub() + ' · klik ekspeditur untuk daftar truk',
+  openModal(tc(B.dims.src[d.si] || '') + ' → ' + d.lbl, 'Ekspeditur di koridor ini · ' + periodSub() + ' · klik ekspeditur untuk daftar truk',
     table(cols, es, {sort: 2, go: r => 'kort:' + es.indexOf(r)}));
 }
 function korTruckModal(i){
   const K = KOR, x = K && K.cur && K.cur.es[i]; if(!x) return;
-  const c = K.corr.get(K.cur.k), byT = new Map(); x.rs.forEach(t => (byT.get(t[1]) || byT.set(t[1], []).get(t[1])).push(t));
-  const list = [...byT.entries()].map(([tk, rs]) => Object.assign(korStat(rs, K.med(K.cur.k + '#t' + tk)), {key: tk, days: new Set(rs.map(t => t[0])).size, last: Math.max(...rs.map(t => t[0]))}));
+  const d = K.node.get(K.cur.k), byT = new Map(); x.rs.forEach(t => (byT.get(t[1]) || byT.set(t[1], []).get(t[1])).push(t));
+  const list = [...byT.entries()].map(([tk, rs]) => Object.assign(korStat(rs, K.med('T' + tk)), {key: tk, days: new Set(rs.map(t => t[0])).size, last: Math.max(...rs.map(t => t[0]))}));
   const cols = [{h: 'Nopol', cls: 'name', val: r => B.dims.truck[r.key]}, {h: 'Hari muat', num: true, val: r => r.days}, {h: 'Trip', num: true, val: r => r.trips}, {h: 'Tonase', num: true, val: r => r.ton, html: r => fmt(r.ton)},
     {h: 't / trip', num: true, val: r => r.tpt, html: r => fmt1(r.tpt)}, {h: 'Siklus truk (hari)', num: true, val: r => r.cyc == null ? -1 : r.cyc, html: r => r.cyc == null ? '–' : fmt1(r.cyc)},
     {h: 'Waktu muat (jam)', num: true, val: r => r.sla == null ? -1 : r.sla, html: r => r.sla == null ? '–' : '<b style="color:' + slaColor(r.sla) + '">' + fmt1(r.sla) + '</b>'},
     {h: 'Antri (jam)', num: true, val: r => r.wait == null ? -1 : r.wait, html: r => r.wait == null ? '–' : fmt1(r.wait)}, {h: 'Muat terakhir', val: r => r.last, html: r => shortDate(B.days[r.last])}];
-  openModal(ekspLbl(x.key) + ' · ' + c.lbl, list.length + ' truk · ' + periodSub() + ' · klik truk untuk detail',
+  openModal(ekspLbl(x.key) + ' · ' + d.lbl, list.length + ' truk · ' + periodSub() + ' · klik truk untuk detail',
     '<div class="tab-note"><a class="section-link" data-href="kor:' + esc(K.cur.k) + '">&lsaquo; semua ekspeditur di koridor ini</a></div>' + table(cols, list, {sort: 2, go: r => '#/truk/' + enc(B.dims.truck[r.key])}));
 }
 /* Truck page: everything the data holds about one nopol (Rilis has no driver or owner columns). */
@@ -2493,7 +2503,7 @@ function pageArmada(){
   const corrRows = [...byC.entries()].map(([k, rs]) => { const tr = sum(rs, 6), cyc = CG.med.get(k), tpd = tr / nDays;
     return {k, n: corrLbl(k), trips: tr, ton: sum(rs, 7), tpt: sum(rs, 7) / Math.max(1, tr), cyc, cn: CG.n.get(k) || 0, tpd, need: cyc != null ? tpd * cyc : null, used: new Set(rs.map(t => t[1])).size,
       sla: sum(rs, 9) ? sum(rs, 8) / sum(rs, 9) : null}; }).filter(r => r.trips >= 5).sort((a, b) => b.ton - a.ton);
-  const corrTbl = corrRows.length ? korTables(byC, corrRows, CG, nDays) : '';
+  const corrTbl = corrRows.length ? korTables(rows, CG, nDays) : '';
 
   // 3. Scorecard ekspeditur (per incoterm when several are active)
   const scoreTbl = () => {
@@ -2530,7 +2540,7 @@ function pageArmada(){
     '<div class="dp-panel" style="margin-bottom:14px"><div class="pt">Waktu muat per hari (jam)</div>' + barsHTML('ad', dData) +
       '<div class="trend-legend"><span><i style="background:var(--green)"></i>&le;' + SLA_TARGET + ' jam</span><span><i style="background:var(--red)"></i>&gt;' + SLA_TARGET + ' jam</span><span><i class="dash"></i>target ' + SLA_TARGET + ' jam</span><span>klik batang = per ekspeditur</span></div></div>' +
     (plantTbl || '<div class="dp-review">Tidak ada data truk untuk filter ini.</div>')},
-    {k: 'koridor', label: 'Koridor', html: '<div class="tab-note">Kebutuhan armada = trip per hari × siklus aktual (median jeda antar muat truk yang sama, 60 hari) · kontrak hanya FRC, jadi <b>plan</b> dan <b>real</b> hanya ekspeditur pemenang rute: plan = volume kontrak per hari ÷ t/trip aktual, real = trip aktual pemenang per hari · merah = real kurang dari plan · klik tujuan → ekspeditur → truk</div>' +
+    {k: 'koridor', label: 'Koridor', html: '<div class="tab-note">Kebutuhan armada = trip per hari × siklus aktual (median jeda antar muat truk yang sama, 60 hari) · kontrak hanya FRC, jadi <b>plan</b> dan <b>real</b> hanya ekspeditur pemenang rute: plan = volume kontrak per hari ÷ t/trip aktual, real = trip aktual pemenang per hari · merah = real kurang dari plan · klik provinsi → distrik → ekspeditur → truk</div>' +
     (corrTbl || '<div class="dp-review">Tidak ada data.</div>')},
     {k: 'eksp', label: 'Ekspeditur', html: '<div class="tab-note">Siklus vs koridor: jeda rata-rata antar muat truk ekspeditur dibanding rata-rata koridor yang sama; 100% = sama, &lt;100% lebih cepat</div>' +
     (incGroups(scoreTbl) || '<div class="dp-review">Tidak ada data.</div>')}]) +
