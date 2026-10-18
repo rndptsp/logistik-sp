@@ -412,7 +412,7 @@ const LG_NUM = '<span class="lg-num"><b>%</b> dalam batang = capaian · <b>angka
 function barsHTML(id, data, opt){
   const hasC = data.some(d => d.c);
   const max = Math.max(1, ...data.map(d => Math.max(d.vol, d.tgt || 0, d.c ? d.c.vol : 0)));
-  return '<div class="bars' + (hasC ? ' pair' : '') + (data.length > 16 && !(opt && opt.labels) ? ' dense' : '') + (data.length > 9 ? ' many' : '') + '">' + data.map((d, i) => {
+  return '<div class="bars' + (hasC ? ' pair' : '') + (data.length > 16 && !(opt && opt.labels) && !(data.length <= 31 && data.every(d => d.unit === 'jam')) ? ' dense' : '')   /* hours are short ("3,2"): always labelled */ + (data.length > 9 ? ' many' : '') + '">' + data.map((d, i) => {
     const HR = 84;   // headroom above the tallest bar for its value label
     const h = Math.max(2, d.vol / max * HR);
     const th = d.tgt != null ? Math.min(HR, d.tgt / max * HR) : null;
