@@ -44,6 +44,8 @@ jobs:
             grep -E '^(Rencana|GAGAL|BERHENTI|REKONSILIASI|Sheet |Tidak ada|Kolom wajib|Sudah ada|Skrip ini|File tidak ada|\$ )' "$RUNNER_TEMP/build.log" | sed -E 's#/[^ ]*/##g' | cut -c1-160 | sed 's/^/::error::/'
             grep -oE '^[A-Za-z]+(Error|Exception)' "$RUNNER_TEMP/build.log" | sort -u | sed 's/^/::error::/'
             grep -E '^  File "[^"]*tools/' "$RUNNER_TEMP/build.log" | sed -E 's#.*(tools/[^"]*)", line ([0-9]+).*#::error::\1:\2#' | tail -3
+            grep -E '^(DIBATALKAN|ERROR: guardrail)' "$RUNNER_TEMP/build.log" | cut -c1-160 | sed 's/^/::error::/'
+            grep -E '^ERROR:' "$RUNNER_TEMP/build.log" | grep -v guardrail | sed -E "s/ *(SO |'|[0-9]).*//" | sort | uniq -c | sed 's/^/::error::/'
             exit 1; }
       - name: Build site (log goes to the admin page)
         run: |
