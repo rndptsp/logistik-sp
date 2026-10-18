@@ -288,6 +288,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:12.5px;}
 .tbl td.rank{font-weight:800;width:44px;}
 .tbl td.name{font-weight:700;white-space:normal;min-width:150px;}
 .tbl td.name small{display:block;color:var(--sub);font-weight:400;font-size:11px;}
+.tbl td:not(.name):not(.num) small{display:block;color:var(--sub);font-weight:400;font-size:11px;}
 .tbl td.pc{font-weight:800;}
 .tbl td.note-c{color:var(--sub);white-space:normal;min-width:200px;}
 .tbl tr.total td{font-weight:800;background:var(--gray-l);}

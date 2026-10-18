@@ -328,7 +328,7 @@ def build(cfg):
         e = eksp(up(r.get("EXPEDITUR_KODE")) if frc else up(r.get("DISTRIBUTOR")))
         s = src(up(r.get("SOURCE_PLANT")))
         dwell = r.get("DWELL_TIME_JAM")
-        ok_dwell = dwell not in (None, "") and not r.get("DWELL_WAITING_FLAG") and 0 <= num(dwell) <= 48
+        ok_dwell = dwell not in (None, "") and not r.get("DWELL_WAITING_FLAG") and 0 < num(dwell) <= 48   # 0 jam = jam masuk/keluar tidak tercatat (DC), bukan muat instan
         kem = kemasan(r.get("KEMASAN"))
         f = facts[(d.isoformat(), inc, s, p, di, e, kem)]
         f[0] += ton; f[1] += 1

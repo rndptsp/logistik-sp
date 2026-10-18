@@ -765,7 +765,7 @@ function buildSearch(){
   B.ship.forEach(r => { seenD.add(r[5]); if(B.dims.toko[r[7]] && B.dims.toko[r[7]][0] && !tokoDistr.has(r[7])) tokoDistr.set(r[7], r[5]); });
   seenD.forEach(i => { if(B.dims.distr[i]) searchIndex.push({t: distrLbl(i), k: 'Distributor', h: '#/distributor/' + enc(B.dims.distr[i])}); });
   tokoDistr.forEach((d, i) => { const t = B.dims.toko[i]; searchIndex.push({t: (t[1] || t[0]) + (t[2] ? ' — ' + t[2] : ''), k: 'Toko · ' + distrLbl(d).slice(0, 22), h: '#/distributor/' + enc(B.dims.distr[d])}); });
-  [['Ringkasan','#/'],['Semua provinsi','#/provinsi'],['Peringkat ekspeditur & scorecard','#/ekspeditur'],['Distributor & toko tujuan','#/distributor'],['Armada / truk / SLA','#/armada'],['Kontrak angkutan (kuota, SO kontrak)','#/kontrak'],['Kualitas data (cek master)','#/kualitas'],['Prognosa minggu ini','#/prognosa/minggu-ini'],['Prognosa akhir bulan (proyeksi)','#/prognosa/akhir-bulan']]
+  [['Ringkasan','#/'],['Semua provinsi','#/provinsi'],['Peringkat ekspeditur & scorecard','#/ekspeditur'],['Distributor & toko tujuan','#/distributor'],['Armada / truk / waktu muat','#/armada'],['Kontrak angkutan (kuota, SO kontrak)','#/kontrak'],['Kualitas data (cek master)','#/kualitas'],['Prognosa minggu ini','#/prognosa/minggu-ini'],['Prognosa akhir bulan (proyeksi)','#/prognosa/akhir-bulan']]
     .forEach(x => searchIndex.push({t: x[0], k: 'Halaman', h: x[1]}));
 }
 function doSearch(q){
@@ -1438,7 +1438,7 @@ function pageHome(){
   const withPct = provRows.filter(o => o.pct != null);
   const worst = withPct.length ? withPct.reduce((a, b) => a.gap < b.gap ? a : b) : null;
   const attn = worst && worst.gap < 0 ? '<div class="attn"><div><span class="dot"></span></div><div><div class="t1">Perlu perhatian — ' + esc(tc(B.dims.prov[worst.key])) + '</div><div class="t2">Capaian ' + pctTxt(worst.pct) + ' dari target ' + tgtLbl() + ' MTD — gap ' + fmt(-worst.gap) + ' ton, terbesar di antara semua provinsi. Realisasi ' + fmt(worst.frc) + ' t vs target ' + fmt(worst.tgt) + ' t.</div></div><a class="cta" href="#/provinsi/' + enc(B.dims.prov[worst.key]) + '">Lihat rincian &rsaquo;</a></div>' : '';
-  const trucks = trucksFor(m);
+  const tRows = B.trucks.filter(x => inPer(x[0], m) && truckOk(x)), tTrips = tRows.reduce((a, x) => a + x[6], 0), tTrucks = new Set(tRows.map(x => x[1])).size;   // same basis as Armada
   const prog = B.prog;
   page(
     mapHero(provRows, t, head, chg, isLatest) +
@@ -1448,8 +1448,8 @@ function pageHome(){
     '<div class="main-chart">' + trendPanel({}, 'harian', 'Realisasi vs target ' + tgtLbl(), {grans: ['harian', 'mingguan', 'bulanan'], noCmp: true}) + '</div>' +
     '<div class="section-head"><div class="section-title">Ringkasan operasional</div><a class="section-link" href="#/armada">Armada &rsaquo;</a></div>' +
     '<div class="kpi-row">' +
-      kpi('trend', 'var(--black)', 'Trip', fmt(t.trips), {href:'#/armada', hint: incTxt + ' · ' + esc(m.label)}) +
-      kpi('truck', 'var(--black)', 'Truk aktif', fmt(trucks.length), {href:'#/armada', hint: fmt1(t.trips / Math.max(1, trucks.length)) + ' trip / truk'}) +
+      kpi('trend', 'var(--black)', 'Trip truk', fmt(tTrips), {href:'#/armada', hint: incTxt + ' · ' + esc(m.label)}) +
+      kpi('truck', 'var(--black)', 'Truk aktif', fmt(tTrucks), {href:'#/armada', hint: fmt1(tTrips / Math.max(1, tTrucks)) + ' trip / truk'}) +
       kpi('clock', 'var(--amber)', 'Rata-rata waktu muat', t.dwell == null ? '–' : fmt1(t.dwell) + ' <small>jam</small>', {href:'#/armada', hint:'masuk → keluar pabrik'}) +
       kpi('check', 'var(--green)', 'Realisasi / SO', pctTxt(t.of), {href:'#/ekspeditur', hint: t.so ? 'SO ' + fmt(t.so) + ' t' + ' (bulan penuh yang tercakup)' : 'SO tidak tersedia'}) +
     '</div>' +
@@ -1657,7 +1657,7 @@ function plantChart(R){
     xl += '<text x="' + cx.toFixed(1) + '" y="' + (H - 10) + '" class="pc-ax" text-anchor="middle">' + lab + '</text>';
     const tip = (R.title ? R.title(k) : R.monthly ? monthLabel(k) : dayLabel(k)) + '|' + (b.tot ? 'Rilis ' + fmt(b.tot) + ' t · ' + fmt(b.trips) + ' trip' + (R.hourly ? '' : ' · ' + b.trucks.size + ' truk') : 'Belum ada rilis') +
       segs.slice().reverse().map(ii => '|' + incLbl(INCS()[ii]) + ': ' + fmt(b.inc.get(ii)) + ' t').join('') +
-      (b.tgt ? '|Target ' + tgtLbl() + ' ' + fmt(b.tgt * tgtK()) + ' t' + (b.tot ? ' · capaian ' + pctTxt(pctOf(b.tot, b.tgt * tgtK())) : '') : '') + (b.prev != null ? '|' + (R.prevLbl || 'Bulan lalu (tgl sama)') + ' ' + fmt(b.prev) + ' t' : '') + (b.dwN ? '|SLA ' + fmt1(b.dwS / b.dwN) + ' jam' : '');
+      (b.tgt ? '|Target ' + tgtLbl() + ' ' + fmt(b.tgt * tgtK()) + ' t' + (b.tot ? ' · capaian ' + pctTxt(pctOf(b.tot, b.tgt * tgtK())) : '') : '') + (b.prev != null ? '|' + (R.prevLbl || 'Bulan lalu (tgl sama)') + ' ' + fmt(b.prev) + ' t' : '') + (b.dwN ? '|Waktu muat ' + fmt1(b.dwS / b.dwN) + ' jam' : '');
     hits += '<rect x="' + (cx - step / 2).toFixed(1) + '" y="' + T + '" width="' + step.toFixed(1) + '" height="' + (H - T - Bm) + '" class="pc-hit" data-tip="' + esc(tip) + '"/>';
   });
   const pts = (f) => bs.map((b, i) => f(b) == null ? null : [L + step * (i + 0.5), y(f(b))]);
@@ -1748,7 +1748,7 @@ function pagePlant(name){
     heroChip('Target Internal', tgt ? fmt(tI) + ' <small>t</small>' : '–', tgt ? 'capaian <b style="color:' + heroTier(pI) + '">' + pctTxt(pI) + '</b> · ' + signed(az - tI) + ' t' : '115% SNOP'),
     heroChip(R.monthly ? 'Rata-rata / bulan' : 'Rata-rata / hari', fmt(R.monthly ? vol / Math.max(1, dayKeys.length) : avg) + ' <small>t</small>', lastK ? (R.monthly ? monthShort(lastK) : shortDate(lastK)) + ': ' + fmt(R.Bk.get(lastK).tot) + ' t' : ''),
     heroChip(m.kind === 'month' ? 'vs bulan lalu' : 'vs periode lalu', chg == null ? '–' : (chg >= 0 ? '▲ ' : '▼ ') + fmt1(Math.abs(chg)) + '%', prev ? fmt(prev) + ' t · ' + shortDate(R.pp.from) + '–' + shortDate(R.pp.to) : '', chg == null ? null : chg >= 0 ? '#5FD08F' : '#FF6B74'),
-    heroChip('SLA rata-rata', dwN ? fmt1(dwS / dwN) + ' <small>jam</small>' : '–', 'target ' + SLA_TARGET + ' jam · masuk → keluar', dwN ? (dwS / dwN <= SLA_TARGET ? '#5FD08F' : '#FF6B74') : null)];
+    heroChip('Waktu muat rata-rata', dwN ? fmt1(dwS / dwN) + ' <small>jam</small>' : '–', 'target ' + SLA_TARGET + ' jam · masuk → keluar', dwN ? (dwS / dwN <= SLA_TARGET ? '#5FD08F' : '#FF6B74') : null)];
   const cards = R.I.map(o => {
     const n = INCS()[o.i], ps = o.tgt ? pctOf(o.az, o.tgt) : null, pi = o.tgt ? pctOf(o.az, o.tgt * TGT_INTERNAL) : null;
     return '<div class="ph-card" style="--c:' + incColor(o.i) + '"><div class="ph-n">' + esc(incLbl(n)) + '</div><div class="ph-v">' + fmt(o.vol) + ' <small>t</small></div>' +
@@ -2054,6 +2054,7 @@ function shipGantt(m, name, opt){
 }
 const shipKey = (start, end) => '<div class="kg-key"><span><i class="kargo"></i>kapal kargo</span><span><i class="reguler"></i>kapal reguler</span><span><i class="span"></i>rentang voyage</span><span>blok pekat = hari muat · ' + shortDate(B.days[start]) + ' – ' + shortDate(B.days[end]) + '</span></div>';
 function pageKapalDetail(name){
+  if(!/^KAPAL /.test(name) && !B.ship.some(r => shipName(r) === name) && B.ship.some(r => shipName(r) === 'KAPAL ' + name)) name = 'KAPAL ' + name;   // bare vessel name (search, typed link)
   const m = PER(), rows = kapalRows(m, name);
   if(!rows.length && !B.ship.some(r => shipName(r) === name)) return notFound('Kapal ' + name);
   const vs = voyagesOf(rows), vol = rows.reduce((a, r) => a + r[8], 0), trips = rows.reduce((a, r) => a + r[9], 0);
@@ -2163,7 +2164,8 @@ function cycleGaps(per){
     }
   });
   const med = new Map([...corr.entries()].map(([k, a]) => [k, median(a)]));
-  return {med, n: new Map([...corr.entries()].map(([k, a]) => [k, a.length])), ek, sub};
+  const avg = new Map([...corr.entries()].map(([k, a]) => [k, a.reduce((x, y) => x + y, 0) / a.length]));
+  return {med, avg, n: new Map([...corr.entries()].map(([k, a]) => [k, a.length])), ek, sub};
 }
 /* ===================== Tabs (long pages) =====================
    tabsHTML(id, [{k, label, html, n}]): one bar + panes; empty panes are dropped; the chosen tab is remembered per page
@@ -2432,10 +2434,11 @@ function pageArmada(){
     const list = [...be.entries()].map(([e, ts]) => {
       const trk = new Map(); ts.forEach(t => trk.set(t[1], (trk.get(t[1]) || 0) + t[6]));
       const ds = [...new Set(ts.map(t => t[0]))];
-      const gaps = (CG.ek.get(e) || []).filter(([k]) => CG.med.get(k) && (CG.n.get(k) || 0) >= 10).map(([k, g]) => g / CG.med.get(k));
+      const gaps = (CG.ek.get(e) || []).filter(([k]) => CG.avg.get(k) && (CG.n.get(k) || 0) >= 10).map(([k, g]) => [g, CG.avg.get(k)]);
       const o = S.get(e) || {};
       return {key: e, trucks: trk.size, tpd: median(ds.map(d => new Set(ts.filter(t => t[0] === d).map(t => t[1])).size)), trips: sum(ts, 6), ton: sum(ts, 7),
-        cyc: gaps.length >= 5 ? gaps.reduce((a, g) => a + Math.min(g, 3), 0) / gaps.length * 100 : null,   // mean ratio to the corridor median (capped at 3x per gap) one: pctOf([...trk.values()].filter(v => v === 1).length, trk.size),
+        cyc: gaps.length >= 5 ? gaps.reduce((a, g) => a + Math.min(g[0], 3 * g[1]), 0) / gaps.reduce((a, g) => a + g[1], 0) * 100 : null,   // mean gap vs the mean gap of the same corridors (capped at 3x)
+        one: pctOf([...trk.values()].filter(v => v === 1).length, trk.size),
         sla: sum(ts, 9) ? sum(ts, 8) / sum(ts, 9) : null, o4: over4(ts), wait: sum(ts, 13) ? sum(ts, 12) / sum(ts, 13) : null, pct: o.pct, hasTgt: o.hasTgt, tgt: o.tgt};
     }).sort((a, b) => b.ton - a.ton);
     return table([{h:'Ekspeditur', cls:'name', val: r => ekspLbl(r.key)}, {h:'Truk', num:true, val: r => r.trucks}, {h:'Truk / hari', num:true, val: r => r.tpd, html: r => fmt(r.tpd)},
@@ -2459,7 +2462,7 @@ function pageArmada(){
     (plantTbl || '<div class="dp-review">Tidak ada data truk untuk filter ini.</div>')},
     {k: 'koridor', label: 'Koridor', html: '<div class="tab-note">Siklus aktual = median jeda hari antar muat truk yang sama di koridor itu (60 hari terakhir) · kebutuhan armada = trip per hari × siklus aktual · <b>plan kontrak</b> = volume kontrak per hari ÷ t/trip aktual, hanya ekspeditur pemenang rute (FRC) · <b>real</b> = trip aktual per hari · selisih dihitung atas ekspeditur kontrak saja, merah = armada real kurang dari yang dibutuhkan kontrak · klik baris untuk membuka</div>' +
     (corrTbl || '<div class="dp-review">Tidak ada data.</div>')},
-    {k: 'eksp', label: 'Ekspeditur', html: '<div class="tab-note">Siklus vs koridor: 100% = sama dengan median koridor yang dilayani; &lt;100% lebih cepat</div>' +
+    {k: 'eksp', label: 'Ekspeditur', html: '<div class="tab-note">Siklus vs koridor: jeda rata-rata antar muat truk ekspeditur dibanding rata-rata koridor yang sama; 100% = sama, &lt;100% lebih cepat</div>' +
     (incGroups(scoreTbl) || '<div class="dp-review">Tidak ada data.</div>')}]) +
     '</div>', 'armada');
 }
