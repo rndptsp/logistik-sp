@@ -204,7 +204,7 @@ function dCell(cur, prev, unit, worseUp, dec){
     return '<span style="white-space:nowrap;color:' + ((worseUp ? d > 0 : d < 0) ? 'var(--red)' : 'var(--green)') + '" title="' + cmpTagNow() + ': ' + pctTxt(prev) + '">' + (d > 0 ? '▲ ' : '▼ ') + fmt(Math.abs(d)) + '%</span>';
   }
   const d = cur - prev; if(Math.abs(d) < (dec ? 0.05 : 0.5)) return '0';
-  return '<span title="' + cmpTagNow() + ': ' + (dec ? fmt1(prev) : fmt(prev)) + (unit ? ' ' + unit : '') + '" style="color:' + ((worseUp ? d > 0 : d < 0) ? 'var(--red)' : 'var(--green)') + '">' + (d > 0 ? '+' : '−') + (dec ? fmt1(Math.abs(d)) : fmt(Math.abs(d))) + (unit ? ' ' + unit : '') + '</span>';
+  return '<span title="' + cmpTagNow() + ': ' + (dec ? fmt1(prev) : fmt(prev)) + (unit ? ' ' + unit : '') + '" style="white-space:nowrap;color:' + ((worseUp ? d > 0 : d < 0) ? 'var(--red)' : 'var(--green)') + '">' + (d > 0 ? '▲ ' : '▼ ') + (dec ? fmt1(Math.abs(d)) : fmt(Math.abs(d))) + (unit ? ' ' + unit : '') + '</span>';
 }
 const cmpTagNow = () => cmpTag(PER());
 const dCol = (h, cur, prev, unit, worseUp, dec) => ({h, num: true, val: r => { const a = cur(r), b = prev(r); return a == null || b == null ? -1e9 : a - b; }, html: r => dCell(cur(r), prev(r), unit, worseUp, dec)});
@@ -2382,16 +2382,16 @@ function kontrakKinerja(KM){
   return tabsHTML('kkin', views.map(v => {
     const cur = kontrakRange(KM, v.from, v.to), prv = v.tag ? kontrakRange(KM, v.pf, v.pt) : null;
     const rows = [...cur.values()].filter(o => o.est > 0 || o.real > 0 || o.so > 0).map(o => { const q = prv && prv.get(o.key);
-      return Object.assign(o, {cap: pc(o.real, o.est), rso: pc(o.real, o.so), of: pc(o.ok, o.sd), rsoP: q ? pc(q.real, q.so) : null, ofP: q ? pc(q.ok, q.sd) : null}); });
+      return Object.assign(o, {cap: pc(o.real, o.est), rso: pc(o.real, o.so), of: pc(o.ok, o.sd), rsoP: q ? pc(q.real, q.so) : null, ofP: q ? pc(q.ok, q.sd) : null, realP: q ? q.real : null}); });
     const cols = [{h:'Ekspeditur', cls:'name', val: r => ekspLbl(r.key)}, {h:'Estimasi kontrak (t)', num:true, val: r => r.est, html: r => fmt(r.est)}, {h:'Realisasi (t)', num:true, val: r => r.real, html: r => fmt(r.real)},
       {h:'vs kontrak', num:true, val: r => r.cap, html: r => pcC(r.cap)}, {h:'SO kontrak (t)', num:true, val: r => r.so, html: r => fmt(r.so)},
       {h:'Real / SO', num:true, val: r => r.rso, html: r => pcC(r.rso, r.rso == null ? '' : '<small>' + (r.rso >= 105 ? 'lebih dari porsi' : r.rso >= 90 ? 'sesuai porsi' : r.rso >= 50 ? 'kurang dari porsi' : 'kritis') + '</small>')},
       {h:'OF harian', num:true, val: r => r.of, html: r => pcC(r.of)}].concat(v.tag ? [
-      dCol('Real/SO vs ' + v.tag, r => r.rso, r => r.rsoP, 'pp', false, false), dCol('OF vs ' + v.tag, r => r.of, r => r.ofP, 'pp', false, false)] : []);
+      dCol('Realisasi vs ' + v.tag, r => r.real, r => r.realP, 't', false, false), dCol('Real/SO vs ' + v.tag, r => r.rso, r => r.rsoP, 'pp', false, false), dCol('OF vs ' + v.tag, r => r.of, r => r.ofP, 'pp', false, false)] : []);
     const T = rows.reduce((a, o) => ({est: a.est + o.est, real: a.real + o.real, so: a.so + o.so, ok: a.ok + o.ok, sd: a.sd + o.sd}), {est: 0, real: 0, so: 0, ok: 0, sd: 0});
     const TP = prv ? [...prv.values()].reduce((a, o) => ({real: a.real + o.real, so: a.so + o.so, ok: a.ok + o.ok, sd: a.sd + o.sd}), {real: 0, so: 0, ok: 0, sd: 0}) : null;
     cols[0].total = '<b>Total</b>'; cols[1].total = fmt(T.est); cols[2].total = fmt(T.real); cols[3].total = pctTxt(pc(T.real, T.est)); cols[4].total = fmt(T.so); cols[5].total = pctTxt(pc(T.real, T.so)); cols[6].total = pctTxt(pc(T.ok, T.sd));
-    if(TP){ cols[7].total = dCell(pc(T.real, T.so), pc(TP.real, TP.so), 'pp', false, false); cols[8].total = dCell(pc(T.ok, T.sd), pc(TP.ok, TP.sd), 'pp', false, false); }
+    if(TP){ cols[7].total = dCell(T.real, TP.real, 't', false, false); cols[8].total = dCell(pc(T.real, T.so), pc(TP.real, TP.so), 'pp', false, false); cols[9].total = dCell(pc(T.ok, T.sd), pc(TP.ok, TP.sd), 'pp', false, false); }
     const span = shortDate(v.from) + ' – ' + shortDate(v.to) + (v.tag ? ' · ' + v.tag + ' = ' + shortDate(v.pf) + ' – ' + shortDate(v.pt) : '');
     return {k: v.k, label: v.label, html: '<div class="tab-note">' + span + '</div>' + (rows.length ? table(cols, rows, {total: true, sort: 5, go: r => 'kontrak:' + r.key}) : '<div class="dp-review">Tidak ada data kontrak di rentang ini.</div>')};
   })).replace('class="tabbar"', 'class="tabbar sub"');
