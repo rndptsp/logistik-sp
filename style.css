@@ -794,3 +794,6 @@ table.tree tr.lv0 td.fz{background:var(--white)}
 .kor-tbl thead th.sub{font-size:10.5px;}
 .kor-tbl td:nth-child(5),.kor-tbl thead th.grp,.kor-tbl thead tr:last-child th:first-child{border-left:1px solid var(--line);}
 .kor-tbl td:nth-child(7),.kor-tbl thead tr:last-child th:last-child{border-right:1px solid var(--line);}
+/* nested tab bar (inside a tab): not sticky, lighter */
+.tabbar.sub{position:static;margin:4px 0 12px;border-bottom-width:1px;padding-top:0;}
+.tabbar.sub .tab{font-size:11.5px;padding:8px 12px;}

@@ -2304,7 +2304,9 @@ function kontrakModel(){
   });
   soDay.forEach((v, k) => { const [day, , e] = k.split('|'), o = cell(+e, day.slice(0, 7)); const rl = dayReal.get(k) || 0; o.soDay += v; o.okDay += Math.min(rl, v); });
   // route share on shared routes (kuota vs aktual), per month
-  return {K, months, eks, cell, asM};
+  // contract estimate per calendar day of a month (no pro-rata): for arbitrary date ranges (weekly / quarterly / yearly)
+  const estDay = (r, m) => ((r[8] && m < r[8]) || (r[9] && m > r[9])) ? 0 : ((r[6] && r[7] && m >= r[7] ? r[6] : r[5]) || 0) / 12 / dim(m);
+  return {K, months, eks, cell, asM, first, dayReal, soDay, estDay};
 }
 function kontrakSection(){
   const KM = kontrakModel(); if(!KM) return '';
@@ -2353,6 +2355,43 @@ function kontrakSection(){
       table(soCols, sum, {total: true, sort: 5, go: r => 'kontrak:' + r.key}),
     shared: shTbl ? '<div class="tab-note">' + monthLabel(mSel) + ' · merah = porsi aktual selisih lebih dari 15 poin dari kuota · pp vs LM: hijau = bergerak mendekati kuota, merah = menjauh</div>' + shTbl : ''};
 }
+/* Contract performance over any date range, per ekspeditur: estimasi kontrak (per-day share of the month), realisasi on awarded
+   routes, SO kontrak (route SO split by contract share), OF harian = SO met on the same day. */
+function kontrakRange(KM, from, to){
+  const out = new Map(KM.eks.map(e => [e, {key: e, est: 0, real: 0, so: 0, ok: 0, sd: 0}]));
+  for(let d = from; d <= to; d = addDays(d, 1)){ const m = d.slice(0, 7); KM.K.forEach(r => { out.get(r[0]).est += KM.estDay(r, m); }); }
+  KM.dayReal.forEach((v, k) => { const [d, , e] = k.split('|'); if(d >= from && d <= to && out.has(+e)) out.get(+e).real += v; });
+  KM.soDay.forEach((v, k) => { const [d, , e] = k.split('|'); if(d < from || d > to || !out.has(+e)) return; const o = out.get(+e); o.so += v; o.sd += v; o.ok += Math.min(KM.dayReal.get(k) || 0, v); });
+  return out;
+}
+function kontrakKinerja(KM){
+  const end = PER().to < B.asOf ? PER().to : B.asOf, pc = (a, b) => b > 0 ? a / b * 100 : null, y = end.slice(0, 4);
+  const qStart = d => d.slice(0, 5) + pad2(Math.floor((+d.slice(5, 7) - 1) / 3) * 3 + 1) + '-01';
+  const back = (d, months) => { let m = d.slice(0, 7); for(let i = 0; i < months; i++) m = prevMonth(m); return m + '-' + pad2(Math.min(+d.slice(8), dim(m))); };
+  const yFrom = (KM.first + '-01') > (y + '-01-01') ? KM.first + '-01' : y + '-01-01', qFrom = qStart(end) < yFrom ? yFrom : qStart(end), mFrom = end.slice(0, 8) + '01', wFrom = addDays(end, -6);
+  const views = [
+    {k: 'y', label: 'Yearly', tag: null, from: yFrom, to: end},
+    {k: 'q', label: 'Quarterly', tag: 'LQ', from: qFrom, to: end, pf: back(qFrom, 3), pt: back(end, 3)},
+    {k: 'm', label: 'Monthly', tag: 'LM', from: mFrom, to: end, pf: back(mFrom, 1), pt: back(end, 1)},
+    {k: 'w', label: 'Weekly', tag: 'LW', from: wFrom, to: end, pf: addDays(wFrom, -7), pt: addDays(end, -7)}];
+  const pcC = (v, h) => v == null ? '–' : '<b style="color:' + tierColor(v) + '">' + pctTxt(v) + '</b>' + (h || '');
+  return tabsHTML('kkin', views.map(v => {
+    const cur = kontrakRange(KM, v.from, v.to), prv = v.tag ? kontrakRange(KM, v.pf, v.pt) : null;
+    const rows = [...cur.values()].filter(o => o.est > 0 || o.real > 0 || o.so > 0).map(o => { const q = prv && prv.get(o.key);
+      return Object.assign(o, {cap: pc(o.real, o.est), rso: pc(o.real, o.so), of: pc(o.ok, o.sd), rsoP: q ? pc(q.real, q.so) : null, ofP: q ? pc(q.ok, q.sd) : null}); });
+    const cols = [{h:'Ekspeditur', cls:'name', val: r => ekspLbl(r.key)}, {h:'Estimasi kontrak (t)', num:true, val: r => r.est, html: r => fmt(r.est)}, {h:'Realisasi (t)', num:true, val: r => r.real, html: r => fmt(r.real)},
+      {h:'vs kontrak', num:true, val: r => r.cap, html: r => pcC(r.cap)}, {h:'SO kontrak (t)', num:true, val: r => r.so, html: r => fmt(r.so)},
+      {h:'Real / SO', num:true, val: r => r.rso, html: r => pcC(r.rso, r.rso == null ? '' : '<small>' + (r.rso >= 105 ? 'lebih dari porsi' : r.rso >= 90 ? 'sesuai porsi' : r.rso >= 50 ? 'kurang dari porsi' : 'kritis') + '</small>')},
+      {h:'OF harian', num:true, val: r => r.of, html: r => pcC(r.of)}].concat(v.tag ? [
+      dCol('Real/SO vs ' + v.tag, r => r.rso, r => r.rsoP, 'pp', false, false), dCol('OF vs ' + v.tag, r => r.of, r => r.ofP, 'pp', false, false)] : []);
+    const T = rows.reduce((a, o) => ({est: a.est + o.est, real: a.real + o.real, so: a.so + o.so, ok: a.ok + o.ok, sd: a.sd + o.sd}), {est: 0, real: 0, so: 0, ok: 0, sd: 0});
+    const TP = prv ? [...prv.values()].reduce((a, o) => ({real: a.real + o.real, so: a.so + o.so, ok: a.ok + o.ok, sd: a.sd + o.sd}), {real: 0, so: 0, ok: 0, sd: 0}) : null;
+    cols[0].total = '<b>Total</b>'; cols[1].total = fmt(T.est); cols[2].total = fmt(T.real); cols[3].total = pctTxt(pc(T.real, T.est)); cols[4].total = fmt(T.so); cols[5].total = pctTxt(pc(T.real, T.so)); cols[6].total = pctTxt(pc(T.ok, T.sd));
+    if(TP){ cols[7].total = dCell(pc(T.real, T.so), pc(TP.real, TP.so), 'pp', false, false); cols[8].total = dCell(pc(T.ok, T.sd), pc(TP.ok, TP.sd), 'pp', false, false); }
+    const span = shortDate(v.from) + ' – ' + shortDate(v.to) + (v.tag ? ' · ' + v.tag + ' = ' + shortDate(v.pf) + ' – ' + shortDate(v.pt) : '');
+    return {k: v.k, label: v.label, html: '<div class="tab-note">' + span + '</div>' + (rows.length ? table(cols, rows, {total: true, sort: 5, go: r => 'kontrak:' + r.key}) : '<div class="dp-review">Tidak ada data kontrak di rentang ini.</div>')};
+  })).replace('class="tabbar"', 'class="tabbar sub"');
+}
 function pageKontrak(){
   const S = kontrakSection();
   if(!S){ page('<div class="wrap">' + crumb([['Kontrak']]) + '<div class="dp-review">Data kontrak angkutan belum diupload (slot kontrak).</div></div>', 'kontrak'); return; }
@@ -2367,7 +2406,7 @@ function pageKontrak(){
       kpi('clock', tierColor(pc(c.ok, c.sd) || 0), 'OF harian', pctTxt(pc(c.ok, c.sd)), {hint: 'SO terpenuhi di hari yang sama'}) +
       kpi('pin', low.length ? 'var(--red)' : 'var(--black)', 'Kritis (Real/SO &lt; 50%)', fmt(low.length) + ' <small>ekspeditur</small>', {hint: low.length ? esc(low.join(', ')) + ' · sejak ' + monthShort(S.months[0]) : 'tidak ada'}) +
     '</div>' + tabsHTML('kontrak', [
-      {k: 'so', label: 'Kinerja vs SO kontrak', html: S.soTbl},
+      {k: 'so', label: 'Kinerja', html: '<div class="tab-note">Kinerja per ekspeditur: realisasi rute pemenang vs <b>estimasi kontrak</b> (volume tahunan ÷ 12, dibagi per hari) dan vs <b>SO kontrak</b> (SO FRC sak di distrik kontrak, dibagi sesuai porsi kontrak) · OF harian = SO terpenuhi di hari yang sama · Real/SO &gt; 100% = mengangkut porsi ekspeditur lain</div>' + kontrakKinerja(kontrakModel())},
       {k: 'bulan', label: 'Capaian per bulan', html: S.note + S.monthly},
       {k: 'rute', label: 'Rute bersama', html: S.shared}]) +
     '</div>', 'kontrak');
