@@ -199,6 +199,11 @@ function vsCol(prev, per, keyOf){
    worseUp: a rise is bad (waktu muat, antri, siklus, kekurangan armada) -> red. */
 function dCell(cur, prev, unit, worseUp, dec){
   if(cur == null || prev == null || isNaN(cur) || isNaN(prev)) return '–';
+  if(unit === 'pp'){   // a % metric: change relative to its own value (Rendy: 90% -> 99% = +10%)
+    if(!(prev > 0)) return cur > 0 ? 'baru' : '–';
+    const r = (cur / prev - 1) * 100; if(Math.abs(r) < 0.5) return '0';
+    return '<span title="' + cmpTagNow() + ': ' + pctTxt(prev) + '" style="color:' + ((worseUp ? r > 0 : r < 0) ? 'var(--red)' : 'var(--green)') + '">' + (r > 0 ? '+' : '−') + fmt(Math.abs(r)) + '%</span>';
+  }
   const d = cur - prev; if(Math.abs(d) < (dec ? 0.05 : 0.5)) return '0';
   return '<span title="' + cmpTagNow() + ': ' + (dec ? fmt1(prev) : fmt(prev)) + (unit ? ' ' + unit : '') + '" style="color:' + ((worseUp ? d > 0 : d < 0) ? 'var(--red)' : 'var(--green)') + '">' + (d > 0 ? '+' : '−') + (dec ? fmt1(Math.abs(d)) : fmt(Math.abs(d))) + (unit ? ' ' + unit : '') + '</span>';
 }
@@ -2325,12 +2330,12 @@ function kontrakSection(){
     const pmR = months[months.indexOf(mSel) - 1];
     const parts = ix.map(i => { const r = KM.K[i], x = cell(r[0], mSel).rt.get(i) || {real: 0, est: 0}, y = pmR ? (cell(r[0], pmR).rt.get(i) || {real: 0}) : null; return {e: r[0], kuota: r[4], real: x.real, est: x.est, prev: y ? y.real : null}; });
     const tot = parts.reduce((a, p) => a + p.real, 0), totP = parts.reduce((a, p) => a + (p.prev || 0), 0);
-    parts.forEach(p => { p.dShare = totP > 0 && p.prev != null ? (pctOf(p.real, tot) || 0) - (pctOf(p.prev, totP) || 0) : null; });
+    parts.forEach(p => { const a = pctOf(p.real, tot) || 0, b = totP > 0 && p.prev != null ? pctOf(p.prev, totP) || 0 : null; p.dShare = b > 0 ? (a / b - 1) * 100 : null; p.sharePrev = b; });
     return {k, n: tc(KM.K[ix[0]][14]), parts, tot};
   }).filter(r => r.tot > 0).sort((a, b) => b.tot - a.tot);
   const shTbl = shared.length ? table([{h:'Rute (dari ' + tc(B.dims.src[KM.K[0][1]] || 'plant') + ')', cls:'name', val: r => r.n, html: r => esc(r.n) + '<small>' + fmt(r.tot) + ' t</small>'},
     {h:'Kuota kontrak → porsi aktual', val: r => r.tot, html: r => r.parts.sort((a, b) => b.real - a.real).map(p => { const a = pctOf(p.real, r.tot) || 0, q = (p.kuota || 0) * 100, off = Math.abs(a - q) > 15;
-      return '<span class="kq' + (off ? ' off' : '') + '"><b>' + esc(B.dims.eksp[p.e]) + '</b> ' + pctTxt(q) + ' → ' + pctTxt(a) + (p.dShare == null || Math.abs(p.dShare) < 0.5 ? '' : ' <small style="color:' + ((Math.abs(a - q) < Math.abs(a - p.dShare - q)) ? 'var(--green)' : 'var(--red)') + '">' + (p.dShare > 0 ? '+' : '−') + fmt(Math.abs(p.dShare)) + ' pp vs LM</small>') + '</span>'; }).join('')}], shared, {sort: 0}) : '';
+      return '<span class="kq' + (off ? ' off' : '') + '"><b>' + esc(B.dims.eksp[p.e]) + '</b> ' + pctTxt(q) + ' → ' + pctTxt(a) + (p.dShare == null || Math.abs(p.dShare) < 0.5 ? '' : ' <small style="color:' + ((Math.abs(a - q) < Math.abs(p.sharePrev - q)) ? 'var(--green)' : 'var(--red)') + '">' + (p.dShare > 0 ? '+' : '−') + fmt(Math.abs(p.dShare)) + '% vs LM</small>') + '</span>'; }).join('')}], shared, {sort: 0}) : '';
   // whole contract period to date: who carries more / less than its contract share of the SO
   const sum = rows.map(r => r.per.reduce((a, o) => ({key: r.key, est: a.est + o.est, real: a.real + o.real, so: a.so + o.so, ok: a.ok + o.okDay, sd: a.sd + o.soDay, luar: a.luar + o.luar}), {est: 0, real: 0, so: 0, ok: 0, sd: 0, luar: 0}));
   const pcC = (v, h) => v == null ? '–' : '<b style="color:' + tierColor(v) + '">' + pctTxt(v) + '</b>' + (h || '');
@@ -2353,7 +2358,7 @@ function kontrakSection(){
     monthly: table(cols, rows, {go: r => 'kontrak:' + r.key, sort: months.length}),
     soTbl: '<div class="tab-note">' + monthShort(months[0]) + '–' + monthShort(months[months.length - 1]) + ' · SO kontrak = seluruh SO FRC sak di distrik kontrak, dibagi ke pemenang sesuai porsi volume kontrak · Real/SO &gt; 100% = mengangkut porsi ekspeditur lain · OF harian = SO terpenuhi di hari yang sama</div>' +
       table(soCols, sum, {total: true, sort: 5, go: r => 'kontrak:' + r.key}),
-    shared: shTbl ? '<div class="tab-note">' + monthLabel(mSel) + ' · merah = porsi aktual selisih lebih dari 15 poin dari kuota · pp vs LM: hijau = bergerak mendekati kuota, merah = menjauh</div>' + shTbl : ''};
+    shared: shTbl ? '<div class="tab-note">' + monthLabel(mSel) + ' · merah = porsi aktual selisih lebih dari 15 poin dari kuota · % vs LM = perubahan porsi dibanding bulan lalu: hijau = mendekati kuota, merah = menjauh</div>' + shTbl : ''};
 }
 /* Contract performance over any date range, per ekspeditur: estimasi kontrak (per-day share of the month), realisasi on awarded
    routes, SO kontrak (route SO split by contract share), OF harian = SO met on the same day. */
