@@ -577,9 +577,17 @@ function tableInner(id){
   return '<table class="tbl"><thead>' + head + '</thead><tbody>' + body + tot + more + '</tbody></table>';
 }
 /* Compact tables instead of "NAME · x t + bar + %" lists: capTable (realisasi/target/capaian[/Real/SO]), volTable (tonase/porsi). */
-function capTable(list, h, name, href, so){
+/* cmp = {group, m, sc}: adds "vs bulan lalu" = realisasi vs the same days of the previous month (prevPer), same incoterm context */
+function capTable(list, h, name, href, so, cmp){
   if(!list.length) return '';
-  return '<div class="cap-tbl">' + table([{h: h, cls:'name', val: name}, C.vol('Real (t)'), Object.assign({}, C.tgt, {h:'Target (t)'}), C.pct].concat(so ? [Object.assign({}, C.of, {h:'R/SO'})] : []), list, {go: href, sort: 1}) + '</div>';
+  const cols = [{h: h, cls:'name', val: name}, C.vol('Real (t)'), Object.assign({}, C.tgt, {h:'Target (t)'}), C.pct].concat(so ? [Object.assign({}, C.of, {h:'R/SO'})] : []);
+  if(cmp){
+    const pm = summarize(cmp.group, prevPer(toPer(cmp.m)), cmp.sc || {});
+    list.forEach(o => { const q = pm.get(o.key); o.prevVol = q ? q.vol : 0; o.chg = o.prevVol > 0 ? (o.vol / o.prevVol - 1) * 100 : null; });
+    cols.push({h: toPer(cmp.m).kind === 'month' ? 'vs bln lalu' : 'vs periode lalu', num: true, val: o => o.chg == null ? (o.vol > 0 ? 1e9 : -1e9) : o.chg,
+      html: o => o.chg == null ? (o.vol > 0 ? '<span title="bulan lalu 0 t">baru</span>' : '–') : '<span title="' + fmt(o.prevVol) + ' t" style="color:' + (o.chg >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (o.chg >= 0 ? '+' : '−') + fmt(Math.abs(o.chg)) + '%</span>'});
+  }
+  return '<div class="cap-tbl">' + table(cols, list, {go: href, sort: 1}) + '</div>';
 }
 function volTable(list, h, name, href){
   if(!list.length) return '';
@@ -1543,7 +1551,7 @@ function pageProvList(){
 }
 function sourcePanel(sc){
   const rows = [...summarize('src', PER(), sc).values()].filter(o => o.vol > 0 || o.tgt > 0).sort((a, b) => b.vol - a.vol);
-  return '<div class="dp-panel"><div class="pt">Per source plant</div>' + (capTable(rows, 'Source plant', o => tc(B.dims.src[o.key]), o => B.dims.src[o.key] ? plantHref(B.dims.src[o.key]) : null) || '<div class="empty">Tidak ada data.</div>') +
+  return '<div class="dp-panel"><div class="pt">Per source plant</div>' + (capTable(rows, 'Source plant', o => tc(B.dims.src[o.key]), o => B.dims.src[o.key] ? plantHref(B.dims.src[o.key]) : null, false, {group: 'src', m: PER(), sc}) || '<div class="empty">Tidak ada data.</div>') +
     '<div class="trend-detail">Baris tanpa atribusi plant pada target dihitung di semua source. ' + 'Ditampilkan: ' + srcTxt().replace(/<\/?b>/g, '') + '.' + '</div></div>';
 }
 function progCells(rows, label){
@@ -1589,7 +1597,7 @@ function pageProv(name){
     '<div class="dp-cols even">' + sourcePanel(sc) + '<div class="dp-panel"><div class="pt">Bulan penuh</div>' + ('<div class="tgt-panel" style="margin:0;border:0;padding:0"><div class="tgt-item"><div class="tl">Target bulan</div><div class="tv">' + (me.hasTgt ? fmt(me.tgtFull) : '–') + ' t</div></div><div class="tgt-item"><div class="tl">Realisasi ' + incName() + '</div><div class="tv">' + fmt(me.frc) + ' t</div></div><div class="tgt-item"><div class="tl">Sisa bulan</div><div class="tv ' + (me.tgtFull - me.frc > 0 ? 'bad' : 'good') + '">' + (me.hasTgt ? fmt(Math.max(0, me.tgtFull - me.frc)) : '–') + ' t</div></div></div>') + '</div></div>'},
     {k: 'distrik', label: 'Distrik', n: dist.filter(o => o.vol > 0).length, html: treeHTML(annotateDistrTargets(buildTree(shipRows(m, sc), ['dist', 'distr', 'toko']), m, {prov: pi}, {}, ['distr']), ['dist', 'distr', 'toko'], {tgt: {dist: summarize('dist', m, sc)}})},
     {k: 'eksp', label: 'Ekspeditur', html:
-      '<div class="dp-panel"><div class="pt">Ekspeditur di provinsi ini<span class="pt-sub">capaian target · Real/SO</span></div>' + (incGroups(() => capTable(ekspRows(m, sc), 'Ekspeditur', o => ekspLbl(o.key), o => ekspHref(o.key), true), ekspSub(m, sc)) || '<div class="empty">Tidak ada data.</div>') + '</div>'
+      '<div class="dp-panel"><div class="pt">Ekspeditur di provinsi ini<span class="pt-sub">capaian target · Real/SO</span></div>' + (incGroups(() => capTable(ekspRows(m, sc), 'Ekspeditur', o => ekspLbl(o.key), o => ekspHref(o.key), true, {group: 'eksp', m, sc}), ekspSub(m, sc)) || '<div class="empty">Tidak ada data.</div>') + '</div>'
     },
     {k: 'distr', label: 'Distributor', html: distrTable(m, sc, 60).html}]) +
     '</div>', 'wilayah');
@@ -1836,8 +1844,8 @@ function pagePlant(name){
     {k: 'kinerja', label: 'Tren & incoterm', html: chart + cmp},
     ...(hourSec ? [{k: 'kapal', label: 'Kapal', html: hourSec}] : []),
     {k: 'tujuan', label: 'Tujuan & ekspeditur', html: '<div class="dp-cols">' +
-      '<div class="dp-panel"><div class="pt">Provinsi tujuan<span class="pt-sub">capaian target · ' + esc(incName()) + '</span></div>' + (capTable(provs, 'Provinsi', o => tc(B.dims.prov[o.key]), o => '#/provinsi/' + enc(B.dims.prov[o.key])) || '<div class="empty">Tidak ada data.</div>') + '</div>' +
-      '<div class="dp-panel"><div class="pt">Ekspeditur / pengangkut<span class="pt-sub">' + esc(incName()) + '</span></div>' + (incGroups(() => capTable(ekspRows(m, sc), 'Ekspeditur', o => ekspLbl(o.key), o => ekspHref(o.key)), ekspSub(m, sc)) || '<div class="empty">Tidak ada data.</div>') + '</div>' +
+      '<div class="dp-panel"><div class="pt">Provinsi tujuan<span class="pt-sub">capaian target · ' + esc(incName()) + '</span></div>' + (capTable(provs, 'Provinsi', o => tc(B.dims.prov[o.key]), o => '#/provinsi/' + enc(B.dims.prov[o.key]), false, {group: 'prov', m, sc}) || '<div class="empty">Tidak ada data.</div>') + '</div>' +
+      '<div class="dp-panel"><div class="pt">Ekspeditur / pengangkut<span class="pt-sub">' + esc(incName()) + '</span></div>' + (incGroups(() => capTable(ekspRows(m, sc), 'Ekspeditur', o => ekspLbl(o.key), o => ekspHref(o.key), false, {group: 'eksp', m, sc}), ekspSub(m, sc)) || '<div class="empty">Tidak ada data.</div>') + '</div>' +
     '</div>'},
     {k: 'distr', label: 'Distributor', html: DT.html}]) +
     '</div>', 'plant');
@@ -1888,7 +1896,7 @@ function pageEkspList(){
     cols[2].total = fmt(t.vol); cols[3].total = fmt(t.tgt); cols[4].total = pctTxt(t.pct); cols[5].total = signed(t.gap); cols[6].total = fmt(t.so); cols[7].total = pctTxt(t.of); cols[8].total = fmt(t.trips); cols[9].total = fmt(tr.length); cols[10].total = fmt1(t.trips / Math.max(1, tr.length));
     return table(cols, list, {go: r => ekspHref(r.key), total: true});
   };
-  const rates = () => !frcNow() ? '' : capTable(ranked(summarize('eksp', m)).filter(r => D.frcEksp.has(r.key) && r.pct != null), 'Ekspeditur', r => ekspLbl(r.key), r => ekspHref(r.key), true);
+  const rates = () => !frcNow() ? '' : capTable(ranked(summarize('eksp', m)).filter(r => D.frcEksp.has(r.key) && r.pct != null), 'Ekspeditur', r => ekspLbl(r.key), r => ekspHref(r.key), true, {group: 'eksp', m, sc: {}});
   page('<div class="wrap">' + crumb([['Ekspeditur']]) +
     '<div class="dp-head"><div><div class="nm">Peringkat Ekspeditur</div><div class="sub">Capaian target ' + tgtLbl() + ' &amp; scorecard operasional · ' + periodSub() + '</div></div><div class="badges"><div class="dp-badge ' + tierClass(t.pct) + '">Total ' + pctTxt(t.pct) + ' dari target</div></div></div>' +
     (nfOn() ? '<div class="dp-review">' + incName() + ' diambil langsung oleh distributor (tanpa ekspeditur). Ganti filter ke FRC, atau buka <a href="#/distributor" style="color:var(--red);font-weight:700">Distributor</a>.</div>' : '') +
@@ -1925,7 +1933,7 @@ function pageEksp(code){
       kpi('clock', 'var(--amber)', 'Rata-rata waktu muat', me.dwell == null ? '–' : fmt1(me.dwell) + ' <small>jam</small>', {hint: me.so ? 'Real/SO ' + pctTxt(me.of) : ''}) +
     '</div>' + tabsHTML('eksp', [{k: 'kinerja', label: 'Kinerja & provinsi', html: incPerf(m, sc) +
     '<div class="dp-cols">' + trendPanel(sc, 'mingguan') +
-      '<div class="dp-panel"><div class="pt">Capaian per provinsi<span class="pt-sub">capaian target · Real/SO</span></div>' + (provs.length ? incGroups(() => capTable([...summarize('prov', m, sc).values()].filter(o => o.vol > 0 || o.tgt > 0).sort((a, b) => b.vol - a.vol), 'Provinsi', o => tc(B.dims.prov[o.key]), o => '#/provinsi/' + enc(B.dims.prov[o.key]), true), ekspSub(m, sc)) : '<div class="empty">Tidak ada data untuk filter ini.</div>') + '</div>' +
+      '<div class="dp-panel"><div class="pt">Capaian per provinsi<span class="pt-sub">capaian target · Real/SO</span></div>' + (provs.length ? incGroups(() => capTable([...summarize('prov', m, sc).values()].filter(o => o.vol > 0 || o.tgt > 0).sort((a, b) => b.vol - a.vol), 'Provinsi', o => tc(B.dims.prov[o.key]), o => '#/provinsi/' + enc(B.dims.prov[o.key]), true, {group: 'prov', m, sc}), ekspSub(m, sc)) : '<div class="empty">Tidak ada data untuk filter ini.</div>') + '</div>' +
     '</div>' +
     '<div class="section-head"><div class="section-title">Target bulan berjalan</div></div>' +
     '<div class="tgt-panel"><div class="tgt-item"><div class="tl">Target bulan</div><div class="tv">' + (me.hasTgt ? fmt(me.tgtFull) : '–') + ' t</div></div><div class="tgt-item"><div class="tl">Target MTD</div><div class="tv">' + (me.hasTgt ? fmt(me.tgt) : '–') + ' t</div></div><div class="tgt-item"><div class="tl">Realisasi</div><div class="tv">' + fmt(me.frc) + ' t</div></div><div class="tgt-item"><div class="tl">Sisa ke target bulan</div><div class="tv ' + (me.tgtFull - me.frc > 0 ? 'bad' : 'good') + '">' + (me.hasTgt ? fmt(Math.max(0, me.tgtFull - me.frc)) : '–') + ' t</div></div></div>'},
