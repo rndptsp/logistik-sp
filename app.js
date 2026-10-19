@@ -195,6 +195,15 @@ function vsCol(prev, per, keyOf){
   return {h: 'vs ' + cmpTag(per), num: true, val: r => { const c = ch(r); return c == null ? (r.vol > 0 ? 1e9 : -1e9) : c; },
     html: r => { const c = ch(r), p = prev.get(keyOf(r)) || 0; return c == null ? (r.vol > 0 ? '<span title="' + cmpTag(per) + ' 0 t">baru</span>' : '–') : '<span title="' + cmpTag(per) + ' ' + fmt(p) + ' t" style="color:' + (c >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (c >= 0 ? '+' : '−') + fmt(Math.abs(c)) + '%</span>'; }};
 }
+/* delta vs the comparison period in the metric's own unit (Rendy): time = jam/hari, ratio = pp, count = unit.
+   worseUp: a rise is bad (waktu muat, antri, siklus, kekurangan armada) -> red. */
+function dCell(cur, prev, unit, worseUp, dec){
+  if(cur == null || prev == null || isNaN(cur) || isNaN(prev)) return '–';
+  const d = cur - prev; if(Math.abs(d) < (dec ? 0.05 : 0.5)) return '0';
+  return '<span title="' + cmpTagNow() + ': ' + (dec ? fmt1(prev) : fmt(prev)) + (unit ? ' ' + unit : '') + '" style="color:' + ((worseUp ? d > 0 : d < 0) ? 'var(--red)' : 'var(--green)') + '">' + (d > 0 ? '+' : '−') + (dec ? fmt1(Math.abs(d)) : fmt(Math.abs(d))) + (unit ? ' ' + unit : '') + '</span>';
+}
+const cmpTagNow = () => cmpTag(PER());
+const dCol = (h, cur, prev, unit, worseUp, dec) => ({h, num: true, val: r => { const a = cur(r), b = prev(r); return a == null || b == null ? -1e9 : a - b; }, html: r => dCell(cur(r), prev(r), unit, worseUp, dec)});
 const vsTot = (cur, prev) => prev > 0 ? '<span style="color:' + (cur >= prev ? 'var(--green)' : 'var(--red)') + '">' + (cur >= prev ? '+' : '−') + fmt(Math.abs((cur / prev - 1) * 100)) + '%</span>' : '–';
 const inPer = (dayIdx, per) => { const s = B.days[dayIdx]; return s >= per.from && s <= per.to; };
 
@@ -2311,20 +2320,28 @@ function kontrakSection(){
   const byRoute = new Map();
   KM.K.forEach((r, i) => { const k = r[1] + '|' + r[14]; const g = byRoute.get(k) || []; g.push(i); byRoute.set(k, g); });
   const shared = [...byRoute.entries()].filter(([, ix]) => ix.length > 1).map(([k, ix]) => {
-    const parts = ix.map(i => { const r = KM.K[i], x = cell(r[0], mSel).rt.get(i) || {real: 0, est: 0}; return {e: r[0], kuota: r[4], real: x.real, est: x.est}; });
-    const tot = parts.reduce((a, p) => a + p.real, 0); return {k, n: tc(KM.K[ix[0]][14]), parts, tot};
+    const pmR = months[months.indexOf(mSel) - 1];
+    const parts = ix.map(i => { const r = KM.K[i], x = cell(r[0], mSel).rt.get(i) || {real: 0, est: 0}, y = pmR ? (cell(r[0], pmR).rt.get(i) || {real: 0}) : null; return {e: r[0], kuota: r[4], real: x.real, est: x.est, prev: y ? y.real : null}; });
+    const tot = parts.reduce((a, p) => a + p.real, 0), totP = parts.reduce((a, p) => a + (p.prev || 0), 0);
+    parts.forEach(p => { p.dShare = totP > 0 && p.prev != null ? (pctOf(p.real, tot) || 0) - (pctOf(p.prev, totP) || 0) : null; });
+    return {k, n: tc(KM.K[ix[0]][14]), parts, tot};
   }).filter(r => r.tot > 0).sort((a, b) => b.tot - a.tot);
   const shTbl = shared.length ? table([{h:'Rute (dari ' + tc(B.dims.src[KM.K[0][1]] || 'plant') + ')', cls:'name', val: r => r.n, html: r => esc(r.n) + '<small>' + fmt(r.tot) + ' t</small>'},
     {h:'Kuota kontrak → porsi aktual', val: r => r.tot, html: r => r.parts.sort((a, b) => b.real - a.real).map(p => { const a = pctOf(p.real, r.tot) || 0, q = (p.kuota || 0) * 100, off = Math.abs(a - q) > 15;
-      return '<span class="kq' + (off ? ' off' : '') + '"><b>' + esc(B.dims.eksp[p.e]) + '</b> ' + pctTxt(q) + ' → ' + pctTxt(a) + '</span>'; }).join('')}], shared, {sort: 0}) : '';
+      return '<span class="kq' + (off ? ' off' : '') + '"><b>' + esc(B.dims.eksp[p.e]) + '</b> ' + pctTxt(q) + ' → ' + pctTxt(a) + (p.dShare == null || Math.abs(p.dShare) < 0.5 ? '' : ' <small style="color:' + ((Math.abs(a - q) < Math.abs(a - p.dShare - q)) ? 'var(--green)' : 'var(--red)') + '">' + (p.dShare > 0 ? '+' : '−') + fmt(Math.abs(p.dShare)) + ' pp vs LM</small>') + '</span>'; }).join('')}], shared, {sort: 0}) : '';
   // whole contract period to date: who carries more / less than its contract share of the SO
   const sum = rows.map(r => r.per.reduce((a, o) => ({key: r.key, est: a.est + o.est, real: a.real + o.real, so: a.so + o.so, ok: a.ok + o.okDay, sd: a.sd + o.soDay, luar: a.luar + o.luar}), {est: 0, real: 0, so: 0, ok: 0, sd: 0, luar: 0}));
   const pcC = (v, h) => v == null ? '–' : '<b style="color:' + tierColor(v) + '">' + pctTxt(v) + '</b>' + (h || '');
+  const pmS = months[months.indexOf(mSel) - 1];   // LM of the selected month (contract months only)
+  sum.forEach(r => { const c = cell(r.key, mSel), q = pmS ? cell(r.key, pmS) : null;
+    r.rso = pc(c.real, c.so); r.rsoP = q ? pc(q.real, q.so) : null; r.of = pc(c.okDay, c.soDay); r.ofP = q ? pc(q.okDay, q.soDay) : null; });
   const soCols = [{h:'Ekspeditur', cls:'name', val: r => ekspLbl(r.key)}, {h:'Estimasi (t)', num:true, val: r => r.est, html: r => fmt(r.est)}, {h:'Realisasi (t)', num:true, val: r => r.real, html: r => fmt(r.real)},
     {h:'Capaian', num:true, val: r => pc(r.real, r.est), html: r => pcC(pc(r.real, r.est))}, {h:'SO kontrak (t)', num:true, val: r => r.so, html: r => fmt(r.so)},
     {h:'Real / SO', num:true, val: r => pc(r.real, r.so), html: r => { const v = pc(r.real, r.so); return pcC(v, v == null ? '' : '<small>' + (v >= 105 ? 'lebih dari porsi' : v >= 90 ? 'sesuai porsi' : v >= 50 ? 'kurang dari porsi' : 'kritis') + '</small>'); }},
     {h:'OF harian', num:true, val: r => pc(r.ok, r.sd), html: r => pcC(pc(r.ok, r.sd))},
-    {h:'Di luar rute (t)', num:true, val: r => r.luar, html: r => r.luar ? fmt(r.luar) : '–'}];
+    {h:'Di luar rute (t)', num:true, val: r => r.luar, html: r => r.luar ? fmt(r.luar) : '–'},
+    {h:'Real/SO ' + monthShort(mSel), num:true, val: r => r.rso, html: r => pcC(r.rso)}, dCol('vs LM', r => r.rso, r => r.rsoP, 'pp', false, false),
+    {h:'OF harian ' + monthShort(mSel), num:true, val: r => r.of, html: r => pcC(r.of)}, dCol('vs LM', r => r.of, r => r.ofP, 'pp', false, false)];
   ['est', 'real', 'so', 'luar'].forEach((k, i) => soCols[[1, 2, 4, 7][i]].total = fmt(sum.reduce((a, r) => a + r[k], 0)));
   soCols[0].total = '<b>Total</b>';
   const T = sum.reduce((a, r) => ({est: a.est + r.est, real: a.real + r.real, so: a.so + r.so, ok: a.ok + r.ok, sd: a.sd + r.sd}), {est: 0, real: 0, so: 0, ok: 0, sd: 0});
@@ -2334,7 +2351,7 @@ function kontrakSection(){
     monthly: table(cols, rows, {go: r => 'kontrak:' + r.key, sort: months.length}),
     soTbl: '<div class="tab-note">' + monthShort(months[0]) + '–' + monthShort(months[months.length - 1]) + ' · SO kontrak = seluruh SO FRC sak di distrik kontrak, dibagi ke pemenang sesuai porsi volume kontrak · Real/SO &gt; 100% = mengangkut porsi ekspeditur lain · OF harian = SO terpenuhi di hari yang sama</div>' +
       table(soCols, sum, {total: true, sort: 5, go: r => 'kontrak:' + r.key}),
-    shared: shTbl ? '<div class="tab-note">' + monthLabel(mSel) + ' · merah = porsi aktual selisih lebih dari 15 poin dari kuota</div>' + shTbl : ''};
+    shared: shTbl ? '<div class="tab-note">' + monthLabel(mSel) + ' · merah = porsi aktual selisih lebih dari 15 poin dari kuota · pp vs LM: hijau = bergerak mendekati kuota, merah = menjauh</div>' + shTbl : ''};
 }
 function pageKontrak(){
   const S = kontrakSection();
@@ -2388,8 +2405,8 @@ const korSum = (rs, i) => rs.reduce((a, t) => a + t[i], 0);
 const korAdd = (a, b) => a == null ? b : b == null ? a : a + b;
 function korStat(rs, cyc){ const tr = korSum(rs, 6), ton = korSum(rs, 7), n = korSum(rs, 9), wn = korSum(rs, 13);
   return {trips: tr, ton, tpt: ton / Math.max(1, tr), cyc, plan: null, rk: null, trucks: new Set(rs.map(t => t[1])).size, sla: n ? korSum(rs, 8) / n : null, wait: wn ? korSum(rs, 12) / wn : null}; }
-function korEksp(d){   // d = district node
-  const K = KOR, byE = new Map(); d.rs.forEach(t => (byE.get(t[3]) || byE.set(t[3], []).get(t[3])).push(t));
+function korEksp(d, K){   // d = district node, K = model context (default: the page's)
+  K = K || KOR; const byE = new Map(); d.rs.forEach(t => (byE.get(t[3]) || byE.set(t[3], []).get(t[3])).push(t));
   return [...byE.entries()].sort((a, b) => korSum(b[1], 7) - korSum(a[1], 7)).map(([e, rs]) => {
     const o = korStat(rs, K.med('D' + d.si + '|' + d.di + '#e' + e)), pd = K.PL.get(d.si + '|' + d.di + '#' + e);
     if(pd && d.cyc != null){ o.plan = pd / (o.tpt || d.tpt) * d.cyc; o.rk = o.trips / K.nDays * d.cyc; }
@@ -2405,31 +2422,46 @@ function korCols(first, extra){
     {h: 'Waktu muat (jam)', num: true, val: r => r.sla == null ? -1 : r.sla, html: r => r.sla == null ? '–' : '<b style="color:' + slaColor(r.sla) + '">' + fmt1(r.sla) + '</b>'},
     n1('Antri (jam)', r => r.wait)]);
 }
-function korTables(rows, CG, nDays){
+/* model: plant -> provinsi -> distrik nodes with siklus, kebutuhan armada kontrak / real (pemenang rute) */
+function korCompute(rows, CG, nDays, mon){
   const med = (k, n) => { const a = CG.sub.get(k); return a && a.length >= (n || 3) ? median(a) : null; };
-  KOR = {CG, nDays, med, PL: kontrakPlanDay(PER().to.slice(0, 7)), node: new Map()};
+  const K = {CG, nDays, med, PL: kontrakPlanDay(mon), node: new Map()};
   const P = new Map();   // plant -> prov -> dist -> rows
   rows.forEach(t => { const pv = P.get(t[4]) || P.set(t[4], new Map()).get(t[4]), dv = pv.get(t[5]) || pv.set(t[5], new Map()).get(t[5]), di = t[11] == null ? -1 : t[11]; (dv.get(di) || dv.set(di, []).get(di)).push(t); });
-  const cols = korCols({h: 'Tujuan', cls: 'name'});
-  const cells = o => cols.slice(1).map(c => '<td class="num">' + c.html(o) + '</td>').join('');
-  return [...P.entries()].map(([si, provs]) => {
+  const plants = [...P.entries()].map(([si, provs]) => {
     const pl = [...provs.entries()].map(([pv, dists]) => {
       const ds = [...dists.entries()].map(([di, rs]) => {
         const ck = CG.med.get(corrKey(rs[0])), cyc = med('D' + si + '|' + di, 10) ?? ((CG.n.get(corrKey(rs[0])) || 0) >= 10 ? ck : null);
         const d = Object.assign(korStat(rs, cyc), {key: 'D' + si + '|' + di, si, di, rs, lbl: di >= 0 ? tc(B.dims.dist[di]) : '(distrik kosong)'});
-        korEksp(d).forEach(x => { d.plan = korAdd(d.plan, x.plan); d.rk = korAdd(d.rk, x.rk); });
-        KOR.node.set(d.key, d); return d;
+        korEksp(d, K).forEach(x => { d.plan = korAdd(d.plan, x.plan); d.rk = korAdd(d.rk, x.rk); });
+        K.node.set(d.key, d); return d;
       }).sort((a, b) => b.trips - a.trips);
       const all = ds.flatMap(d => d.rs), o = korStat(all, null), wc = ds.filter(d => d.cyc != null);
       o.cyc = wc.length ? wc.reduce((a, d) => a + d.cyc * d.trips, 0) / wc.reduce((a, d) => a + d.trips, 0) : null;   // trip-weighted
       ds.forEach(d => { o.plan = korAdd(o.plan, d.plan); o.rk = korAdd(o.rk, d.rk); });
-      return Object.assign(o, {pv, ds, lbl: tc(B.dims.prov[pv])});
+      Object.assign(o, {key: 'P' + si + '|' + pv, pv, ds, lbl: tc(B.dims.prov[pv])}); K.node.set(o.key, o); return o;
     }).filter(o => o.trips >= 5).sort((a, b) => b.trips - a.trips);
     const T = pl.reduce((a, o) => ({trips: a.trips + o.trips, ton: a.ton + o.ton, plan: korAdd(a.plan, o.plan), rk: korAdd(a.rk, o.rk)}), {trips: 0, ton: 0, plan: null, rk: null});
+    return {si, pl, T, key: 'S' + si};
+  });
+  return {K, plants};
+}
+function korTables(rows, CG, nDays, prev){
+  const cur = korCompute(rows, CG, nDays, PER().to.slice(0, 7));
+  KOR = cur.K;
+  // comparison period: same model on the previous window (siklus from its own 60 days)
+  const pm = prev ? korCompute(prev.rows, prev.CG, prev.nDays, prev.mon) : null, tag = cmpTag(PER());
+  const pget = k => pm && pm.K.node.get(k);
+  const cols = korCols({h: 'Tujuan', cls: 'name'}).concat(pm ? [
+    dCol('Siklus vs ' + tag, r => r.cyc, r => (pget(r.key) || {}).cyc, 'hr', true, true),
+    dCol('Selisih vs ' + tag, r => korDiff(r), r => { const q = pget(r.key); return q ? korDiff(q) : null; }, '', true, false)] : []);
+  const cells = o => cols.slice(1).map(c => '<td class="num">' + c.html(o) + '</td>').join('');
+  return cur.plants.map(({si, pl, T}) => {
     const id = 'kt' + si;
     const body = pl.map((o, i) => '<tr class="lv0 has-kids" data-path="' + i + '" data-parent=""><td class="name fz fz0 fzl" style="--d:0"><span class="caret-t">▸</span><span class="t-lbl">' + esc(o.lbl) + '</span><span class="t-cnt">' + o.ds.length + '</span></td>' + cells(o) + '</tr>' +
       o.ds.map((d, j) => '<tr class="lv1 tr-hide" data-path="' + i + '-' + j + '" data-parent="' + i + '" data-href="kor:' + d.key + '" style="cursor:pointer"><td class="name fz fz0 fzl" style="--d:1"><span class="caret-t"></span><span class="t-lbl">' + esc(d.lbl) + '</span></td>' + cells(d) + '</tr>').join('')).join('');
-    const tot = Object.assign({trips: T.trips, tpt: T.ton / Math.max(1, T.trips), cyc: null, plan: T.plan, rk: T.rk, sla: null, wait: null});
+    const tot = {key: 'S' + si, trips: T.trips, tpt: T.ton / Math.max(1, T.trips), cyc: null, plan: T.plan, rk: T.rk, sla: null, wait: null};
+    if(pm){ const q = pm.plants.find(x => x.si === si); if(q) pm.K.node.set('S' + si, {cyc: null, plan: q.T.plan, rk: q.T.rk}); }
     return {ton: T.ton, html: '<div class="inc-grp" style="--c:var(--red)"><b>' + esc(tc(B.dims.src[si] || '?')) + '</b><small>' + fmt(T.trips) + ' trip · ' + pl.length + ' provinsi</small><span style="margin-left:auto;font-size:11.5px;text-transform:none;letter-spacing:0"><a data-tree-all="' + id + ':1">Buka semua</a> · <a data-tree-all="' + id + ':0">Tutup semua</a></span></div>' +
       '<div class="tbl-wrap' + (pl.length > 15 ? ' tall' : '') + '"><table class="tbl tree kor-tbl" id="' + id + '"><thead><tr>' + cols.map((c, k) => k >= 4 && k <= 6 ? (k === 4 ? '<th class="grp" colspan="3">Kebutuhan armada</th>' : '') : '<th rowspan="2" class="' + (k ? 'num' : 'fz fz0 fzl') + '">' + c.h + '</th>').join('') +
         '</tr><tr><th class="num sub">Kontrak</th><th class="num sub">Real</th><th class="num sub">Selisih</th></tr></thead><tbody>' + body +
@@ -2512,13 +2544,23 @@ function pageArmada(){
   const pctCol = (h, f) => ({h, num:true, val: f, html: r => { const v = f(r); return v == null ? '–' : '<span style="color:' + (v > 25 ? 'var(--red)' : v > 10 ? 'var(--amber)' : 'var(--green)') + '">' + pctTxt(v) + '</span>'; }});
   const jam = (h, f, colored) => ({h, num:true, val: f, html: r => { const v = f(r); return v == null ? '–' : colored ? '<b style="color:' + slaColor(v) + '">' + fmt1(v) + '</b>' : fmt1(v); }});
 
+  // comparison period (LM / LW / LWD): same filters, previous window
+  const tag = cmpTag(m), mp = prevPer(m), prows = B.trucks.filter(t => inPer(t[0], mp) && truckOk(t));
+  const statsBy = (rs, key) => { const g = new Map(); rs.forEach(t => (g.get(key(t)) || g.set(key(t), []).get(key(t))).push(t));
+    const out = new Map(); g.forEach((ts, k) => { const trk = new Map(); ts.forEach(t => trk.set(t[1], (trk.get(t[1]) || 0) + t[6]));
+      out.set(k, {sla: sum(ts, 9) ? sum(ts, 8) / sum(ts, 9) : null, wait: sum(ts, 13) ? sum(ts, 12) / sum(ts, 13) : null, o4: over4(ts), one: pctOf([...trk.values()].filter(v => v === 1).length, trk.size)}); });
+    return out; };
+  const pSrc = statsBy(prows, t => t[4]), pEk = statsBy(prows.filter(t => incOk(t[2])), t => t[3]);
+  const P0 = {};
   // 1. Kinerja muat di plant
   const bySrc = new Map(); rows.forEach(t => (bySrc.get(t[4]) || bySrc.set(t[4], []).get(t[4])).push(t));
   const plantRows = [...bySrc.entries()].map(([si, rs]) => { const ds = [...new Set(rs.map(t => t[0]))];
     return {key: si, n: tc(B.dims.src[si] || '(tanpa plant)'), tpd: median(ds.map(d => new Set(rs.filter(t => t[0] === d).map(t => t[1])).size)), trips: sum(rs, 6), ton: sum(rs, 7), tpt: sum(rs, 7) / Math.max(1, sum(rs, 6)),
       sla: sum(rs, 9) ? sum(rs, 8) / sum(rs, 9) : null, o4: over4(rs), wait: sum(rs, 13) ? sum(rs, 12) / sum(rs, 13) : null}; }).sort((a, b) => b.ton - a.ton);
   const plantTbl = plantRows.length ? table([{h:'Plant', cls:'name', val: r => r.n}, {h:'Truk / hari', num:true, val: r => r.tpd, html: r => fmt(r.tpd)}, {h:'Trip', num:true, val: r => r.trips, html: r => fmt(r.trips)},
-    {h:'t / trip', num:true, val: r => r.tpt, html: r => fmt1(r.tpt)}, jam('Antri (jam)', r => r.wait), jam('Waktu muat (jam)', r => r.sla, true), pctCol('> ' + SLA_TARGET + ' jam', r => r.o4)], plantRows, {sort: 2, go: r => B.dims.src[r.key] ? plantHref(B.dims.src[r.key]) : null}) : '';
+    {h:'t / trip', num:true, val: r => r.tpt, html: r => fmt1(r.tpt)}, jam('Antri (jam)', r => r.wait), jam('Waktu muat (jam)', r => r.sla, true), pctCol('> ' + SLA_TARGET + ' jam', r => r.o4),
+    dCol('Waktu muat vs ' + tag, r => r.sla, r => (pSrc.get(r.key) || P0).sla, 'jam', true, true), dCol('Antri vs ' + tag, r => r.wait, r => (pSrc.get(r.key) || P0).wait, 'jam', true, true),
+    dCol('> ' + SLA_TARGET + ' jam vs ' + tag, r => r.o4, r => (pSrc.get(r.key) || P0).o4, 'pp', true, false)], plantRows, {sort: 2, go: r => B.dims.src[r.key] ? plantHref(B.dims.src[r.key]) : null}) : '';
   // daily: time in plant per day (all plants in the filter), click = per ekspeditur that day
   const dData = dayIdx.map(d => { const rs = rows.filter(t => t[0] === d), n = sum(rs, 9), v = n ? sum(rs, 8) / n : 0;
     return {label: dayIdx.length > 20 ? String(+B.days[d].slice(8)) : shortDate(B.days[d]).replace(/ \w+$/, ''), long: dayLabel(B.days[d]), vol: v, unit: 'jam', color: slaColor(v), tgt: SLA_TARGET, pct: null, d}; });
@@ -2535,7 +2577,8 @@ function pageArmada(){
   const corrRows = [...byC.entries()].map(([k, rs]) => { const tr = sum(rs, 6), cyc = CG.med.get(k), tpd = tr / nDays;
     return {k, n: corrLbl(k), trips: tr, ton: sum(rs, 7), tpt: sum(rs, 7) / Math.max(1, tr), cyc, cn: CG.n.get(k) || 0, tpd, need: cyc != null ? tpd * cyc : null, used: new Set(rs.map(t => t[1])).size,
       sla: sum(rs, 9) ? sum(rs, 8) / sum(rs, 9) : null}; }).filter(r => r.trips >= 5).sort((a, b) => b.ton - a.ton);
-  const corrTbl = corrRows.length ? korTables(rows, CG, nDays) : '';
+  const pDays = new Set(prows.map(t => t[0])).size;
+  const corrTbl = corrRows.length ? korTables(rows, CG, nDays, prows.length ? {rows: prows, CG: cycleGaps(mp), nDays: Math.max(1, pDays), mon: mp.to.slice(0, 7)} : null) : '';
 
   // 3. Scorecard ekspeditur (per incoterm when several are active)
   const scoreTbl = () => {
@@ -2557,6 +2600,7 @@ function pageArmada(){
       {h:'Trip', num:true, val: r => r.trips, html: r => fmt(r.trips)}, {h:'Ton', num:true, val: r => r.ton, html: r => fmt(r.ton)},
       {h:'Siklus vs koridor', num:true, val: r => r.cyc, html: r => r.cyc == null ? '–' : '<b style="color:' + (r.cyc <= 100 ? 'var(--green)' : r.cyc <= 120 ? 'var(--amber)' : 'var(--red)') + '">' + pctTxt(r.cyc) + '</b>'},
       {h:'Truk 1 trip', num:true, val: r => r.one, html: r => pctTxt(r.one)}, jam('Antri (jam)', r => r.wait), jam('Waktu muat (jam)', r => r.sla, true), pctCol('> ' + SLA_TARGET + ' jam', r => r.o4),
+      dCol('Waktu muat vs ' + tag, r => r.sla, r => (pEk.get(r.key) || P0).sla, 'jam', true, true), dCol('Truk 1 trip vs ' + tag, r => r.one, r => (pEk.get(r.key) || P0).one, 'pp', true, false),
       C.pct], list, {go: r => ekspHref(r.key), sort: 4});
   };
 
