@@ -3,7 +3,8 @@
 
   MASTER_HOME=<folder store> python3 tools/master/update_gudang.py --input gudang.xlsx
 
-Sheet pertama, baris judul berisi minimal KODE_TOKO dan salah satu dari: LAT + LON, KECAMATAN, ALAMAT_LENGKAP.
+Sheet mana pun: baris judul berisi minimal KODE_TOKO dan salah satu dari: LAT + LON (atau KOORDINAT "lat,lon"), KECAMATAN,
+ALAMAT_LENGKAP (atau ALAMAT). Bila beberapa sheet memenuhi, dipakai yang punya koordinat (sheet lain, mis. data SPJ, diabaikan).
 ALAMAT_LENGKAP (alamat ship-to utuh dari master customer, mis. SAP/CSMS) dipakai geocode_gudang.py untuk mencari
 koordinat, menggantikan ALAMAT TOKO di Rilis yang terpotong 30 karakter. Kolom lain diabaikan.
 Upsert per KODE_TOKO: baris baru menimpa yang lama, toko yang tidak ada di file tetap tersimpan. Sel LAT/LON kosong
@@ -31,18 +32,29 @@ def coord(v, lo, hi):
 
 def main():
     ap = argparse.ArgumentParser(); ap.add_argument('--input', required=True); a = ap.parse_args()
-    ws = openpyxl.load_workbook(a.input, read_only=True, data_only=True).worksheets[0]
-    rows = ws.iter_rows(values_only=True)
-    head = None
-    for r in rows:   # header may sit below a title row
-        names = [re.sub(r'[^A-Z_]', '', str(c or '').upper().replace(' ', '_')) for c in r]
-        if 'KODE_TOKO' in names:
-            head = names; break
-    if not head:
-        print('GAGAL: kolom KODE_TOKO tidak ditemukan di sheet pertama.'); sys.exit(1)
-    ix = {c: head.index(c) for c in IN_COLS if c in head}
-    if not ('LAT' in ix and 'LON' in ix) and 'KECAMATAN' not in ix and 'ALAMAT_LENGKAP' not in ix:
-        print('GAGAL: butuh kolom LAT dan LON, KECAMATAN, atau ALAMAT_LENGKAP.'); sys.exit(1)
+    wb = openpyxl.load_workbook(a.input, read_only=True, data_only=True)
+    pick = None   # (has coordinates, rows iterator, index)
+    for ws in wb.worksheets:
+        it = ws.iter_rows(values_only=True)
+        for n, r in enumerate(it):   # header may sit below a title row
+            if n > 20:
+                break
+            names = [re.sub(r'[^A-Z_]', '', str(c or '').upper().replace(' ', '_')) for c in r]
+            if 'KODE_TOKO' not in names:
+                continue
+            ix = {c: names.index(c) for c in IN_COLS + ['KOORDINAT', 'ALAMAT'] if c in names}
+            if 'ALAMAT_LENGKAP' not in ix and 'ALAMAT' in ix:
+                ix['ALAMAT_LENGKAP'] = ix['ALAMAT']
+            has_xy = ('LAT' in ix and 'LON' in ix) or 'KOORDINAT' in ix
+            if has_xy or 'KECAMATAN' in ix or 'ALAMAT_LENGKAP' in ix:
+                if pick is None or (has_xy and not pick[0]):
+                    pick = (has_xy, it, ix)
+            break
+        if pick and pick[0]:
+            break
+    if not pick:
+        print('GAGAL: tidak ada sheet dengan kolom KODE_TOKO dan LAT/LON (atau KOORDINAT), KECAMATAN, atau ALAMAT_LENGKAP.'); sys.exit(1)
+    _, rows, ix = pick
     cur = {}
     if OUT.exists():
         with gzip.open(OUT, 'rt', encoding='utf-8') as f:
@@ -53,8 +65,12 @@ def main():
         if not kode or kode.upper() == 'CONTOH':
             continue
         old = cur.get(kode, {c: '' for c in COLS})
-        lat = coord(r[ix['LAT']], -11, 8) if 'LAT' in ix else None
-        lon = coord(r[ix['LON']], 94, 120) if 'LON' in ix else None
+        if 'KOORDINAT' in ix and 'LAT' not in ix:   # "lat, lon" in one cell (copied from Google Maps)
+            xy = re.findall(r'-?\d+(?:\.\d+)?', str(r[ix['KOORDINAT']] or ''))
+            lat, lon = (coord(xy[0], -11, 8), coord(xy[1], 94, 120)) if len(xy) >= 2 else (None, None)
+        else:
+            lat = coord(r[ix['LAT']], -11, 8) if 'LAT' in ix else None
+            lon = coord(r[ix['LON']], 94, 120) if 'LON' in ix else None
         if lat is False or lon is False or (lat is None) != (lon is None):
             bad += 1; lat = lon = None
         kec = str(r[ix['KECAMATAN']] or '').strip().upper() if 'KECAMATAN' in ix else ''
