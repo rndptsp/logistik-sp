@@ -2141,6 +2141,27 @@ function shipGantt(m, name, opt){
   return blocks.map(b => b.html).join('') + (opt.noKey ? '' : shipKey(start, end));
 }
 const shipKey = (start, end) => '<div class="kg-key"><span><i class="kargo"></i>kapal kargo</span><span><i class="reguler"></i>kapal reguler</span><span><i class="span"></i>rentang voyage</span><span>blok pekat = hari muat · ' + shortDate(B.days[start]) + ' – ' + shortDate(B.days[end]) + '</span></div>';
+/* netto timbangan - tonase SPJ (kg): red when the gap is more than 0.5% of the SPJ tonnage */
+const kspjDiff = (d, base) => { if(Math.abs(d) < 0.5) return '0'; const p = base ? d / base * 100 : null, off = p != null && Math.abs(p) > 0.5;
+  return '<span style="white-space:nowrap;color:' + (off ? 'var(--red)' : 'var(--sub)') + '">' + (d > 0 ? '+' : '−') + fmt(Math.abs(d)) + ' kg' + (p != null ? '<small>' + (d > 0 ? '+' : '−') + fmt1(Math.abs(p)) + '%</small>' : '') + '</span>'; };
+function kspjModal(n){
+  const T = TRENDS.kspj, v = T && T.vs.find(x => x.n === n); if(!v) return;
+  const rs = v.spj.slice().sort((a, b) => a[0] - b[0] || (a[10] ?? 0) - (b[10] ?? 0));
+  const cols = [{h:'Tanggal', cls:'name', val: r => r[0] * 1e4 + (r[10] ?? 0), html: r => shortDate(B.days[r[0]]) + '<small>SPJ ' + esc(r[2] || '–') + '</small>'},
+    {h:'Nopol', val: r => r[5] >= 0 ? B.dims.truck[r[5]] : '', html: r => r[5] >= 0 ? '<a href="#/truk/' + enc(B.dims.truck[r[5]]) + '">' + esc(B.dims.truck[r[5]]) + '</a>' : '–'},
+    {h:'Distributor · tujuan', val: r => distrLbl(r[6]) || '', html: r => esc(distrLbl(r[6]) || '–') + '<small>' + esc(tc(B.dims.dist[r[7]] || '')) + '</small>'},
+    {h:'Masuk', num:true, val: r => r[10] ?? -1e9, html: r => hhmm(r[10])}, {h:'Keluar', num:true, val: r => r[11] ?? -1e9, html: r => hhmm(r[11])},
+    {h:'Lama (jam)', num:true, val: r => r[10] != null && r[11] != null ? r[11] - r[10] : -1, html: r => r[10] != null && r[11] != null ? fmt1((r[11] - r[10]) / 60) : '–'},
+    {h:'Tara (kg)', num:true, val: r => r[12] || 0, html: r => r[12] ? fmt(r[12]) : '–'}, {h:'Bruto (kg)', num:true, val: r => r[13] || 0, html: r => r[13] ? fmt(r[13]) : '–'},
+    {h:'Netto (kg)', num:true, val: r => r[14] || 0, html: r => r[14] ? '<b>' + fmt(r[14]) + '</b>' : '–'}, {h:'SPJ (kg)', num:true, val: r => r[8], html: r => fmt(r[8] * 1000)},
+    {h:'Selisih', num:true, val: r => r[14] ? r[14] - r[8] * 1000 : 0, html: r => r[14] ? kspjDiff(r[14] - r[8] * 1000, r[8] * 1000) : '–'}];
+  const w = rs.filter(r => r[14]), net = w.reduce((a, r) => a + r[14], 0), spj = w.reduce((a, r) => a + r[8] * 1000, 0), off = w.filter(r => Math.abs(r[14] - r[8] * 1000) > r[8] * 5).length;
+  cols[0].total = '<b>Total</b> <small>' + fmt(rs.length) + ' SPJ</small>'; cols[8].total = fmt(net); cols[9].total = fmt(rs.reduce((a, r) => a + r[8] * 1000, 0)); cols[10].total = w.length ? kspjDiff(net - spj, spj) : '–';
+  openModal(T.title + ' · voyage #' + n, shortDate(B.days[v.d0]) + (v.d1 !== v.d0 ? ' – ' + shortDate(B.days[v.d1]) : '') + ' · ' + tc(B.dims.src[v.src] || '') + ' · detail penimbangan',
+    (w.length ? '<div class="tab-note">' + fmt(w.length) + ' dari ' + fmt(rs.length) + ' SPJ punya berat timbangan · netto ' + fmt(net / 1000) + ' t vs SPJ ' + fmt(spj / 1000) + ' t · ' + fmt(off) + ' SPJ selisih &gt; 0,5%</div>'
+      : '<div class="dp-review">Berat timbangan (kosong / isi / real) tidak tercatat untuk SPJ voyage ini di Rilis.</div>') +
+    table(cols, rs, {total: true, limit: 500}));
+}
 function pageKapalDetail(name){
   if(!/^KAPAL /.test(name) && !B.ship.some(r => shipName(r) === name) && B.ship.some(r => shipName(r) === 'KAPAL ' + name)) name = 'KAPAL ' + name;   // bare vessel name (search, typed link)
   const m = PER(), rows = kapalRows(m, name);
@@ -2164,6 +2185,15 @@ function pageKapalDetail(name){
     {h:'Incoterm', val: v => [...v.inc].join(', '), html: v => esc([...v.inc].map(incLbl).join(', '))},
     {h:'Distributor', val: v => v.distr.size, html: v => [...v.distr.entries()].sort((a, b) => b[1] - a[1]).map(([d, t]) => '<a href="#/distributor/' + enc(B.dims.distr[d]) + '">' + esc(distrLbl(d) || '–') + '</a> <small>' + fmt(t) + ' t</small>').join('<br>')},
     {h:'Tujuan', val: v => v.prov.size, html: v => setTxt(v.dist, B.dims.dist, 'distrik') + '<small>' + esc([...v.prov].map(p => tc(B.dims.prov[p])).join(', ')) + '</small>'}];
+  // weighbridge per voyage (B.kspj, one row per SPJ): netto timbangan vs tonase SPJ
+  const ki = (B.dims.kapal || []).indexOf(nm), hasW = !!B.kspj && ki >= 0;
+  if(hasW){
+    vs.forEach(v => { v.spj = B.kspj.filter(r => r[1] === ki && r[3] === v.src && v.days.has(r[0]) && incOk(r[4]) && kemOk(r[9])); const w = v.spj.filter(r => r[14]);
+      v.net = w.reduce((a, r) => a + r[14], 0) / 1000; v.netSpj = w.reduce((a, r) => a + r[8], 0); v.nW = w.length; });
+    cols.splice(4, 0, {h:'Timbangan netto (t)', num:true, val: v => v.nW ? v.net : -1, html: v => v.nW ? fmt(v.net) + (v.nW < v.spj.length ? '<small>' + v.nW + ' / ' + v.spj.length + ' SPJ</small>' : '') : '<span style="color:var(--sub)">–</span>'},
+      {h:'Selisih vs SPJ', num:true, val: v => v.nW ? v.net - v.netSpj : 0, html: v => v.nW ? kspjDiff((v.net - v.netSpj) * 1000, v.netSpj * 1000) : '–'});
+    TRENDS.kspj = {vs, title};
+  }
   page('<div class="wrap">' + crumb([['Kapal', '#/kapal'], [nm]]) +
     '<section class="ks-hero"><div class="ks-left"><div class="eyebrow">Kapal ' + esc(kind) + ' · moda laut · ' + esc(periodSub()) + '</div><h2 class="mh-h">' + esc(title) + '</h2>' +
       (I.nama_resmi && I.nama_resmi.toUpperCase() !== nm ? '<div class="ks-alias">di Rilis: ' + esc(nm) + '</div>' : '') +
@@ -2176,7 +2206,7 @@ function pageKapalDetail(name){
     (vs.length ? '' : '<div class="dp-review">Tidak ada muatan kapal ini pada filter (plant, kemasan, periode).' + (() => { let l = -1; B.ship.forEach(r => { if(shipName(r) === name) l = Math.max(l, r[0]); }); return l >= 0 ? ' Muat terakhir di data: <b>' + dayLabel(B.days[l]) + '</b> — ubah periode untuk melihat riwayatnya.' : ''; })() + '</div>') +
     (rows.length ? '<div class="dp-cols even"><div class="dp-panel"><div class="pt">Muat dari</div>' + rr(src, k => tc(B.dims.src[k] || '(tanpa plant)'), k => B.dims.src[k] ? '#/plant/' + enc(B.dims.src[k]) : null, 'Plant / dermaga') + '</div>' +
       '<div class="dp-panel"><div class="pt">Tujuan provinsi</div>' + rr(prov, k => tc(B.dims.prov[k]), k => '#/provinsi/' + enc(B.dims.prov[k]), 'Provinsi') + '</div></div>' : '') +
-    (vs.length ? '<div class="section-head"><div class="section-title">Riwayat voyage</div></div>' + table(cols, vs.slice().reverse(), {limit: 200}) : '') +
+    (vs.length ? '<div class="section-head"><div class="section-title">Riwayat voyage</div></div>' + (hasW ? '<div class="tab-note">klik voyage untuk detail penimbangan per SPJ (tara, bruto, netto, jam masuk/keluar timbangan)</div>' : '') + table(cols, vs.slice().reverse(), hasW ? {limit: 200, go: v => 'kspj:' + v.n} : {limit: 200}) : '') +
     (rows.length ? '<div class="section-head"><div class="section-title">Tujuan pengiriman</div></div>' + treeHTML(buildTree(rows, ['prov', 'dist', 'distr']), ['prov', 'dist', 'distr']) : '') +
     '</div>', 'armada');
 }
@@ -2911,6 +2941,7 @@ function bindEvents(){
     const tb = e.target.closest('[data-tab]');
     if(tb){ tabClick(tb); return; }
     if(go && /^kontrak:/.test(go.dataset.href || '')){ kontrakDetail(+go.dataset.href.slice(8)); return; }
+    if(go && /^kspj:/.test(go.dataset.href || '')){ kspjModal(+go.dataset.href.slice(5)); return; }
     if(go && /^kor:/.test(go.dataset.href || '')){ korEkspModal(go.dataset.href.slice(4)); return; }
     if(go && /^kort:/.test(go.dataset.href || '')){ korTruckModal(+go.dataset.href.slice(5)); return; }
     if(go && go.dataset.href && go.dataset.href !== 'null'){ location.hash = go.dataset.href; return; }

@@ -291,6 +291,7 @@ def build(cfg):
     today = datetime.date.today()
     spj_rows = []   # per-SPJ truck detail for the truck page, last 45 days (encrypted bundle only)
     spj_from = today - datetime.timedelta(days=45)
+    kspj = []     # sea shipments, one row per SPJ (whole history): weighbridge detail for the Kapal page
     tw_raw = []   # FRC truk SPJ for contract KPI 2 (ketepatan waktu): (day, src, dist, eksp, kem, SO no, ton)
     def mins(v, d0):   # WAKTU_* -> minutes after 00:00 of the SPJ date (may be negative / > 1440), None if unreadable
         m = re.match(r"(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})", str(v or ""))
@@ -362,6 +363,10 @@ def build(cfg):
             hg = hours[(m_out.group(1), s, inc, int(m_out.group(2)), kem)]
             hg[0] += ton; hg[1] += 1
         nopol = up(r.get("NOPOL"))
+        if kapal:
+            kspj.append([d.isoformat(), kapal_d(kapal), spj, s, INCOTERMS.index(inc), truck(nopol) if nopol else -1, distr(up(r.get("DISTRIBUTOR"))), di,
+                         round(ton, 3), kem, mins(r.get("WAKTU_MASUK"), d), mins(r.get("WAKTU_KELUAR"), d),
+                         int(num(r.get("BERAT_KOSONG"))) or None, int(num(r.get("BERAT_ISI"))) or None, int(num(r.get("BERAT_REAL"))) or None])
         if nopol:
             tk = trucks[(d.isoformat(), truck(nopol), inc, e, s, p, kem, di)]
             tk[0] += 1; tk[1] += ton
@@ -528,6 +533,9 @@ def build(cfg):
         "spj": [[day_idx[r[0]]] + r[1:] for r in spj_rows if r[0] in day_idx],
         # contract KPI 2, FRC truk: [day, src, dist, eksp, kem, SPJ with SO, on time (Tgl SPJ - Tgl Kirim SO <= 1), ton late, SPJ without SO]
         "kpiw": [[day_idx[k[0]], k[1], k[2], k[3], k[4], v[0], v[1], round(v[2], 2), v[3]] for k, v in tw.items() if k[0] in day_idx],
+        # Kapal page, one row per SPJ of a sea shipment: [day, kapal, spj, src, inc, truck (-1 none), distr, dist, ton SPJ, kem,
+        #   masuk, keluar (minutes after SPJ-date 00:00), berat kosong kg, berat isi kg, berat real kg]
+        "kspj": [[day_idx[r[0]]] + r[1:] for r in kspj if r[0] in day_idx],
         "targets": targets,
         "tdistr": tdistr,
         # contract (slot kontrak): [eksp, src, [dist..], sub, kuota, volEksThn, amendVol, amendFrom, from, to, lead, cycle, dedRute, toa, distName]
