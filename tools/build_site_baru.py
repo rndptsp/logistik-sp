@@ -291,6 +291,7 @@ def build(cfg):
     today = datetime.date.today()
     spj_rows = []   # per-SPJ truck detail for the truck page, last 45 days (encrypted bundle only)
     spj_from = today - datetime.timedelta(days=45)
+    tw_raw = []   # FRC truk SPJ for contract KPI 2 (ketepatan waktu): (day, src, dist, eksp, kem, SO no, ton)
     def mins(v, d0):   # WAKTU_* -> minutes after 00:00 of the SPJ date (may be negative / > 1440), None if unreadable
         m = re.match(r"(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})", str(v or ""))
         if not m:
@@ -345,6 +346,8 @@ def build(cfg):
         f[0] += ton; f[1] += 1
         if ok_dwell:
             f[2] += num(dwell); f[3] += 1
+        if inc == "FRC":
+            tw_raw.append((d, s, di, e, kem, str(r.get("NO_SO") or "").strip().split(".")[0], ton))
         kt = str(r.get("KODE_TOKO") or "").strip().split(".")[0]
         ti = toko(kt)
         if kt and ti not in toko_meta:
@@ -430,7 +433,11 @@ def build(cfg):
 
     # ---------------- Sales Order (03_SO.xlsx / data/so.csv.gz): FRC truk only, SOCC by delivery day ----------------
     so, sod = defaultdict(float), defaultdict(float)
+    so_kirim = {}   # SO no -> earliest Tgl Kirim (KPI 2)
     for r in read_store(os.path.join(base, "data", "so.csv.gz")):
+        sn, dk0 = str(r.get("SALES_ORDER") or "").strip().split(".")[0], as_date(r.get("TGL_KIRIM"))
+        if sn and dk0 and (sn not in so_kirim or dk0 < so_kirim[sn]):
+            so_kirim[sn] = dk0
         if up(r.get("INCOTERM")) != "FRC":   # Real/SO = FRC truk; FRC container/kapal kept apart
             continue
         dk = as_date(r.get("TGL_KIRIM"))
@@ -440,6 +447,21 @@ def build(cfg):
         dist_prov.setdefault(di, p)
         sod[(dk.isoformat(), p, di, eksp(up(r.get("EXPEDITUR_KODE"))), kemasan(r.get("KEMASAN")))] += num(r.get("TON_SO"))
     print(f"  SO groups: {len(sod):,} per tgl kirim (SOCC)")
+
+    # KPI 2 kontrak (Lampiran 12): SPJ tepat waktu = Tgl SPJ - Tgl Kirim SO <= 1 hari (as the Monitoring sheet); SPJ whose SO
+    # is not in the SO store are counted apart (not in the KPI)
+    tw = defaultdict(lambda: [0, 0, 0.0, 0])   # (day, src, dist, eksp, kem) -> [SPJ with SO, on time, ton late, SPJ without SO]
+    for d, s_, di_, e_, k_, sn, ton in tw_raw:
+        g, dk = tw[(d.isoformat(), s_, di_, e_, k_)], so_kirim.get(sn)
+        if not dk:
+            g[3] += 1
+            continue
+        g[0] += 1
+        if (d - dk).days <= 1:
+            g[1] += 1
+        else:
+            g[2] += ton
+    print(f"  KPI ketepatan waktu: {sum(v[0] for v in tw.values()):,} SPJ FRC dengan SO, {sum(v[3] for v in tw.values()):,} tanpa SO")
 
     # Provinsi non-kinerja (config MASTER BARU/settings.json): target 0 per kombinasi yang punya realisasi -> tampil 100%
     try:
@@ -504,6 +526,8 @@ def build(cfg):
         # truck page, last 45 days, one row per SPJ:
         # [day, truck, spj, src, inc, eksp, distr, dist, toko, ton, kem, antri, masuk, keluar (minutes after SPJ-date 00:00), tare kg, gross kg, produk]
         "spj": [[day_idx[r[0]]] + r[1:] for r in spj_rows if r[0] in day_idx],
+        # contract KPI 2, FRC truk: [day, src, dist, eksp, kem, SPJ with SO, on time (Tgl SPJ - Tgl Kirim SO <= 1), ton late, SPJ without SO]
+        "kpiw": [[day_idx[k[0]], k[1], k[2], k[3], k[4], v[0], v[1], round(v[2], 2), v[3]] for k, v in tw.items() if k[0] in day_idx],
         "targets": targets,
         "tdistr": tdistr,
         # contract (slot kontrak): [eksp, src, [dist..], sub, kuota, volEksThn, amendVol, amendFrom, from, to, lead, cycle, dedRute, toa, distName]
