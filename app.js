@@ -619,6 +619,7 @@ function volTable(list, h, name, href){
 const C = {
   rank: {h:'Rank', cls:'rank', val: r => r.rank, html: r => r.rank ? '#' + r.rank : '–', num:false},
   vol: (h) => ({h: h || 'Realisasi (t)', num:true, val: r => r.vol, html: r => fmt(r.vol)}),
+  fm: {h:'Target FM (t)', num:true, val: r => r.hasTgt ? r.tgtFull : null, html: r => r.hasTgt ? fmt(r.tgtFull) : '–'},   // full month (whole period)
   tgt: {h:'Target MTD (t)', num:true, val: r => r.hasTgt ? r.tgt : null, html: r => r.hasTgt ? fmt(r.tgt) : '–'},
   pct: {h:'Capaian', num:true, cls:'pc', val: r => r.pct, html: r => pctTxt(r.pct), style: r => 'color:' + tierColor(r.pct)},
   gap: {h:'Gap (t)', num:true, val: r => r.hasTgt ? r.gap : null, html: r => r.hasTgt ? '<span style="color:' + (r.gap < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(r.gap) + '</span>' : '–'},
@@ -1566,8 +1567,8 @@ function incPerf(m, sc){
 function pageProvList(){
   const rows = ranked(summarize('prov', PER()));
   const t = total(PER());
-  const pv = prevVols('prov', PER()), cols = [C.rank, {h:'Provinsi', cls:'name', val: r => tc(B.dims.prov[r.key])}, C.vol(), C.tgt, C.pct, C.gap, C.so, C.of, C.trips, vsCol(pv, PER()), C.note];
-  cols[2].total = fmt(t.vol); cols[3].total = fmt(t.tgt); cols[4].total = pctTxt(t.pct); cols[5].total = signed(t.gap); cols[6].total = fmt(t.so); cols[7].total = pctTxt(t.of); cols[8].total = fmt(t.trips); cols[9].total = vsTot(t.vol, total(prevPer(PER())).vol);
+  const pv = prevVols('prov', PER()), cols = [C.rank, {h:'Provinsi', cls:'name', val: r => tc(B.dims.prov[r.key])}, C.fm, C.tgt, C.vol(), C.pct, C.gap, C.so, C.of, C.trips, vsCol(pv, PER()), C.note];
+  cols[2].total = fmt(t.tgtFull); cols[3].total = fmt(t.tgt); cols[4].total = fmt(t.vol); cols[5].total = pctTxt(t.pct); cols[6].total = signed(t.gap); cols[7].total = fmt(t.so); cols[8].total = pctTxt(t.of); cols[9].total = fmt(t.trips); cols[10].total = vsTot(t.vol, total(prevPer(PER())).vol);
   page('<div class="wrap">' + crumb([['Wilayah'], ['Semua provinsi']]) +
     '<div class="dp-head"><div><div class="nm">Semua Provinsi</div><div class="sub">Capaian tonase &amp; rank · ' + periodSub() + '</div></div><div class="badges"><div class="dp-badge ' + tierClass(t.pct) + '">Total ' + pctTxt(t.pct) + ' dari target</div></div></div>' +
     incPerf(PER(), {}) +
@@ -1606,7 +1607,7 @@ function pageProv(name){
   const me = all.find(o => o.key === pi) || Object.assign(blank(), {pct:null, of:null, gap:0, dwell:null});
   const dist = ranked(summarize('dist', m, sc));
   const eks = [...summarize('eksp', m, sc).values()].filter(o => (o.vol > 0 || o.tgt > 0) && o.key !== D.eksEmpty).sort((a, b) => b.vol - a.vol);
-  const distCols = [C.rank, {h:'Distrik', cls:'name', val: r => tc(B.dims.dist[r.key])}, C.vol(), C.tgt, C.pct, C.gap, C.so, C.of, C.note];
+  const distCols = [C.rank, {h:'Distrik', cls:'name', val: r => tc(B.dims.dist[r.key])}, C.fm, C.tgt, C.vol(), C.pct, C.gap, C.so, C.of, C.note];
   const mapS = distMapSection(name, m);   // the map panel carries the KPIs; the KPI row only shows when there is no map
   page('<div class="wrap">' + crumb([['Wilayah', '#/provinsi'], [tc(name)]]) +
     '<div class="dp-head"><div><div class="nm">' + esc(tc(name)) + '</div><div class="sub">Capaian tonase · ' + periodSub() + '</div></div><div class="badges">' + (me.rank ? '<div class="dp-badge">Rank ' + me.rank + ' / ' + all.rankTotal + '</div>' : '') + '<div class="dp-badge ' + tierClass(me.pct) + '">' + pctTxt(me.pct) + ' dari target</div></div></div>' +
@@ -1641,7 +1642,7 @@ function pagePlantList(){
   const m = PER();
   const rows = plantList().map(o => Object.assign(o, total(m, {src: o.key}))).filter(o => o.vol > 0 || o.tgt > 0).sort((a, b) => b.vol - a.vol);
   rows.forEach((o, i) => o.rank = i + 1);
-  const cols = [C.rank, {h:'Plant', cls:'name', val: r => r.n, html: r => esc(r.n) + (F.srcOff.has(r.n) ? '<small>tidak dicentang di filter plant</small>' : '')}, C.vol(), C.tgt, C.pct, C.gap, C.trips];
+  const cols = [C.rank, {h:'Plant', cls:'name', val: r => r.n, html: r => esc(r.n) + (F.srcOff.has(r.n) ? '<small>tidak dicentang di filter plant</small>' : '')}, C.fm, C.tgt, C.vol(), C.pct, C.gap, C.trips];
   page('<div class="wrap">' + crumb([['Plant']]) +
     '<div class="dp-head"><div><div class="nm">Semua Plant</div><div class="sub">Plant / packing plant asal pengiriman · ' + incName() + ' · ' + periodSub() + '</div></div></div>' +
     '<div class="dp-review">Semua plant ditampilkan, termasuk yang tidak dicentang di filter plant. Klik baris untuk rincian plant.</div>' +
@@ -1883,7 +1884,7 @@ function pageDist(name){
   const m = PER(), sc = {dist: di}, pname = B.dims.prov[B.dims.distProv[di]] || '';
   const me = total(m, sc);
   const eks = [...summarize('eksp', m, sc).values()].filter(o => (o.vol > 0 || o.tgt > 0) && o.key !== D.eksEmpty).sort((a, b) => b.vol - a.vol);
-  const ekCols = [{h:'Ekspeditur', cls:'name', val: r => ekspLbl(r.key)}, C.vol(), C.tgt, C.pct, C.gap, C.so, C.of, C.trips, C.dwell, vsCol(prevVols('eksp', m, sc), m)];
+  const ekCols = [{h:'Ekspeditur', cls:'name', val: r => ekspLbl(r.key)}, C.fm, C.tgt, C.vol(), C.pct, C.gap, C.so, C.of, C.trips, C.dwell, vsCol(prevVols('eksp', m, sc), m)];
   const mapS = kecMapSection(name, pname, m, di);   // kecamatan panel carries the KPIs; fallback (province map) keeps the KPI row
   page('<div class="wrap">' + crumb([['Wilayah', '#/provinsi'], [tc(pname), '#/provinsi/' + enc(pname)], [tc(name)]]) +
     '<div class="dp-head"><div><div class="nm">' + esc(tc(name)) + '</div><div class="sub">' + esc(tc(pname)) + ' · ' + periodSub() + '</div></div><div class="badges"><div class="dp-badge ' + tierClass(me.pct) + '">' + pctTxt(me.pct) + ' dari target</div></div></div>' +
@@ -1898,7 +1899,7 @@ function pageDist(name){
     mapS)) + tabsHTML('dist', [
     {k: 'tren', label: 'Tren & incoterm', html: incPerf(m, sc) + '<div class="dp-cols">' + trendPanel(sc, 'harian') + '</div>'},
     {k: 'tujuan', label: 'Distributor & toko', html: treeHTML(annotateDistrTargets(buildTree(shipRows(m, sc), ['distr', 'toko']), m, {dist: di}), ['distr', 'toko'], {distrTgt: true, cmp: {m, sc}})},
-    {k: 'eksp', label: 'Ekspeditur', html: incGroups(() => { const l = ekspRows(m, sc); return l.length ? table(ekCols, l, {go: r => ekspHref(r.key), sort: 1}) : ''; }, ekspSub(m, sc)) || '<div class="dp-review">Tidak ada ekspeditur untuk filter ini.</div>'}]) +
+    {k: 'eksp', label: 'Ekspeditur', html: incGroups(() => { const l = ekspRows(m, sc); return l.length ? table(ekCols, l, {go: r => ekspHref(r.key), sort: 3}) : ''; }, ekspSub(m, sc)) || '<div class="dp-review">Tidak ada ekspeditur untuk filter ini.</div>'}]) +
     '</div>', 'wilayah');
 }
 
@@ -1915,11 +1916,11 @@ function pageEkspList(){
     const t = total(m), tr = trucksFor(m);
     const perE = new Map(); tr.forEach(x => x.eksp.forEach((n, e) => { const o = perE.get(e) || {n: 0, one: 0}; o.n++; if(x.trips === 1) o.one++; perE.set(e, o); }));
     const tk = r => (perE.get(r.key) || {n: 0, one: 0});
-    const cols = [C.rank, {h:'Ekspeditur', cls:'name', val: r => ekspLbl(r.key)}, C.vol(), C.tgt, C.pct, C.gap, C.so, C.of, C.trips,
+    const cols = [C.rank, {h:'Ekspeditur', cls:'name', val: r => ekspLbl(r.key)}, C.fm, C.tgt, C.vol(), C.pct, C.gap, C.so, C.of, C.trips,
       {h:'Truk', num:true, val: r => tk(r).n, html: r => fmt(tk(r).n)},
       {h:'Trip / truk', num:true, val: r => r.trips / Math.max(1, tk(r).n), html: r => fmt1(r.trips / Math.max(1, tk(r).n))},
       {h:'Truk 1 trip', num:true, val: r => tk(r).one}, C.dwell, vsCol(prevVols('eksp', m), m), C.note];
-    cols[2].total = fmt(t.vol); cols[3].total = fmt(t.tgt); cols[4].total = pctTxt(t.pct); cols[5].total = signed(t.gap); cols[6].total = fmt(t.so); cols[7].total = pctTxt(t.of); cols[8].total = fmt(t.trips); cols[9].total = fmt(tr.length); cols[10].total = fmt1(t.trips / Math.max(1, tr.length));
+    cols[2].total = fmt(t.tgtFull); cols[3].total = fmt(t.tgt); cols[4].total = fmt(t.vol); cols[5].total = pctTxt(t.pct); cols[6].total = signed(t.gap); cols[7].total = fmt(t.so); cols[8].total = pctTxt(t.of); cols[9].total = fmt(t.trips); cols[10].total = fmt(tr.length); cols[11].total = fmt1(t.trips / Math.max(1, tr.length));
     return table(cols, list, {go: r => ekspHref(r.key), total: true});
   };
   const rates = () => !frcNow() ? '' : capTable(ranked(summarize('eksp', m)).filter(r => D.frcEksp.has(r.key) && r.pct != null), 'Ekspeditur', r => ekspLbl(r.key), r => ekspHref(r.key), true, {group: 'eksp', m, sc: {}});
@@ -1945,7 +1946,7 @@ function pageEksp(code){
   const dist = ranked(summarize('dist', m, sc));
   const trucks = trucksFor(m, sc).sort((a, b) => b.trips - a.trips);
   const one = trucks.filter(t => t.trips === 1).length;
-  const distCols = [C.rank, {h:'Distrik', cls:'name', val: r => tc(B.dims.dist[r.key]), html: r => esc(tc(B.dims.dist[r.key])) + '<small>' + esc(tc(B.dims.prov[B.dims.distProv[r.key]])) + '</small>'}, C.vol(), C.tgt, C.pct, C.gap, C.trips, C.note];
+  const distCols = [C.rank, {h:'Distrik', cls:'name', val: r => tc(B.dims.dist[r.key]), html: r => esc(tc(B.dims.dist[r.key])) + '<small>' + esc(tc(B.dims.prov[B.dims.distProv[r.key]])) + '</small>'}, C.fm, C.tgt, C.vol(), C.pct, C.gap, C.trips, C.note];
   const truckCols = [{h:'Nopol', cls:'name', val: r => B.dims.truck[r.truck]}, {h:'Trip', num:true, val: r => r.trips}, {h:'Tonase', num:true, val: r => r.ton, html: r => fmt(r.ton)},
     {h:'Hari aktif', num:true, val: r => r.days}, {h:'Waktu muat (jam)', num:true, val: r => r.dwN ? r.dwS / r.dwN : null, html: r => r.dwN ? fmt1(r.dwS / r.dwN) : '–'},
     {h:'Aktif', val: r => r.first, html: r => activeTxt(r)}, {h:'Provinsi utama', val: r => tc(B.dims.prov[r.prov])}];
