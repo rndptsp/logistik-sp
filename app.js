@@ -1887,6 +1887,8 @@ function pagePlant(name){
     hero + tabsHTML('plant', [
     {k: 'kinerja', label: 'Tren & incoterm', html: chart + cmp},
     ...(hourSec ? [{k: 'kapal', label: 'Kapal', html: hourSec}] : []),
+    {k: 'distrik', label: 'Provinsi & distrik', html: '<div class="tab-note">klik provinsi untuk distriknya, distrik untuk distributor &amp; toko · capaian vs target plant ini</div>' +
+      (kemGroups(() => shipRows(m, sc).length ? treeHTML(buildTree(shipRows(m, sc), ['prov', 'dist', 'distr', 'toko']), ['prov', 'dist', 'distr', 'toko'], {tgt: {prov: summarize('prov', m, sc), dist: summarize('dist', m, sc)}, cmp: {m, sc}}) : '', kemSub(m, sc)) || '<div class="dp-review">Tidak ada pengiriman untuk filter ini.</div>')},
     {k: 'tujuan', label: 'Tujuan & ekspeditur', html: '<div class="dp-cols">' +
       '<div class="dp-panel"><div class="pt">Provinsi tujuan<span class="pt-sub">capaian target · ' + esc(incName()) + '</span></div>' + (capTable(provs, 'Provinsi', o => tc(B.dims.prov[o.key]), o => '#/provinsi/' + enc(B.dims.prov[o.key]), false, {group: 'prov', m, sc}) || '<div class="empty">Tidak ada data.</div>') + '</div>' +
       '<div class="dp-panel"><div class="pt">Ekspeditur / pengangkut<span class="pt-sub">' + esc(incName()) + '</span></div>' + (incGroups(() => capTable(ekspRows(m, sc), 'Ekspeditur', o => ekspLbl(o.key), o => ekspHref(o.key), false, {group: 'eksp', m, sc}), ekspSub(m, sc)) || '<div class="empty">Tidak ada data.</div>') + '</div>' +
