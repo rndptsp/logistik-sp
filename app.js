@@ -1270,19 +1270,20 @@ function treeHTML(nodes, levels, opt){
   if(opt.cmp){ const w = (l, pre) => l.forEach(n => { const k = pre + '/' + n.key; pv.set(k, n.vol); if(n.children) w(n.children, k); }); w(buildTree(shipRows(prevPer(toPer(opt.cmp.m)), opt.cmp.sc || {}), levels), ''); }
   const hasT = !!(opt.tgt || opt.distrTgt), soCols = !opt.distrTgt;   // distributor targets: no SO per distributor
   let html = '<div class="tree-tools"><span>' + levels.map(l => LV_LBL[l]).join(' &rsaquo; ') + '</span><span><a data-tree-all="' + id + ':1">Buka semua</a> · <a data-tree-all="' + id + ':0">Tutup semua</a></span></div>' +
-    '<div class="tbl-wrap' + (nodes.length > 15 ? ' tall' : '') + '"><table class="tbl tree" id="' + id + '"><thead><tr><th class="fz fz0 fzl">Tujuan</th><th class="num">Realisasi (t)</th>' + (hasT ? '<th class="num">Target MTD (t)</th><th class="num">Capaian</th>' + (soCols ? '<th class="num">SO (t)</th><th class="num">Real/SO</th>' : '') : '') + '<th class="num">Trip</th>' + (tag ? '<th class="num">vs ' + tag + '</th>' : '') + '<th class="num">Kirim terakhir</th><th></th></tr></thead><tbody>';
+    '<div class="tbl-wrap' + (nodes.length > 15 ? ' tall' : '') + '"><table class="tbl tree" id="' + id + '"><thead><tr><th class="fz fz0 fzl">Tujuan</th><th class="num">Realisasi (t)</th>' + (hasT ? '<th class="num">Target MTD (t)</th><th class="num">Capaian</th>' + (soCols ? '<th class="num">SO (t)</th><th class="num">Real/SO</th>' : '') : '') + '<th class="num">Trip</th>' + (tag ? '<th class="num">' + tag + ' (t)</th><th class="num">Gap vs ' + tag + ' (t)</th><th class="num">vs ' + tag + '</th>' : '') + '<th></th></tr></thead><tbody>';
   const walk = (list, depth, parent, kp) => list.forEach((n, i) => {
     const kpath = (kp || '') + '/' + n.key;
     const path = parent ? parent + '-' + i : String(i), kids = n.children && n.children.length;
     const t = n.t || (hasT && opt.tgt && opt.tgt[n.lv] ? opt.tgt[n.lv].get(n.key) : null);
     const href = nodeHref(n);
-    html += '<tr class="lv' + depth + (depth ? ' tr-hide' : '') + (kids ? ' has-kids' : '') + '" data-path="' + path + '" data-parent="' + (parent || '') + '">' +
-      '<td class="name fz fz0 fzl" style="--d:' + depth + '"><span class="caret-t">' + (kids ? '▸' : '') + '</span><span class="t-lbl">' + nodeLabel(n) + '</span>' + (kids ? '<span class="t-cnt">' + n.children.length + ' ' + LV_LBL[levels[depth + 1]].toLowerCase() + '</span>' : '') + '</td>' +
+    const lastT = n.last >= 0 ? 'Kirim terakhir ' + dayLabel(B.days[n.last]) : '', pvv = pv.get(kpath) || 0;
+    html += '<tr class="lv' + depth + (depth ? ' tr-hide' : '') + (kids ? ' has-kids' : '') + '" data-path="' + path + '" data-parent="' + (parent || '') + '" title="' + esc(lastT) + '">' +
+      '<td class="name fz fz0 fzl" style="--d:' + depth + '"><span class="caret-t">' + (kids ? '▸' : '') + '</span><span class="t-lbl">' + nodeLabel(n) + '</span>' + (kids ? '<span class="t-cnt">' + n.children.length + ' ' + LV_LBL[levels[depth + 1]].toLowerCase() + '</span>' : n.last >= 0 ? '<span class="t-cnt" title="' + esc(lastT) + '">kirim ' + shortDate(B.days[n.last]) + '</span>' : '') + '</td>' +
       '<td class="num">' + fmt(n.vol) + '</td>' +
       (hasT ? (t && t.hasTgt ? '<td class="num">' + fmt(t.tgt) + '</td><td class="num pc" style="color:' + tierColor(t.pct) + '">' + pctTxt(t.pct) + '</td>' : '<td class="num">–</td><td class="num">–</td>') +
         (!soCols ? '' : t && t.so ? '<td class="num">' + fmt(t.so) + '</td><td class="num pc">' + pctTxt(t.of) + '</td>' : '<td class="num">–</td><td class="num">–</td>') : '') +
-      '<td class="num">' + fmt(n.trips) + '</td>' + (tag ? '<td class="num">' + (pv.get(kpath) > 0 ? vsTot(n.vol, pv.get(kpath)) : n.vol > 0 ? 'baru' : '–') + '</td>' : '') + '<td class="num">' + (n.last >= 0 ? dayLabel(B.days[n.last]) : '–') + '</td>' +
-      '<td class="num">' + (href ? '<a class="t-go" href="' + href + '" title="Buka halaman">&rsaquo;</a>' : '') + '</td></tr>';
+      '<td class="num">' + fmt(n.trips) + '</td>' + (tag ? '<td class="num">' + (pvv ? fmt(pvv) : '–') + '</td><td class="num">' + dCell(n.vol, pvv, '', false, false) + '</td><td class="num">' + (pvv > 0 ? vsTot(n.vol, pvv) : n.vol > 0 ? 'baru' : '–') + '</td>' : '') +
+      '<td class="num">' + (href ? '<a class="t-go" href="' + href + '" title="Buka halaman' + (lastT ? ' · ' + esc(lastT.toLowerCase()) : '') + '">&rsaquo;</a>' : '') + '</td></tr>';
     if(kids) walk(n.children, depth + 1, path, kpath);
   });
   walk(nodes, 0, '');

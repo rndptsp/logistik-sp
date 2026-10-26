@@ -806,3 +806,7 @@ table.tree tr.lv0 td.fz{background:var(--white)}
 .map-vol.out{fill:#000;stroke:#fff;stroke-width:3px;}
 .map-hero .map-vol.out{fill:#fff;stroke:rgba(0,0,0,.7);}
 .dmap .map-vol,.mh-page .map-vol{stroke-width:.25em;}
+/* tree: destination on one line (Rendy) */
+table.tree td.name{white-space:nowrap}
+table.tree td.name .t-cnt{white-space:nowrap}
+@media (max-width:700px){table.tree td.name{white-space:normal;min-width:150px}}
