@@ -870,3 +870,15 @@ table.tree td.name{max-width:240px}
 .tbl td.cv,.tbl td.cp{font-size:12.5px}
 table.tree td.name .t-txt{max-width:calc(100% - 22px)}
 table.tree td.name .caret-t{vertical-align:middle}
+/* header row stays visible while scrolling the page (Rendy). Desktop: tables fit the page, so the wrapper does not scroll and the
+   header sticks under the site header + tab bar. Phones: the table scrolls inside its own box (one screen high), header on top. */
+.tbl thead th{position:sticky;top:0;z-index:3}
+.tbl thead th.fz{z-index:4}
+@media (min-width:901px){
+  .tbl-wrap,.tbl-wrap.tall{overflow:visible;max-height:none}
+  .tbl thead th{top:var(--stick,0px)}
+  .tabpane .tbl thead th{top:calc(var(--stick,0px) + var(--tabh,0px))}
+  .modal .tbl-wrap{overflow:auto;max-height:52vh}
+  .modal .tbl thead th{top:0}
+}
+@media (max-width:900px){.tbl-wrap,.tbl-wrap.tall{max-height:calc(100vh - 120px)}}

@@ -2488,6 +2488,8 @@ function tabClick(btn){
 function setStick(){
   const stuck = el => el && /sticky|fixed/.test(getComputedStyle(el).position) ? el.getBoundingClientRect().height : 0;
   document.documentElement.style.setProperty('--stick', Math.round(stuck($('header')) + stuck($('#filterStrip'))) + 'px');
+  const tb = $('.tabbar:not(.sub)');   // table headers inside a tab stick below the (sticky) tab bar
+  document.documentElement.style.setProperty('--tabh', (tb && /sticky/.test(getComputedStyle(tb).position) ? Math.round(tb.getBoundingClientRect().height) : 0) + 'px');
 }
 window.addEventListener('resize', setStick);
 
