@@ -1585,6 +1585,27 @@ function incPerf(m, sc){
     '<div class="ip-s">' + fmt(o.trips) + ' trip' + (o.of != null ? ' · Real/SO ' + pctTxt(o.of) : '') + '</div></div>').join('');
   return '<div class="section-head"><div class="section-title">Kinerja per incoterm</div><div class="section-sub">' + esc(incName()) + ' · ' + periodSub() + '</div></div><div class="ip-grid">' + cards + '</div>';
 }
+/* Detail per incoterm (Rendy): one row per active incoterm, per market; FM | MTD | Real, SO, LM and gap vs LM. */
+function incTable(m, sc){
+  sc = sc || {};
+  const act = INCS().map((n, i) => i).filter(i => incOk(i)), pm = prevPer(m), tag = cmpTag(m);
+  if(!act.length) return '';
+  return kemGroups(() => {
+    const rows = act.map(i => withInc({incFix: INCS()[i]}, () => Object.assign({i, key: i}, total(m, sc), {prev: total(pm, sc).vol}))).filter(o => o.vol > 0 || o.tgt > 0 || o.prev > 0);
+    if(!rows.length) return '';
+    const T = rows.reduce((a, o) => ({fm: a.fm + o.tgtFull, tgt: a.tgt + o.tgt, vol: a.vol + o.vol, frc: a.frc + (o.hasTgt ? o.frc : 0), so: a.so + o.so, trips: a.trips + o.trips, prev: a.prev + o.prev, dwS: a.dwS + o.dwS, dwN: a.dwN + o.dwN}), {fm: 0, tgt: 0, vol: 0, frc: 0, so: 0, trips: 0, prev: 0, dwS: 0, dwN: 0});
+    const cols = [{h:'Incoterm', cls:'name', val: o => o.i, html: o => '<span class="inc-dot" style="background:' + incColor(o.i) + '"></span>' + esc(incLbl(INCS()[o.i]))},
+      C.fm, C.tgt, C.vol(), C.pct, C.gap, C.so, C.of, C.trips,
+      {h: tag + ' (t)', num: true, val: o => o.prev, html: o => o.prev ? fmt(o.prev) : '–'},
+      {h: 'Gap vs ' + tag + ' (t)', num: true, val: o => o.vol - o.prev, html: o => dCell(o.vol, o.prev, '', false, false)},
+      {h: 'vs ' + tag, num: true, val: o => o.prev ? o.vol / o.prev : -1, html: o => o.prev ? '<span style="color:' + (o.vol >= o.prev ? 'var(--green)' : 'var(--red)') + '">' + (o.vol >= o.prev ? '+' : '−') + fmt(Math.abs((o.vol / o.prev - 1) * 100)) + '%</span>' : (o.vol ? 'baru' : '–')},
+      C.dwell];
+    const tp = T.tgt > 0 ? pctOf(T.frc, T.tgt) : null;
+    const tot = ['<b>Total</b>', fmt(T.fm), fmt(T.tgt), fmt(T.vol), tp == null ? '–' : pctTxt(tp), T.tgt ? signed(T.frc - T.tgt) : '–', T.so ? fmt(T.so) : '–', '', fmt(T.trips), fmt(T.prev), dCell(T.vol, T.prev, '', false, false), vsTot(T.vol, T.prev), T.dwN ? fmt1(T.dwS / T.dwN) : '–'];
+    const cs = cols.map((c, j) => Object.assign({}, c, {total: tot[j]}));
+    return table(cs, rows, {total: rows.length > 1, sort: 3});
+  }, kemSub(m, sc));
+}
 function pageProvList(){
   const rows = ranked(summarize('prov', PER()));
   const t = total(PER());
@@ -1642,9 +1663,10 @@ function pageProv(name){
       kpi('gap', me.gap < 0 ? 'var(--red)' : 'var(--green)', me.gap < 0 ? 'Sisa ke target' : 'Lebih dari target', me.hasTgt ? fmt(Math.abs(me.gap)) + ' <small>ton</small>' : '–') +
       kpi('box', 'var(--amber)', 'SO / Real÷SO', me.so ? fmt(me.so) + ' <small>t · ' + pctTxt(me.of) + '</small>' : '–') +
     '</div>'
-    )) + tabsHTML('prov', [{k: 'tren', label: 'Tren & incoterm', html: incPerf(m, sc) +
+    )) + tabsHTML('prov', [{k: 'tren', label: 'Summary', html: incPerf(m, sc) +
     '<div class="dp-cols">' + trendPanel(sc, 'mingguan') + '</div>' +
     '<div class="dp-cols even">' + sourcePanel(sc) + '<div class="dp-panel"><div class="pt">Bulan penuh</div>' + ('<div class="tgt-panel" style="margin:0;border:0;padding:0"><div class="tgt-item"><div class="tl">Target bulan</div><div class="tv">' + (me.hasTgt ? fmt(me.tgtFull) : '–') + ' t</div></div><div class="tgt-item"><div class="tl">Realisasi ' + incName() + '</div><div class="tv">' + fmt(me.frc) + ' t</div></div><div class="tgt-item"><div class="tl">Sisa bulan</div><div class="tv ' + (me.tgtFull - me.frc > 0 ? 'bad' : 'good') + '">' + (me.hasTgt ? fmt(Math.max(0, me.tgtFull - me.frc)) : '–') + ' t</div></div></div>') + '</div></div>'},
+    {k: 'inc', label: 'Incoterm', html: '<div class="tab-note">detail per incoterm · ' + esc(periodSub()) + ' · ' + cmpTag(m) + ' = ' + (p => shortDate(p.from) + ' – ' + shortDate(p.to))(prevPer(m)) + '</div>' + (incTable(m, sc) || '<div class="dp-review">Tidak ada data.</div>')},
     {k: 'distrik', label: 'Distrik', n: dist.filter(o => o.vol > 0).length, html: kemGroups(() => shipRows(m, sc).length ? treeHTML(annotateDistrTargets(buildTree(shipRows(m, sc), ['dist', 'distr', 'toko']), m, {prov: pi}, {}, ['distr']), ['dist', 'distr', 'toko'], {tgt: {dist: summarize('dist', m, sc)}, cmp: {m, sc}}) : '', kemSub(m, sc)) || '<div class="dp-review">Tidak ada pengiriman untuk filter ini.</div>'},
     {k: 'eksp', label: 'Ekspeditur', html:
       '<div class="dp-panel"><div class="pt">Ekspeditur di provinsi ini<span class="pt-sub">capaian target · Real/SO</span></div>' + (incGroups(() => capTable(ekspRows(m, sc), 'Ekspeditur', o => ekspLbl(o.key), o => ekspHref(o.key), true, {group: 'eksp', m, sc}), ekspSub(m, sc)) || '<div class="empty">Tidak ada data.</div>') + '</div>'
@@ -1892,7 +1914,7 @@ function pagePlant(name){
     '<div class="dp-head"><div><div class="nm">' + esc(name) + '</div><div class="sub">Plant / packing plant asal pengiriman · ' + esc(scopeTxt) + ' · ' + periodSub() + '</div></div></div>' +
     (F.srcOff.has(name) ? '<div class="dp-review">Plant ini tidak dicentang di filter plant: halaman ini tetap menampilkan datanya, tetapi Ringkasan dan halaman lain tidak menghitungnya sampai dicentang.</div>' : '') +
     hero + tabsHTML('plant', [
-    {k: 'kinerja', label: 'Tren & incoterm', html: chart + cmp},
+    {k: 'kinerja', label: 'Summary', html: chart + cmp},
     ...(hourSec ? [{k: 'kapal', label: 'Kapal', html: hourSec}] : []),
     {k: 'distrik', label: 'Provinsi & distrik', html: '<div class="tab-note">klik provinsi untuk distriknya, distrik untuk distributor &amp; toko · capaian vs target plant ini</div>' +
       (kemGroups(() => shipRows(m, sc).length ? treeHTML(buildTree(shipRows(m, sc), ['prov', 'dist', 'distr', 'toko']), ['prov', 'dist', 'distr', 'toko'], {tgt: {prov: summarize('prov', m, sc), dist: summarize('dist', m, sc)}, cmp: {m, sc}}) : '', kemSub(m, sc)) || '<div class="dp-review">Tidak ada pengiriman untuk filter ini.</div>')},
@@ -1923,7 +1945,8 @@ function pageDist(name){
       kpi('box', 'var(--amber)', 'SO / Real÷SO', me.so ? fmt(me.so) + ' <small>t · ' + pctTxt(me.of) + '</small>' : '–') +
     '</div>' +
     mapS)) + tabsHTML('dist', [
-    {k: 'tren', label: 'Tren & incoterm', html: incPerf(m, sc) + '<div class="dp-cols">' + trendPanel(sc, 'harian') + '</div>'},
+    {k: 'tren', label: 'Summary', html: incPerf(m, sc) + '<div class="dp-cols">' + trendPanel(sc, 'harian') + '</div>'},
+    {k: 'inc', label: 'Incoterm', html: '<div class="tab-note">detail per incoterm · ' + esc(periodSub()) + ' · ' + cmpTag(m) + ' = ' + (p => shortDate(p.from) + ' – ' + shortDate(p.to))(prevPer(m)) + '</div>' + (incTable(m, sc) || '<div class="dp-review">Tidak ada data.</div>')},
     {k: 'tujuan', label: 'Distributor & toko', html: kemGroups(() => shipRows(m, sc).length ? treeHTML(annotateDistrTargets(buildTree(shipRows(m, sc), ['distr', 'toko']), m, {dist: di}), ['distr', 'toko'], {distrTgt: true, cmp: {m, sc}}) : '', kemSub(m, sc)) || '<div class="dp-review">Tidak ada pengiriman untuk filter ini.</div>'},
     {k: 'eksp', label: 'Ekspeditur', html: incGroups(() => { const l = ekspRows(m, sc); return l.length ? table(ekCols, l, {go: r => ekspHref(r.key), sort: 3}) : ''; }, ekspSub(m, sc)) || '<div class="dp-review">Tidak ada ekspeditur untuk filter ini.</div>'}]) +
     '</div>', 'wilayah');
