@@ -1304,9 +1304,9 @@ function annotateDistrTargets(nodes, m, base, ctx, only){
     const here = Object.assign({}, ctx);
     if(n.lv === 'distr' || n.lv === 'prov' || n.lv === 'dist') here[n.lv] = n.key;
     if((n.lv === 'distr' || n.lv === 'prov' || n.lv === 'dist') && (!only || only.includes(n.lv))){
-      const sc = Object.assign({}, base, here), tg = distrTargets(m, sc);
-      const t = sc.distr != null ? (tg.get(sc.distr) || 0) : [...tg.values()].reduce((a, v) => a + v, 0);
-      n.t = t > 0 ? {hasTgt: true, tgt: t, pct: pctOf(n.az, t)} : {hasTgt: false};
+      const sc = Object.assign({}, base, here), tg = distrTargets(m, sc), tf = distrTargets(m, sc, true);
+      const one = mp => sc.distr != null ? (mp.get(sc.distr) || 0) : [...mp.values()].reduce((a, v) => a + v, 0), t = one(tg);
+      n.t = t > 0 ? {hasTgt: true, tgt: t, tgtFull: one(tf), pct: pctOf(n.az, t)} : {hasTgt: false};
     }
     if(n.children) annotateDistrTargets(n.children, m, base, here, only);
   });
@@ -1320,7 +1320,11 @@ function treeHTML(nodes, levels, opt){
   if(opt.cmp){ const w = (l, pre) => l.forEach(n => { const k = pre + '/' + n.key; pv.set(k, n.vol); if(n.children) w(n.children, k); }); w(buildTree(shipRows(prevPer(toPer(opt.cmp.m)), opt.cmp.sc || {}), levels), ''); }
   const hasT = !!(opt.tgt || opt.distrTgt), soCols = !opt.distrTgt;   // distributor targets: no SO per distributor
   let html = '<div class="tree-tools"><span>' + levels.map(l => LV_LBL[l]).join(' &rsaquo; ') + '</span><span><a data-tree-all="' + id + ':1">Buka semua</a> · <a data-tree-all="' + id + ':0">Tutup semua</a></span></div>' +
-    '<div class="tbl-wrap' + (nodes.length > 15 ? ' tall' : '') + '"><table class="tbl tree" id="' + id + '"><thead><tr><th class="fz fz0 fzl">Tujuan</th><th class="num">Realisasi (t)</th>' + (hasT ? '<th class="num">Target MTD (t)</th><th class="num">Capaian</th>' + (soCols ? '<th class="num">SO (t)</th><th class="num">Real/SO</th>' : '') : '') + '<th class="num">Trip</th>' + (tag ? '<th class="num">' + tag + ' (t)</th><th class="num">Gap vs ' + tag + ' (t)</th><th class="num">vs ' + tag + '</th>' : '') + '<th></th></tr></thead><tbody>';
+    '<div class="tbl-wrap' + (nodes.length > 15 ? ' tall' : '') + '"><table class="tbl tree" id="' + id + '"><thead><tr><th class="fz fz0 fzl">Tujuan</th>' +
+      // volumes first, then the % columns (Rendy); comparison-period columns shaded
+      (hasT ? '<th class="num">Target FM (t)</th><th class="num">Target MTD (t)</th>' : '') + '<th class="num">Realisasi (t)</th>' + (hasT && soCols ? '<th class="num">SO (t)</th>' : '') +
+      (tag ? '<th class="num lmc">' + tag + ' (t)</th><th class="num lmc">Gap vs ' + tag + ' (t)</th>' : '') + '<th class="num">Trip</th>' +
+      (hasT ? '<th class="num">Capaian</th>' + (soCols ? '<th class="num">Real/SO</th>' : '') : '') + (tag ? '<th class="num lmc">vs ' + tag + '</th>' : '') + '<th></th></tr></thead><tbody>';
   const walk = (list, depth, parent, kp) => list.forEach((n, i) => {
     const kpath = (kp || '') + '/' + n.key;
     const path = parent ? parent + '-' + i : String(i), kids = n.children && n.children.length;
@@ -1329,10 +1333,12 @@ function treeHTML(nodes, levels, opt){
     const lastT = n.last >= 0 ? 'Kirim terakhir ' + dayLabel(B.days[n.last]) : '', pvv = pv.get(kpath) || 0;
     html += '<tr class="lv' + depth + (depth ? ' tr-hide' : '') + (kids ? ' has-kids' : '') + '" data-path="' + path + '" data-parent="' + (parent || '') + '" title="' + esc(lastT) + '">' +
       '<td class="name fz fz0 fzl" style="--d:' + depth + '"><span class="caret-t">' + (kids ? '▸' : '') + '</span><span class="t-lbl">' + nodeLabel(n) + '</span>' + (kids ? '<span class="t-cnt">' + n.children.length + ' ' + LV_LBL[levels[depth + 1]].toLowerCase() + '</span>' : n.last >= 0 ? '<span class="t-cnt" title="' + esc(lastT) + '">kirim ' + shortDate(B.days[n.last]) + '</span>' : '') + '</td>' +
-      '<td class="num">' + fmt(n.vol) + '</td>' +
-      (hasT ? (t && t.hasTgt ? '<td class="num">' + fmt(t.tgt) + '</td><td class="num pc" style="color:' + tierColor(t.pct) + '">' + pctTxt(t.pct) + '</td>' : '<td class="num">–</td><td class="num">–</td>') +
-        (!soCols ? '' : t && t.so ? '<td class="num">' + fmt(t.so) + '</td><td class="num pc">' + pctTxt(t.of) + '</td>' : '<td class="num">–</td><td class="num">–</td>') : '') +
-      '<td class="num">' + fmt(n.trips) + '</td>' + (tag ? '<td class="num">' + (pvv ? fmt(pvv) : '–') + '</td><td class="num">' + dCell(n.vol, pvv, '', false, false) + '</td><td class="num">' + (pvv > 0 ? vsTot(n.vol, pvv) : n.vol > 0 ? 'baru' : '–') + '</td>' : '') +
+      (hasT ? (t && t.hasTgt ? '<td class="num">' + (t.tgtFull != null ? fmt(t.tgtFull) : '–') + '</td><td class="num">' + fmt(t.tgt) + '</td>' : '<td class="num">–</td><td class="num">–</td>') : '') +
+      '<td class="num"><b>' + fmt(n.vol) + '</b></td>' + (hasT && soCols ? '<td class="num">' + (t && t.so ? fmt(t.so) : '–') + '</td>' : '') +
+      (tag ? '<td class="num lmc">' + (pvv ? fmt(pvv) : '–') + '</td><td class="num lmc">' + dCell(n.vol, pvv, '', false, false) + '</td>' : '') +
+      '<td class="num">' + fmt(n.trips) + '</td>' +
+      (hasT ? (t && t.hasTgt ? '<td class="num pc" style="color:' + tierColor(t.pct) + '">' + pctTxt(t.pct) + '</td>' : '<td class="num">–</td>') + (soCols ? '<td class="num pc">' + (t && t.so ? pctTxt(t.of) : '–') + '</td>' : '') : '') +
+      (tag ? '<td class="num lmc">' + (pvv > 0 ? vsTot(n.vol, pvv) : n.vol > 0 ? 'baru' : '–') + '</td>' : '') +
       '<td class="num">' + (href ? '<a class="t-go" href="' + href + '" title="Buka halaman' + (lastT ? ' · ' + esc(lastT.toLowerCase()) : '') + '">&rsaquo;</a>' : '') + '</td></tr>';
     if(kids) walk(n.children, depth + 1, path, kpath);
   });
@@ -1367,12 +1373,12 @@ function distrSummary(rows){
 
 /* Distributor target for the selected incoterm(s), up to the last data day of the period: FOT/FOB/FAS rows of B.targets
    (t[8]) plus FRC rows of B.tdistr (Tactical, per distributor; FRC in B.targets is split per ekspeditur instead). */
-function distrTargets(per, sc){
+function distrTargets(per, sc, full){   // full: whole month (Target FM) instead of up to the last data day
   per = toPer(per); sc = sc || {};
-  const out = new Map(), m0 = per.from.slice(0, 7), m1 = per.to.slice(0, 7);
+  const out = new Map(), m0 = per.from.slice(0, 7), m1 = per.to.slice(0, 7), to = full ? (per.kind === 'month' ? per.month + '-' + pad2(dim(per.month)) : per.to) : per.tgtTo;
   B.targets.concat(B.tdistr || []).forEach(t => {
     if(!kemOk(tKem(t)) || !areaProvOk(t[1]) || !(t[8] >= 0) || t[0] < m0 || t[0] > m1 || !incOk(tInc(t)) || !srcOkS(t[4], sc) || (sc.distr != null && t[8] !== sc.distr) || (sc.prov != null && t[1] !== sc.prov) || (sc.dist != null && t[2] !== sc.dist)) return;
-    out.set(t[8], (out.get(t[8]) || 0) + targetBetween(t, per.from, per.tgtTo));
+    out.set(t[8], (out.get(t[8]) || 0) + targetBetween(t, per.from, to));
   });
   return out;
 }

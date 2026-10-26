@@ -819,3 +819,8 @@ svg.zoomable.zoomed:active{cursor:grabbing}
 .zoom-full{position:fixed!important;inset:0;z-index:3000;background:#0F1A21;padding:12px;display:flex!important;flex-direction:column;justify-content:center}
 .zoom-full .map-svg{max-height:none!important;height:calc(100vh - 60px);width:100%}
 body.noscroll{overflow:hidden}
+/* comparison-period (LM / LW / LWD) columns: own shading (Rendy) */
+table.tree th.lmc{background:#E6EEF5}
+table.tree td.lmc{background:#F1F6FA}
+table.tree tr.lv1 td.lmc{background:#EBF2F8}
+table.tree tr.lv2 td.lmc,table.tree tr.lv3 td.lmc{background:#E6EEF5}
