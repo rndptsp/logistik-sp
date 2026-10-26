@@ -1303,7 +1303,7 @@ function shipRows(m, sc){
 function buildTree(rows, levels, depth){
   depth = depth || 0;
   const lv = levels[depth], groups = new Map();
-  rows.forEach(r => { const k = SHK[lv](r); let g = groups.get(k); if(!g){ g = {lv, key: k, vol: 0, az: 0, trips: 0, last: -1, rows: []}; groups.set(k, g); } g.vol += r[8]; if(achKem(r[10])) g.az += r[8]; g.trips += r[9]; g.last = Math.max(g.last, r[0]); g.rows.push(r); });
+  rows.forEach(r => { const k = SHK[lv](r); let g = groups.get(k); if(!g){ g = {lv, key: k, vol: 0, az: 0, frc0: 0, trips: 0, last: -1, rows: []}; groups.set(k, g); } g.vol += r[8]; if(r[1] === 0) g.frc0 += r[8]; if(achKem(r[10])) g.az += r[8]; g.trips += r[9]; g.last = Math.max(g.last, r[0]); g.rows.push(r); });
   const nodes = [...groups.values()].sort((a, b) => b.vol - a.vol);
   nodes.forEach(n => { if(depth + 1 < levels.length) n.children = buildTree(n.rows, levels, depth + 1); n.rows = null; });
   return nodes;
@@ -1328,6 +1328,14 @@ function nodeHref(n){
 /* Expandable table: click a row to open the next level; "›" opens that item's own page.
    opt.tgt = {prov: Map, dist: Map} summaries (from summarize) to show target & achievement at those levels. */
 /** Put distributor targets on tree nodes (levels distr / prov / dist), within scope `base` ({dist} or {distr}). */
+/* SO FRC for a scope that includes a distributor (B.sodd, by delivery day); every month the period touches counts in full, as summarize() */
+function distrSO(m, sc){
+  if(!B.sodd || !soOn()) return 0;
+  const per = toPer(m), m0 = per.from.slice(0, 7), m9 = per.to.slice(0, 7);
+  let v = 0;
+  B.sodd.forEach(r => { const mo = r[0].slice(0, 7); if(mo < m0 || mo > m9 || !kemOk(r[5]) || (sc.distr != null && r[3] !== sc.distr) || (sc.prov != null && r[1] !== sc.prov) || (sc.dist != null && r[2] !== sc.dist)) return; v += r[4]; });
+  return v;
+}
 function annotateDistrTargets(nodes, m, base, ctx, only){
   ctx = ctx || {};
   nodes.forEach(n => {
@@ -1337,6 +1345,7 @@ function annotateDistrTargets(nodes, m, base, ctx, only){
       const sc = Object.assign({}, base, here), tg = distrTargets(m, sc), tf = distrTargets(m, sc, true);
       const one = mp => sc.distr != null ? (mp.get(sc.distr) || 0) : [...mp.values()].reduce((a, v) => a + v, 0), t = one(tg);
       n.t = t > 0 ? {hasTgt: true, tgt: t, tgtFull: one(tf), pct: pctOf(n.az, t)} : {hasTgt: false};
+      const so = distrSO(m, sc); if(so > 0){ n.t.so = so; n.t.frc0 = n.frc0; n.t.of = pctOf(n.frc0, so); }
     }
     if(n.children) annotateDistrTargets(n.children, m, base, here, only);
   });
@@ -1348,7 +1357,7 @@ function treeHTML(nodes, levels, opt){
   // opt.cmp = {m, sc}: "vs LM/LW/LWD" per node = same levels built from the comparison period
   const pv = new Map(), tag = opt.cmp ? cmpTag(opt.cmp.m) : null;
   if(opt.cmp){ const w = (l, pre) => l.forEach(n => { const k = pre + '/' + n.key; pv.set(k, n.vol); if(n.children) w(n.children, k); }); w(buildTree(shipRows(prevPer(toPer(opt.cmp.m)), opt.cmp.sc || {}), levels), ''); }
-  const hasT = !!(opt.tgt || opt.distrTgt), soCols = !opt.distrTgt;   // distributor targets: no SO per distributor
+  const hasT = !!(opt.tgt || opt.distrTgt), soCols = !opt.distrTgt || !!B.sodd;   // distributor SO needs B.sodd (newer builds)   // distributor targets: no SO per distributor
   let html = '<div class="tree-tools"><span>' + levels.map(l => LV_LBL[l]).join(' &rsaquo; ') + '</span><span><a data-tree-all="' + id + ':1">Buka semua</a> · <a data-tree-all="' + id + ':0">Tutup semua</a></span></div>' +
     '<div class="tbl-wrap' + (nodes.length > 15 ? ' tall' : '') + '"><table class="tbl tree" id="' + id + '"><thead><tr><th class="fz fz0 fzl">Tujuan</th>' +
       // order (Rendy): FM | Realisasi | [MTD | Gap | % Ach.] | [SO | Gap vs SO | % OF] | [LM | Gap vs LM | vs LM] | Trip — each bracket one colour
@@ -1363,7 +1372,7 @@ function treeHTML(nodes, levels, opt){
     const href = nodeHref(n);
     const lastT = n.last >= 0 ? 'Kirim terakhir ' + dayLabel(B.days[n.last]) : '', pvv = pv.get(kpath) || 0;
     html += '<tr class="lv' + depth + (depth ? ' tr-hide' : '') + (kids ? ' has-kids' : '') + '" data-path="' + path + '" data-parent="' + (parent || '') + '" title="' + esc(lastT) + '">' +
-      '<td class="name fz fz0 fzl" style="--d:' + depth + '"><span class="caret-t">' + (kids ? '▸' : '') + '</span><span class="t-lbl">' + nodeLabel(n) + '</span>' + (kids ? '<span class="t-cnt">' + n.children.length + ' ' + LV_LBL[levels[depth + 1]].toLowerCase() + '</span>' : n.last >= 0 ? '<span class="t-cnt" title="' + esc(lastT) + '">kirim ' + shortDate(B.days[n.last]) + '</span>' : '') + '</td>' +
+      '<td class="name fz fz0 fzl" style="--d:' + depth + '"><span class="caret-t">' + (kids ? '▸' : '') + '</span><span class="t-txt"><span class="t-lbl">' + nodeLabel(n) + '</span>' + (kids ? '<span class="t-cnt">' + n.children.length + ' ' + LV_LBL[levels[depth + 1]].toLowerCase() + '</span>' : n.last >= 0 ? '<span class="t-cnt" title="' + esc(lastT) + '">kirim ' + shortDate(B.days[n.last]) + '</span>' : '') + '</span></td>' +
       (hasT ? '<td class="num">' + (t && t.hasTgt && t.tgtFull != null ? fmt(t.tgtFull) : '–') + '</td>' : '') + '<td class="num"><b>' + fmt(n.vol) + '</b></td>' +
       (hasT ? (t && t.hasTgt ? (g => '<td class="num ga">' + fmt(t.tgt) + '</td><td class="num ga"><span style="color:' + (g < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(g) + '</span></td><td class="num pc ga" style="color:' + tierColor(t.pct) + '">' + pctTxt(t.pct) + '</td>')(t.gap != null ? t.gap : (n.az != null ? n.az : n.vol) - t.tgt)
         : '<td class="num ga">–</td><td class="num ga">–</td><td class="num ga">–</td>') : '') +

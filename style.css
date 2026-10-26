@@ -851,3 +851,6 @@ table.tree tr.lv1 td.ga{background:#F8F2E6}
 table.tree tr.lv2 td.ga,table.tree tr.lv3 td.ga{background:#F3EBDA}
 table.tree tr.lv1 td.gb{background:#E8F3EB}
 table.tree tr.lv2 td.gb,table.tree tr.lv3 td.gb{background:#DDEEE2}
+/* tree label on two lines, both left-aligned: name, then the count / last delivery (Rendy) */
+table.tree .t-txt{display:inline-flex;flex-direction:column;align-items:flex-start;vertical-align:middle;gap:3px}
+table.tree .t-txt .t-cnt{margin-left:0}

@@ -439,6 +439,10 @@ def build(cfg):
 
     # ---------------- Sales Order (03_SO.xlsx / data/so.csv.gz): FRC truk only, SOCC by delivery day ----------------
     so, sod = defaultdict(float), defaultdict(float)
+    sodd = defaultdict(float)   # SO FRC per distributor (Rendy: SO and % OF per distributor)
+    nk = lambda v: re.sub(r"\b(PT|CV|TBK|UD)\b", "", re.sub(r"[^A-Z0-9 ]", " ", up(v))).split()
+    distr_by = {" ".join(nk(n)): i for i, n in enumerate(distr.items) if n}   # SO names matched to the Rilis distributor list
+    so_nodistr = 0
     so_kirim = {}   # SO no -> earliest Tgl Kirim (KPI 2)
     for r in read_store(os.path.join(base, "data", "so.csv.gz")):
         sn, dk0 = str(r.get("SALES_ORDER") or "").strip().split(".")[0], as_date(r.get("TGL_KIRIM"))
@@ -452,7 +456,12 @@ def build(cfg):
         p, di = prov(up(r.get("PROPINSI"))), dist(up(r.get("NAMA_DISTRIK")))
         dist_prov.setdefault(di, p)
         sod[(dk.isoformat(), p, di, eksp(up(r.get("EXPEDITUR_KODE"))), kemasan(r.get("KEMASAN")))] += num(r.get("TON_SO"))
-    print(f"  SO groups: {len(sod):,} per tgl kirim (SOCC)")
+        dx = distr_by.get(" ".join(nk(r.get("DISTRIBUTOR"))))
+        if dx is None:
+            so_nodistr += 1
+        else:
+            sodd[(dk.isoformat(), p, di, dx, kemasan(r.get("KEMASAN")))] += num(r.get("TON_SO"))
+    print(f"  SO groups: {len(sod):,} per tgl kirim (SOCC); per distributor {len(sodd):,}, baris SO tanpa distributor yang cocok: {so_nodistr:,}")
 
     # KPI 2 kontrak (Lampiran 12): SPJ tepat waktu = Tgl SPJ - Tgl Kirim SO <= 1 hari (as the Monitoring sheet); SPJ whose SO
     # is not in the SO store are counted apart (not in the KPI)
@@ -545,6 +554,8 @@ def build(cfg):
         "hours": [[day_idx[k[0]], k[1], INCOTERMS.index(k[2]), k[3], round(v[0], 2), v[1], k[4]] for k, v in hours.items() if k[0] in day_idx],   # FRC targets per distributor, same layout as targets (distributor achievement only)
         "so": [[k[0], k[1], k[2], k[3], round(v, 2)] for k, v in so.items() if v],
         "sod": [[k[0], k[1], k[2], k[3], round(v, 2), k[4]] for k, v in sod.items() if v],
+        # SO FRC per distributor by delivery day: [date, prov, dist, distributor, ton, kem]
+        "sodd": [[k[0], k[1], k[2], k[3], round(v, 2), k[4]] for k, v in sodd.items() if v],
         "prog": {"date": "", "time": "", "fields": [], "rows": []},
         "soh": [],
         "quality": {"checks": sorted(check.items()), "toko": [[k[0], k[1], v[0], v[1]] for k, v in sorted(toko_q.items())]},
