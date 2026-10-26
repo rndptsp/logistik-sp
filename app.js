@@ -676,7 +676,7 @@ const C = {
   pct: {h:'% Ach.', num:true, cls:'pc', kind:'p', slot:4, val: r => r.pct, html: r => '<span title="' + esc(reviewText(r.pct)) + '">' + pctTxt(r.pct) + '</span>', style: r => 'color:' + tierColor(r.pct)},
   gap: {h:'Gap (Ton)', num:true, kind:'v', vo:3, slot:3, val: r => r.hasTgt ? r.gap : null, html: r => r.hasTgt ? '<span style="color:' + (r.gap < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(r.gap) + '</span>' : '–'},
   so: {h:'SO (Ton)', num:true, kind:'v', vo:4, slot:5, val: r => r.so || null, html: r => r.so ? fmt(r.so) : '–'},
-  of: {h:'% OF', num:true, kind:'p', slot:7, val: r => r.of, html: r => pctTxt(r.of)},   // neutral: SO is a whole month, realisasi is MTD
+  of: {h:'% OF', num:true, cls:'pc', kind:'p', slot:7, val: r => r.of, html: r => pctTxt(r.of), style: r => 'color:' + tierColor(r.of)},   // same colour tiers as % Ach.
   trips: {h:'Trip', num:true, val: r => r.trips, html: r => fmt(r.trips)},
   dwell: {h:'SLA (jam)', num:true, val: r => r.dwell, html: r => r.dwell == null ? '–' : '<span style="color:' + slaColor(r.dwell) + '">' + fmt1(r.dwell) + '</span>'},
   note: {h:'Catatan', cls:'note-c', val: r => reviewText(r.pct), sortVal: r => r.pct}
@@ -1071,7 +1071,7 @@ function kpiChips(t){
     heroChip('Target ' + tgtLbl() + ' MTD', t.hasTgt ? fmt(t.tgt) + ' <small>t</small>' : '–', t.hasTgt ? 'bulan penuh ' + fmt(t.tgtFull) + ' t' : 'tidak ada target'),
     heroChip(t.gap < 0 ? 'Sisa ke target' : 'Lebih dari target', t.hasTgt ? fmt(Math.abs(t.gap)) + ' <small>t</small>' : '–', t.hasTgt ? (t.gap < 0 ? 'belum terkirim' : 'di atas target') : '', t.hasTgt ? (t.gap < 0 ? '#FF6B74' : '#5FD08F') : null),
     heroChip('% Ach.', pctTxt(t.pct), incName(), heroTier(t.pct)),
-    heroChip('% OF', t.so ? pctTxt(t.of) : '–', t.so ? 'SO ' + fmt(t.so) + ' t' : 'SO tidak tersedia')];
+    heroChip('% OF', t.so ? '<span style="color:' + tierColor(t.of) + '">' + pctTxt(t.of) + '</span>' : '–', t.so ? 'SO ' + fmt(t.so) + ' t' : 'SO tidak tersedia')];
 }
 const heroTier = p => p == null ? '#C9D3D9' : p >= 100 ? '#5FD08F' : p >= 85 ? '#E8B04A' : '#FF6B74';
 const heroChip = (l, v, sub, color) => '<div class="mh-chip"><div class="l">' + l + '</div><div class="v"' + (color ? ' style="color:' + color + '"' : '') + '>' + v + '</div>' + (sub ? '<div class="s">' + sub + '</div>' : '') + '</div>';
@@ -1380,7 +1380,7 @@ function treeHTML(nodes, levels, opt){
       (hasT ? '<td class="num">' + (t && t.hasTgt && t.tgtFull != null ? fmt(t.tgtFull) : '–') + '</td>' : '') + '<td class="num"><b>' + fmt(n.vol) + '</b></td>' +
       (hasT ? (t && t.hasTgt ? (g => '<td class="num ga">' + fmt(t.tgt) + '</td><td class="num ga"><span style="color:' + (g < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(g) + '</span></td><td class="num pc ga" style="color:' + tierColor(t.pct) + '">' + pctTxt(t.pct) + '</td>')(t.gap != null ? t.gap : (n.az != null ? n.az : n.vol) - t.tgt)
         : '<td class="num ga">–</td><td class="num ga">–</td><td class="num ga">–</td>') : '') +
-      (hasT && soCols ? (t && t.so ? (g => '<td class="num gb">' + fmt(t.so) + '</td><td class="num gb"><span style="color:' + (g < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(g) + '</span></td><td class="num pc gb">' + pctTxt(t.of) + '</td>')((t.frc0 != null ? t.frc0 : n.vol) - t.so)
+      (hasT && soCols ? (t && t.so ? (g => '<td class="num gb">' + fmt(t.so) + '</td><td class="num gb"><span style="color:' + (g < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(g) + '</span></td><td class="num pc gb" style="color:' + tierColor(t.of) + '">' + pctTxt(t.of) + '</td>')((t.frc0 != null ? t.frc0 : n.vol) - t.so)
         : '<td class="num gb">–</td><td class="num gb">–</td><td class="num gb">–</td>') : '') +
       (tag ? '<td class="num lmc">' + (pvv ? fmt(pvv) : '–') + '</td><td class="num lmc">' + dCell(n.vol, pvv, '', false, false) + '</td><td class="num lmc">' + (pvv > 0 ? vsTot(n.vol, pvv) : n.vol > 0 ? 'baru' : '–') + '</td>' : '') +
       '<td class="num">' + fmt(n.trips) + '</td>' +
@@ -1645,7 +1645,7 @@ function pageHome(){
       kpi('trend', 'var(--black)', 'Trip truk', fmt(tTrips), {href:'#/armada', hint: incTxt + ' · ' + esc(m.label)}) +
       kpi('truck', 'var(--black)', 'Truk aktif', fmt(tTrucks), {href:'#/armada', hint: fmt1(tTrips / Math.max(1, tTrucks)) + ' trip / truk'}) +
       kpi('clock', 'var(--amber)', 'Rata-rata SLA', t.dwell == null ? '–' : fmt1(t.dwell) + ' <small>jam</small>', {href:'#/armada', hint:'masuk → keluar pabrik'}) +
-      kpi('check', 'var(--green)', 'Realisasi / SO', pctTxt(t.of), {href:'#/ekspeditur', hint: t.so ? 'SO ' + fmt(t.so) + ' t' + ' (bulan penuh yang tercakup)' : 'SO tidak tersedia'}) +
+      kpi('check', tierColor(t.of), '% OF', pctTxt(t.of), {href:'#/ekspeditur', hint: t.so ? 'SO ' + fmt(t.so) + ' t' + ' (bulan penuh yang tercakup)' : 'SO tidak tersedia'}) +
     '</div>' +
     '</div>', 'home');
 }
