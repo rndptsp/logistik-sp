@@ -827,3 +827,16 @@ table.tree tr.lv2 td.lmc,table.tree tr.lv3 td.lmc{background:#E6EEF5}
 .tbl th.lmc{background:#E6EEF5}
 .tbl td.lmc{background:#F1F6FA}
 .tbl tr.total td.lmc{background:#E6EEF5}
+/* column groups (Rendy): equal width per group, headers wrap instead of widening the column; targets tinted */
+.tbl th.cv,.tbl th.cp{white-space:normal;line-height:1.25;vertical-align:bottom}
+.tbl th.cv,.tbl td.cv{width:88px;min-width:88px;max-width:88px;box-sizing:border-box}
+.tbl th.cp,.tbl td.cp{width:68px;min-width:68px;max-width:68px;box-sizing:border-box}
+.tbl td.cv,.tbl td.cp{white-space:nowrap}
+.tbl th.ct{background:#F3EBDA}
+.tbl td.ct{background:#FBF7EF}
+table.tree tr.lv1 td.ct{background:#F8F2E6}
+table.tree tr.lv2 td.ct,table.tree tr.lv3 td.ct{background:#F3EBDA}
+.cap-tbl .tbl th.cv,.cap-tbl .tbl td.cv{width:66px;min-width:66px;max-width:66px}
+.cap-tbl .tbl th.cp,.cap-tbl .tbl td.cp{width:52px;min-width:52px;max-width:52px}
+.tbl th.cv,.tbl th.cp,.tbl td.cv,.tbl td.cp{padding-left:8px;padding-right:10px}
+.tbl thead th{vertical-align:bottom}

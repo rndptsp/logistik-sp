@@ -624,12 +624,16 @@ function tableInner(id){
   // frozen columns: the first one, plus the next when the first is only a rank number (#)
   const nfz = /\brank\b/.test(T.cols[0] && T.cols[0].cls || '') && T.cols.length > 2 ? 2 : 1;
   const fz = i => i < nfz ? ' fz fz' + i + (i === nfz - 1 ? ' fzl' : '') : '';
-  const head = '<tr>' + T.cols.map((c, i) => '<th class="' + (c.num ? 'num' : '') + (/\blmc\b/.test(c.cls || '') ? ' lmc' : '') + fz(i) + '" data-sort="' + id + ':' + i + '">' + c.h + (T.sort === i ? '<span class="arr">' + (T.dir > 0 ? '▲' : '▼') + '</span>' : '') + '</th>').join('') + '</tr>';
+  // width / colour groups: C.* kinds, otherwise read from the header (".. (t)" = volume, "% .." / "vs .." = percent, Target/Estimasi = target)
+  const kc = c => { if(c.kind) return (c.kind === 'v' || c.kind === 'lmv' ? ' cv' : c.kind === 'p' || c.kind === 'lmp' ? ' cp' : '') + (c.kind === 'v' && c.vo <= 1 ? ' ct' : '');
+    if(!c.num) return ''; const h = String(c.h || '').replace(/<[^>]*>/g, '');
+    return /\(t\)\s*$/.test(h) ? ' cv' + (/^(Target|Estimasi)/i.test(h) ? ' ct' : '') : /^(%|vs |Real ?\/|OF )/i.test(h) || /%\s*$/.test(h) ? ' cp' : ''; };
+  const head = '<tr>' + T.cols.map((c, i) => '<th class="' + (c.num ? 'num' : '') + (/\blmc\b/.test(c.cls || '') ? ' lmc' : '') + kc(c) + fz(i) + '" data-sort="' + id + ':' + i + '">' + c.h + (T.sort === i ? '<span class="arr">' + (T.dir > 0 ? '▲' : '▼') + '</span>' : '') + '</th>').join('') + '</tr>';
   const body = rows.slice(0, lim).map((r, ri) => {
     const href = T.opt.go ? T.opt.go(r) : null;
-    return '<tr' + (href ? ' class="go" data-href="' + href + '"' : '') + '>' + T.cols.map((c, i) => '<td class="' + (c.cls || '') + (c.num ? ' num' : '') + fz(i) + '"' + (c.style ? ' style="' + c.style(r) + '"' : '') + '>' + (c.html ? c.html(r, ri) : esc(c.val(r))) + '</td>').join('') + '</tr>';
+    return '<tr' + (href ? ' class="go" data-href="' + href + '"' : '') + '>' + T.cols.map((c, i) => '<td class="' + (c.cls || '') + (c.num ? ' num' : '') + kc(c) + fz(i) + '"' + (c.style ? ' style="' + c.style(r) + '"' : '') + '>' + (c.html ? c.html(r, ri) : esc(c.val(r))) + '</td>').join('') + '</tr>';
   }).join('');
-  const tot = T.opt.total ? '<tr class="total">' + T.cols.map((c, i) => '<td class="' + (c.num ? 'num' : '') + fz(i) + '">' + (c.total != null ? c.total : c.cls === 'name' ? 'TOTAL' : '') + '</td>').join('') + '</tr>' : '';
+  const tot = T.opt.total ? '<tr class="total">' + T.cols.map((c, i) => '<td class="' + (c.num ? 'num' : '') + kc(c) + fz(i) + '">' + (c.total != null ? c.total : c.cls === 'name' ? 'TOTAL' : '') + '</td>').join('') + '</tr>' : '';
   const more = rows.length > lim ? '<tr><td colspan="' + T.cols.length + '" style="color:var(--sub)">… ' + (rows.length - lim) + ' baris lainnya tidak ditampilkan</td></tr>' : '';
   return '<table class="tbl"><thead>' + head + '</thead><tbody>' + body + tot + more + '</tbody></table>';
 }
@@ -1338,9 +1342,9 @@ function treeHTML(nodes, levels, opt){
   let html = '<div class="tree-tools"><span>' + levels.map(l => LV_LBL[l]).join(' &rsaquo; ') + '</span><span><a data-tree-all="' + id + ':1">Buka semua</a> · <a data-tree-all="' + id + ':0">Tutup semua</a></span></div>' +
     '<div class="tbl-wrap' + (nodes.length > 15 ? ' tall' : '') + '"><table class="tbl tree" id="' + id + '"><thead><tr><th class="fz fz0 fzl">Tujuan</th>' +
       // volumes first, then the % columns (Rendy); comparison-period columns shaded
-      (hasT ? '<th class="num">Target FM (t)</th><th class="num">Target MTD (t)</th>' : '') + '<th class="num">Realisasi (t)</th>' + (hasT && soCols ? '<th class="num">SO (t)</th>' : '') +
-      (tag ? '<th class="num lmc">' + tag + ' (t)</th><th class="num lmc">Gap vs ' + tag + ' (t)</th>' : '') + '<th class="num">Trip</th>' +
-      (hasT ? '<th class="num">% Ach.</th>' + (soCols ? '<th class="num">% OF</th>' : '') : '') + (tag ? '<th class="num lmc">vs ' + tag + '</th>' : '') + '<th></th></tr></thead><tbody>';
+      (hasT ? '<th class="num cv ct">Target FM (t)</th><th class="num cv ct">Target MTD (t)</th>' : '') + '<th class="num cv">Realisasi (t)</th>' + (hasT && soCols ? '<th class="num cv">SO (t)</th>' : '') +
+      (tag ? '<th class="num lmc cv">' + tag + ' (t)</th><th class="num lmc cv">Gap vs ' + tag + ' (t)</th>' : '') + '<th class="num">Trip</th>' +
+      (hasT ? '<th class="num cp">% Ach.</th>' + (soCols ? '<th class="num cp">% OF</th>' : '') : '') + (tag ? '<th class="num lmc cp">vs ' + tag + '</th>' : '') + '<th></th></tr></thead><tbody>';
   const walk = (list, depth, parent, kp) => list.forEach((n, i) => {
     const kpath = (kp || '') + '/' + n.key;
     const path = parent ? parent + '-' + i : String(i), kids = n.children && n.children.length;
@@ -1349,7 +1353,7 @@ function treeHTML(nodes, levels, opt){
     const lastT = n.last >= 0 ? 'Kirim terakhir ' + dayLabel(B.days[n.last]) : '', pvv = pv.get(kpath) || 0;
     html += '<tr class="lv' + depth + (depth ? ' tr-hide' : '') + (kids ? ' has-kids' : '') + '" data-path="' + path + '" data-parent="' + (parent || '') + '" title="' + esc(lastT) + '">' +
       '<td class="name fz fz0 fzl" style="--d:' + depth + '"><span class="caret-t">' + (kids ? '▸' : '') + '</span><span class="t-lbl">' + nodeLabel(n) + '</span>' + (kids ? '<span class="t-cnt">' + n.children.length + ' ' + LV_LBL[levels[depth + 1]].toLowerCase() + '</span>' : n.last >= 0 ? '<span class="t-cnt" title="' + esc(lastT) + '">kirim ' + shortDate(B.days[n.last]) + '</span>' : '') + '</td>' +
-      (hasT ? (t && t.hasTgt ? '<td class="num">' + (t.tgtFull != null ? fmt(t.tgtFull) : '–') + '</td><td class="num">' + fmt(t.tgt) + '</td>' : '<td class="num">–</td><td class="num">–</td>') : '') +
+      (hasT ? (t && t.hasTgt ? '<td class="num ct">' + (t.tgtFull != null ? fmt(t.tgtFull) : '–') + '</td><td class="num ct">' + fmt(t.tgt) + '</td>' : '<td class="num ct">–</td><td class="num ct">–</td>') : '') +
       '<td class="num"><b>' + fmt(n.vol) + '</b></td>' + (hasT && soCols ? '<td class="num">' + (t && t.so ? fmt(t.so) : '–') + '</td>' : '') +
       (tag ? '<td class="num lmc">' + (pvv ? fmt(pvv) : '–') + '</td><td class="num lmc">' + dCell(n.vol, pvv, '', false, false) + '</td>' : '') +
       '<td class="num">' + fmt(n.trips) + '</td>' +
