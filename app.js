@@ -72,7 +72,7 @@ function rateRow(label, p, href, sub, of){
     (of !== undefined ? '<div class="rso"><small>SO</small> ' + (of == null ? '–' : pctTxt(of)) + '</div>' : '') + '</' + tag + '>';
 }
 /** Tooltip line for Real/SO, or '' when there is no SO. */
-const soTip = o => o.so > 0 ? '|SO ' + fmt(o.so) + ' t · Real/SO ' + pctTxt(o.of) : (soOn() ? '|SO tidak tersedia' : '');
+const soTip = o => o.so > 0 ? '|SO ' + fmt(o.so) + ' t · % OF ' + pctTxt(o.of) : (soOn() ? '|SO tidak tersedia' : '');
 
 /* ===================== State ===================== */
 let B = null;            // decrypted bundle
@@ -563,7 +563,7 @@ function modalBody(){
     const head = '<div class="prog-row" style="margin-bottom:18px">' +
       '<div class="prog-cell"><div class="pl">Realisasi</div><div class="pv">' + fmt(tot.vol) + ' t</div><div class="pd">' + fmt(tot.trips) + ' trip</div></div>' +
       '<div class="prog-cell"><div class="pl">Target ' + tgtLbl() + '</div><div class="pv">' + (tot.hasTgt ? fmt(tot.tgt) + ' t' : '–') + '</div><div class="pd">gap ' + (tot.hasTgt ? signed(tot.gap) + ' t' : '–') + '</div></div>' +
-      '<div class="prog-cell"><div class="pl">Capaian</div><div class="pv" style="color:' + tierColor(tot.pct) + '">' + pctTxt(tot.pct) + '</div><div class="pd">' + (T.incFix || incName()) + ' vs ' + tgtLbl() + '</div></div>' +
+      '<div class="prog-cell"><div class="pl">% Ach.</div><div class="pv" style="color:' + tierColor(tot.pct) + '">' + pctTxt(tot.pct) + '</div><div class="pd">' + (T.incFix || incName()) + ' vs ' + tgtLbl() + '</div></div>' +
       '<div class="prog-cell"><div class="pl">vs ' + esc(PREV_LBL[T.gran]) + '</div><div class="pv" style="color:' + (chg == null ? 'inherit' : chg >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (chg == null ? '–' : (chg >= 0 ? '+' : '') + Math.round(chg) + '%') + '</div><div class="pd">' + fmt(tp.vol) + ' t (' + esc(pb.from === pb.to ? dayLabel(pb.from) : dayLabel(pb.from) + ' – ' + dayLabel(pb.to)) + ')</div></div>' +
       cmpCell + '</div>';
     const tabs = '<div class="gran-chips" style="margin-bottom:14px">' + dims.map(k => '<span class="' + (k === dim ? 'on' : '') + '" data-mdim="' + k + '">Per ' + DIM_LBL[k].toLowerCase() + '</span>').join('') + '</div>';
@@ -637,7 +637,7 @@ function tableInner(id){
 /* cmp = {group, m, sc}: adds "vs bulan lalu" = realisasi vs the same days of the previous month (prevPer), same incoterm context */
 function capTable(list, h, name, href, so, cmp){
   if(!list.length) return '';
-  const cols = [{h: h, cls:'name', val: name}, C.vol('Real (t)'), Object.assign({}, C.fm, {h:'FM (t)'}), Object.assign({}, C.tgt, {h:'MTD (t)'}), C.pct].concat(so ? [C.so, Object.assign({}, C.of, {h:'R/SO'})] : []);
+  const cols = [{h: h, cls:'name', val: name}, C.vol('Real (t)'), Object.assign({}, C.fm, {h:'FM (t)'}), Object.assign({}, C.tgt, {h:'MTD (t)'}), C.pct].concat(so ? [C.so, Object.assign({}, C.of, {h:'% OF'})] : []);
   if(cmp){   // last period volume, gap in ton and change in % (Rendy)
     const pv = prevVols(cmp.group, cmp.m, cmp.sc), tag = cmpTag(cmp.m), p = r => pv.get(r.key) || 0;
     cols.push({h: tag + ' (t)', num: true, cls: 'lmc', kind: 'lmv', val: p, html: r => p(r) ? fmt(p(r)) : '–'},
@@ -655,10 +655,10 @@ const C = {
   vol: (h) => ({h: h || 'Realisasi (t)', num:true, kind:'v', vo:2, val: r => r.vol, html: r => '<b>' + fmt(r.vol) + '</b>'}),
   fm: {h:'Target FM (t)', num:true, kind:'v', vo:0, val: r => r.hasTgt ? r.tgtFull : null, html: r => r.hasTgt ? fmt(r.tgtFull) : '–'},   // full month (whole period)
   tgt: {h:'Target MTD (t)', num:true, kind:'v', vo:1, val: r => r.hasTgt ? r.tgt : null, html: r => r.hasTgt ? fmt(r.tgt) : '–'},
-  pct: {h:'Capaian', num:true, cls:'pc', kind:'p', val: r => r.pct, html: r => pctTxt(r.pct), style: r => 'color:' + tierColor(r.pct)},
+  pct: {h:'% Ach.', num:true, cls:'pc', kind:'p', val: r => r.pct, html: r => pctTxt(r.pct), style: r => 'color:' + tierColor(r.pct)},
   gap: {h:'Gap (t)', num:true, kind:'v', vo:3, val: r => r.hasTgt ? r.gap : null, html: r => r.hasTgt ? '<span style="color:' + (r.gap < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(r.gap) + '</span>' : '–'},
   so: {h:'SO (t)', num:true, kind:'v', vo:4, val: r => r.so || null, html: r => r.so ? fmt(r.so) : '–'},
-  of: {h:'Real/SO', num:true, kind:'p', val: r => r.of, html: r => pctTxt(r.of)},   // neutral: SO is a whole month, realisasi is MTD
+  of: {h:'% OF', num:true, kind:'p', val: r => r.of, html: r => pctTxt(r.of)},   // neutral: SO is a whole month, realisasi is MTD
   trips: {h:'Trip', num:true, val: r => r.trips, html: r => fmt(r.trips)},
   dwell: {h:'Waktu muat (jam)', num:true, val: r => r.dwell, html: r => r.dwell == null ? '–' : '<span style="color:' + slaColor(r.dwell) + '">' + fmt1(r.dwell) + '</span>'},
   note: {h:'Catatan', cls:'note-c', val: r => reviewText(r.pct), sortVal: r => r.pct}
@@ -898,7 +898,7 @@ function mapHTML(provRows, opt){
       return;
     }
     const fill = o.pct != null ? 'url(#g' + tierName(o.pct) + ')' : 'url(#gInk)';
-    const tip = tc(id) + '|Realisasi ' + fmt(o.vol) + ' t' + (o.hasTgt ? ' · Target MTD ' + fmt(o.tgt) + ' t' : '') + '|' + (o.pct != null ? 'Capaian ' + pctTxt(o.pct) + ' · gap ' + signed(o.gap) + ' t' : 'Tanpa target ' + tgtLbl() + '') + soTip(o);
+    const tip = tc(id) + '|Realisasi ' + fmt(o.vol) + ' t' + (o.hasTgt ? ' · Target MTD ' + fmt(o.tgt) + ' t' : '') + '|' + (o.pct != null ? '% Ach. ' + pctTxt(o.pct) + ' · gap ' + signed(o.gap) + ' t' : 'Tanpa target ' + tgtLbl() + '') + soTip(o);
     shapes += '<path class="map-region live' + (worst && o === worst ? ' is-attn' : '') + '" d="' + g.d + '" fill="' + fill + '" stroke="' + (hero ? '#0F1A21' : '#fff') + '" stroke-width="1.2" filter="url(#softShadow)" data-href="#/provinsi/' + enc(B.dims.prov[o.key]) + '" data-tip="' + esc(tip) + '"/>';
     const out = L[3] === 'out' ? ' out' : '';   // label placed in the sea next to a narrow province
     labels += '<text x="' + lx + '" y="' + (ly - 4) + '" class="map-lbl' + out + '">' + esc(L[0]) + '</text>' +
@@ -911,7 +911,7 @@ function mapHTML(provRows, opt){
       '<text x="' + (p[3] === 'left' ? +x - 8 : +x + 8) + '" y="' + (+y + 3.5) + '" class="pin-lbl" text-anchor="' + (p[3] === 'left' ? 'end' : 'start') + '">' + esc(p[0]) + '</text></g>';
   }).join('');
   const sorted = provRows.slice().sort((a, b) => (b.pct == null ? -1 : b.pct) - (a.pct == null ? -1 : a.pct) || b.vol - a.vol);
-  const legend = '<div class="map-row map-head"><span class="dot"></span><span class="nm"></span><span class="tn">Realisasi</span><span class="pc">vs target</span><span class="so">Real/SO</span></div>' + sorted.map((o, i) => {
+  const legend = '<div class="map-row map-head"><span class="dot"></span><span class="nm"></span><span class="tn">Realisasi</span><span class="pc">vs target</span><span class="so">% OF</span></div>' + sorted.map((o, i) => {
     const name = B.dims.prov[o.key];
     return '<a class="map-row" href="#/provinsi/' + enc(name) + '"><span class="dot" style="background:' + tierColor(o.pct) + '"></span><span class="nm">#' + (i + 1) + ' ' + esc(tc(name)) + '</span><span class="tn">' + fmt(o.vol) + ' t</span><span class="pc" style="color:' + tierColor(o.pct) + '">' + pctTxt(o.pct) + '</span><span class="so">' + (o.of == null ? '–' : pctTxt(o.of)) + '</span></a>';
   }).join('') + '<div class="map-row muted"><span class="dot" style="background:#D9DEDF"></span><span class="nm">Aceh, Kep. Riau, Babel, Lampung</span><span class="pc">—</span><span class="so"></span></div>' +
@@ -1002,7 +1002,7 @@ function distMapHTML(pname, m, opt){
       return;
     }
     const fill = a.pct != null ? 'url(#d' + tierName(a.pct) + ')' : 'url(#dInk)';
-    const tip = g.n + '|Realisasi ' + fmt(a.vol) + ' t · ' + fmt(a.trips) + ' trip' + (a.hasTgt ? ' · Target MTD ' + fmt(a.tgt) + ' t' : '') + '|' + (a.pct != null ? 'Capaian ' + pctTxt(a.pct) + ' · gap ' + signed(a.gap) + ' t' : 'Tanpa target ' + tgtLbl() + '') + soTip(a);
+    const tip = g.n + '|Realisasi ' + fmt(a.vol) + ' t · ' + fmt(a.trips) + ' trip' + (a.hasTgt ? ' · Target MTD ' + fmt(a.tgt) + ' t' : '') + '|' + (a.pct != null ? '% Ach. ' + pctTxt(a.pct) + ' · gap ' + signed(a.gap) + ' t' : 'Tanpa target ' + tgtLbl() + '') + soTip(a);
     const href = '#/distrik/' + enc(B.dims.dist[a.keys[0]]);
     const path = '<path class="map-region live' + (sel ? ' is-sel' : '') + '" d="' + g.d + '" fill="' + fill + '" stroke="' + (sel ? '#fff' : '#0F1A21') + '" stroke-width="' + (sel ? 3 : 1.2) + '" vector-effect="non-scaling-stroke" data-href="' + href + '" data-tip="' + esc(tip) + '"/>';
     if(sel) selShape = path; else shapes += path;
@@ -1035,7 +1035,7 @@ function distMapHTML(pname, m, opt){
     (missing.length ? '<div class="mh-miss">Tidak ada di peta: ' + missing.map(o => esc(tc(B.dims.dist[o.key]))).join(', ') + '</div>' : '');
   return heroPanel({photo: pname, eyebrow: 'Peta capaian per distrik' + (opt.sel != null ? ' · <a href="#/provinsi/' + enc(pname) + '">' + esc(tc(pname)) + ' &rsaquo;</a>' : ''), head: sentP,
     chips: kpiChips(t).concat(heroChip('Distrik terkirim', list.length + ' <small>/ ' + G.d.length + '</small>', 'distrik di peta')),
-    listHead: 'Rank distrik', listCols: ['Realisasi', 'Target', 'Real/SO'], rows: rankRows,
+    listHead: 'Rank distrik', listCols: ['Realisasi', 'Target', '% OF'], rows: rankRows,
     key: '<span><i style="background:#2E9E5C"></i>&ge;100%</span><span><i style="background:#C9952E"></i>85–99%</span><span><i style="background:#FF6B74"></i>&lt;85%</span><span><i style="background:#34424B"></i>tanpa kiriman</span><span><i class="pin"></i>plant</span>',
     map: svg, hint: 'Arahkan kursor untuk angka · klik distrik untuk rincian'});
 }
@@ -1052,8 +1052,8 @@ function kpiChips(t){
   return [heroChip('Realisasi', fmt(t.vol) + ' <small>t</small>', fmt(t.trips) + ' trip' + exclTxt(t)),
     heroChip('Target ' + tgtLbl() + ' MTD', t.hasTgt ? fmt(t.tgt) + ' <small>t</small>' : '–', t.hasTgt ? 'bulan penuh ' + fmt(t.tgtFull) + ' t' : 'tidak ada target'),
     heroChip(t.gap < 0 ? 'Sisa ke target' : 'Lebih dari target', t.hasTgt ? fmt(Math.abs(t.gap)) + ' <small>t</small>' : '–', t.hasTgt ? (t.gap < 0 ? 'belum terkirim' : 'di atas target') : '', t.hasTgt ? (t.gap < 0 ? '#FF6B74' : '#5FD08F') : null),
-    heroChip('Capaian', pctTxt(t.pct), incName(), heroTier(t.pct)),
-    heroChip('Real / SO', t.so ? pctTxt(t.of) : '–', t.so ? 'SO ' + fmt(t.so) + ' t' : 'SO tidak tersedia')];
+    heroChip('% Ach.', pctTxt(t.pct), incName(), heroTier(t.pct)),
+    heroChip('% OF', t.so ? pctTxt(t.of) : '–', t.so ? 'SO ' + fmt(t.so) + ' t' : 'SO tidak tersedia')];
 }
 const heroTier = p => p == null ? '#C9D3D9' : p >= 100 ? '#5FD08F' : p >= 85 ? '#E8B04A' : '#FF6B74';
 const heroChip = (l, v, sub, color) => '<div class="mh-chip"><div class="l">' + l + '</div><div class="v"' + (color ? ' style="color:' + color + '"' : '') + '>' + v + '</div>' + (sub ? '<div class="s">' + sub + '</div>' : '') + '</div>';
@@ -1269,7 +1269,7 @@ function kecMapSection(name, pname, m, di){
   const note = list.length ? '<div class="mh-note">' + nEx + ' toko/gudang berkoordinat · ' + nAp + ' di pusat kecamatan (perkiraan)' + (nNo ? ' · ' + nNo + ' belum terpetakan' : '') + '. Koordinat bisa diupload di halaman admin, slot <i>Lokasi gudang / toko</i>.</div>' : '';
   return heroPanel({photo: pname, cls: 'kmap', eyebrow: 'Peta kecamatan &amp; toko/gudang tujuan · <a href="#/provinsi/' + enc(pname) + '">peta ' + esc(tc(pname)) + ' &rsaquo;</a>', head,
       chips: kpiChips(total(m, {dist: di})).concat(heroChip('Toko / gudang', fmt(list.length) + ' <small>di ' + byKec.size + '/' + K.d.length + ' kec.</small>', (list.length ? pctTxt(pctOf(nEx + nAp, list.length)) : '–') + ' terpetakan · ' + nEx + ' berkoordinat')),
-      listHead: modeBar, listCols: mode === 'toko' ? ['Realisasi', 'Porsi'] : mode === 'eksp' ? ['Realisasi', 'Capaian', 'Real/SO'] : ['Realisasi', 'Capaian', ''],
+      listHead: modeBar, listCols: mode === 'toko' ? ['Realisasi', 'Porsi'] : mode === 'eksp' ? ['Realisasi', '% Ach.', '% OF'] : ['Realisasi', '% Ach.', ''],
       rows: mode === 'toko' ? rows : gRows || '<div class="mh-note">Tidak ada ' + (mode === 'eksp' ? 'ekspeditur FRC' : 'distributor') + ' untuk filter ini.</div>',
       key: (mode === 'toko' ? '<span><i style="background:var(--red);border-radius:50%"></i>koordinat gudang</span><span><i style="background:#F08A90;border-radius:50%"></i>perkiraan</span>' : gKey + (nAp ? '<span>titik pudar = lokasi perkiraan</span>' : '')) +
         '<span><i style="background:linear-gradient(90deg,#265C3E,#5FD08F)"></i>tonase kecamatan (makin terang makin banyak)</span>',
@@ -1340,7 +1340,7 @@ function treeHTML(nodes, levels, opt){
       // volumes first, then the % columns (Rendy); comparison-period columns shaded
       (hasT ? '<th class="num">Target FM (t)</th><th class="num">Target MTD (t)</th>' : '') + '<th class="num">Realisasi (t)</th>' + (hasT && soCols ? '<th class="num">SO (t)</th>' : '') +
       (tag ? '<th class="num lmc">' + tag + ' (t)</th><th class="num lmc">Gap vs ' + tag + ' (t)</th>' : '') + '<th class="num">Trip</th>' +
-      (hasT ? '<th class="num">Capaian</th>' + (soCols ? '<th class="num">Real/SO</th>' : '') : '') + (tag ? '<th class="num lmc">vs ' + tag + '</th>' : '') + '<th></th></tr></thead><tbody>';
+      (hasT ? '<th class="num">% Ach.</th>' + (soCols ? '<th class="num">% OF</th>' : '') : '') + (tag ? '<th class="num lmc">vs ' + tag + '</th>' : '') + '<th></th></tr></thead><tbody>';
   const walk = (list, depth, parent, kp) => list.forEach((n, i) => {
     const kpath = (kp || '') + '/' + n.key;
     const path = parent ? parent + '-' + i : String(i), kids = n.children && n.children.length;
@@ -1420,14 +1420,14 @@ function distrTableOne(m, sc, limit){
     {h:'FRC KONTAINER/KAPAL (t)', num:true, val: o => o.fc, html: o => o.fc ? fmt(o.fc) : '–'}] : [], [{h:'Ambil sendiri (t)', num:true, val: o => o.nf, html: o => o.nf ? fmt(o.nf) : '–'},
     {h:'Total (t)', num:true, val: o => o.vol, html: o => '<b>' + fmt(o.vol) + '</b>'}, {h:'Share', num:true, val: o => o.vol / (tot || 1), html: o => pctTxt(pctOf(o.vol, tot))}].concat(tg.size ? [
     {h:'Target distributor ' + tgtLbl() + ' (t)', num:true, val: o => o.tgt || 0, html: o => o.tgt ? fmt(o.tgt) : '–'},
-    {h:'Capaian', num:true, val: o => o.pct == null ? -1 : o.pct, html: o => o.pct == null ? '–' : '<b style="color:' + tierColor(o.pct) + '">' + pctTxt(o.pct) + '</b>'}] : [], [
+    {h:'% Ach.', num:true, val: o => o.pct == null ? -1 : o.pct, html: o => o.pct == null ? '–' : '<b style="color:' + tierColor(o.pct) + '">' + pctTxt(o.pct) + '</b>'}] : [], [
     {h:'Trip', num:true, val: o => o.trips}, {h:'Provinsi', num:true, val: o => o.prov.size}, {h:'Distrik', num:true, val: o => o.dist.size},
     {h:'Toko / gudang', num:true, val: o => o.toko.size}, {h:'Kirim terakhir', num:true, val: o => o.last, html: o => o.last >= 0 ? dayLabel(B.days[o.last]) : '–'}], [vsCol(new Map(distrSummary(shipRows(prevPer(toPer(m)), sc)).map(o => [o.key, o.vol])), m)]));
       const sum = f => list.reduce((a, o) => a + (f(o) || 0), 0), uni = k => { const u = new Set(); list.forEach(o => o[k].forEach(x => u.add(x))); return u.size; };
       const wt = list.filter(o => o.tgt), tTgt = sum(o => o.tgt), tNfz = wt.reduce((a, o) => a + o.nfz, 0);
       const T = {'FRC TRUK (t)': fmt(sum(o => o.frc)), 'FRC KONTAINER/KAPAL (t)': fmt(sum(o => o.fc)), 'Ambil sendiri (t)': fmt(sum(o => o.nf)), 'Total (t)': '<b>' + fmt(tot) + '</b>', 'Share': '100%',
         'Trip': fmt(sum(o => o.trips)), 'Provinsi': fmt(uni('prov')), 'Distrik': fmt(uni('dist')), 'Toko / gudang': fmt(uni('toko')), 'Kirim terakhir': list.some(o => o.last >= 0) ? dayLabel(B.days[Math.max(...list.map(o => o.last))]) : '–'};
-      T['Target distributor ' + tgtLbl() + ' (t)'] = tTgt ? fmt(tTgt) : '–'; T['Capaian'] = tTgt ? '<b style="color:' + tierColor(pctOf(tNfz, tTgt)) + '">' + pctTxt(pctOf(tNfz, tTgt)) + '</b>' : '–';
+      T['Target distributor ' + tgtLbl() + ' (t)'] = tTgt ? fmt(tTgt) : '–'; T['% Ach.'] = tTgt ? '<b style="color:' + tierColor(pctOf(tNfz, tTgt)) + '">' + pctTxt(pctOf(tNfz, tTgt)) + '</b>' : '–';
       cols.forEach(c => { if(T[c.h] != null) c.total = T[c.h]; });
   return {list, rows, tot, unk, html: list.length ? table(cols, list, {go: o => '#/distributor/' + enc(B.dims.distr[o.key]), limit: limit || 400, total: true}) : '<div class="dp-review">Tidak ada pengiriman untuk filter ini.</div>'};
 }
@@ -1455,7 +1455,7 @@ function pageDistr(name){
   const incCols = [{h:'Incoterm', cls:'name', val: o => incLbl(o.n), html: o => esc(incLbl(o.n))},
     {h:'Realisasi (t)', num:true, val: o => o.vol, html: o => fmt(o.vol)},
     {h:'Target ' + tgtLbl() + ' MTD (t)', num:true, val: o => o.tgt, html: o => o.tgt ? fmt(o.tgt) : '–'},
-    {h:'Capaian', num:true, val: o => o.pct == null ? -1 : o.pct, html: o => o.pct == null ? '–' : '<b style="color:' + tierColor(o.pct) + '">' + pctTxt(o.pct) + '</b>'},
+    {h:'% Ach.', num:true, val: o => o.pct == null ? -1 : o.pct, html: o => o.pct == null ? '–' : '<b style="color:' + tierColor(o.pct) + '">' + pctTxt(o.pct) + '</b>'},
     {h:'Gap (t)', num:true, val: o => o.tgt ? o.gap : 0, html: o => o.tgt ? '<span style="color:' + (o.gap < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(o.gap) + '</span>' : '–'},
     {h:'Trip', num:true, val: o => o.trips}];
   if(incRows.length > 1){
@@ -1635,10 +1635,10 @@ function mapHero(provRows, t, head, chg, isLatest){
       '<div class="mh-chips">' +
         chip('Realisasi', fmt(t.vol) + ' <small>t</small>', fmt(t.trips) + ' trip' + exclTxt(t)) +
         chip('Target ' + tgtLbl() + (isLatest ? ' MTD' : ''), t.hasTgt ? fmt(t.tgt) + ' <small>t</small>' : '–', t.hasTgt ? 'gap ' + signed(t.gap) + ' t' : '') +
-        chip('Capaian', pctTxt(t.pct), incName() + ' vs ' + tgtLbl(), t.pct == null ? null : t.pct >= 100 ? '#5FD08F' : t.pct >= 85 ? '#E8B04A' : '#FF6B74') +
+        chip('% Ach.', pctTxt(t.pct), incName() + ' vs ' + tgtLbl(), t.pct == null ? null : t.pct >= 100 ? '#5FD08F' : t.pct >= 85 ? '#E8B04A' : '#FF6B74') +
         chip('vs ' + cmpTag(m), chg == null ? '–' : (chg >= 0 ? '▲ ' : '▼ ') + Math.abs(Math.round(chg)) + '%', 'periode sama', chg == null ? null : chg >= 0 ? '#5FD08F' : '#FF6B74') +
       '</div>' +
-      '<div class="mh-list"><div class="mh-lh"><span>Rank provinsi</span><a href="#/provinsi">Lihat tabel &rsaquo;</a></div><div class="mh-row mh-head"><span></span><span></span><span class="mh-tn">Realisasi</span><span class="mh-pc">Target</span><span class="mh-so">Real/SO</span></div>' + list + '</div>' +
+      '<div class="mh-list"><div class="mh-lh"><span>Rank provinsi</span><a href="#/provinsi">Lihat tabel &rsaquo;</a></div><div class="mh-row mh-head"><span></span><span></span><span class="mh-tn">Realisasi</span><span class="mh-pc">Target</span><span class="mh-so">% OF</span></div>' + list + '</div>' +
       '<div class="mh-key"><span><i style="background:#2E9E5C"></i>&ge;100%</span><span><i style="background:#C9952E"></i>85–99%</span><span><i style="background:#FF6B74"></i>&lt;85%</span><span><i style="background:#34424B"></i>tidak dilayani darat</span><span><i class="pin"></i>plant</span></div>' +
     '</div>' +
     '<div class="mh-map">' + mapHTML(provRows, {hero: true}) + '<div class="mh-hint">Arahkan kursor untuk angka · klik / ketuk provinsi untuk rincian</div></div>' +
@@ -1655,7 +1655,7 @@ function incPerf(m, sc){
     '<div class="ip-v">' + fmt(o.vol) + ' <small>t</small></div>' +
     '<div class="ip-bar"><i style="width:' + (o.pct == null ? 0 : Math.min(100, o.pct)) + '%;background:' + tierColor(o.pct) + '"></i></div>' +
     '<div class="ip-m">' + (o.hasTgt ? '<b style="color:' + tierColor(o.pct) + '">' + pctTxt(o.pct) + '</b> dari target ' + fmt(o.tgt) + ' t · <span style="color:' + (o.gap < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(o.gap) + '</span>' : 'tanpa target ' + tgtLbl()) + '</div>' +
-    '<div class="ip-s">' + fmt(o.trips) + ' trip' + (o.of != null ? ' · Real/SO ' + pctTxt(o.of) : '') + '</div></div>').join('');
+    '<div class="ip-s">' + fmt(o.trips) + ' trip' + (o.of != null ? ' · % OF ' + pctTxt(o.of) : '') + '</div></div>').join('');
   return '<div class="section-head"><div class="section-title">Kinerja per incoterm</div><div class="section-sub">' + esc(incName()) + ' · ' + periodSub() + '</div></div><div class="ip-grid">' + cards + '</div>';
 }
 /* Detail per incoterm (Rendy): one row per active incoterm, per market; FM | MTD | Real, SO, LM and gap vs LM. */
@@ -1742,7 +1742,7 @@ function pageProv(name){
     {k: 'inc', label: 'Incoterm', html: '<div class="tab-note">detail per incoterm · ' + esc(periodSub()) + ' · ' + cmpTag(m) + ' = ' + (p => shortDate(p.from) + ' – ' + shortDate(p.to))(prevPer(m)) + '</div>' + (incTable(m, sc) || '<div class="dp-review">Tidak ada data.</div>')},
     {k: 'distrik', label: 'Distrik', n: dist.filter(o => o.vol > 0).length, html: kemGroups(() => shipRows(m, sc).length ? treeHTML(annotateDistrTargets(buildTree(shipRows(m, sc), ['dist', 'distr', 'toko']), m, {prov: pi}, {}, ['distr']), ['dist', 'distr', 'toko'], {tgt: {dist: summarize('dist', m, sc)}, cmp: {m, sc}}) : '', kemSub(m, sc)) || '<div class="dp-review">Tidak ada pengiriman untuk filter ini.</div>'},
     {k: 'eksp', label: 'Ekspeditur', html:
-      '<div class="dp-panel"><div class="pt">Ekspeditur di provinsi ini<span class="pt-sub">capaian target · Real/SO</span></div>' + (incGroups(() => capTable(ekspRows(m, sc), 'Ekspeditur', o => ekspLbl(o.key), o => ekspHref(o.key), true, {group: 'eksp', m, sc}), ekspSub(m, sc)) || '<div class="empty">Tidak ada data.</div>') + '</div>'
+      '<div class="dp-panel"><div class="pt">Ekspeditur di provinsi ini<span class="pt-sub">% Ach. · % OF</span></div>' + (incGroups(() => capTable(ekspRows(m, sc), 'Ekspeditur', o => ekspLbl(o.key), o => ekspHref(o.key), true, {group: 'eksp', m, sc}), ekspSub(m, sc)) || '<div class="empty">Tidak ada data.</div>') + '</div>'
     },
     {k: 'distr', label: 'Distributor', html: distrTable(m, sc, 60).html}]) +
     '</div>', 'wilayah');
@@ -2051,7 +2051,7 @@ function pageEkspList(){
     (nfOn() ? '<div class="dp-review">' + incName() + ' diambil langsung oleh distributor (tanpa ekspeditur). Ganti filter ke FRC, atau buka <a href="#/distributor" style="color:var(--red);font-weight:700">Distributor</a>.</div>' : '') +
     '<div class="dp-cols even"><div class="dp-panel"><div class="pt">Scorecard keseluruhan</div>' +
       rateRow('Capaian target ' + tgtLbl(), t.pct) + rateRow('Realisasi / SO', t.of) + rateRow('Truk aktif > 1 trip', multi) +
-    '</div><div class="dp-panel"><div class="pt">Capaian per ekspeditur<span class="pt-sub">capaian target · Real/SO</span></div>' + (incGroups(rates) || '<div class="empty">Tidak ada target untuk filter ini.</div>') + '</div></div>' +
+    '</div><div class="dp-panel"><div class="pt">Capaian per ekspeditur<span class="pt-sub">% Ach. · % OF</span></div>' + (incGroups(rates) || '<div class="empty">Tidak ada target untuk filter ini.</div>') + '</div></div>' +
     (incGroups(build, () => { const t = total(m); return fmt(t.vol) + ' t' + (t.hasTgt ? ' · ' + pctTxt(t.pct) + ' dari target ' + fmt(t.tgt) + ' t' : ''); }) || '<div class="dp-review">Tidak ada ekspeditur FRC untuk filter ini.</div>') +
     '</div>', 'ekspeditur');
 }
@@ -2079,10 +2079,10 @@ function pageEksp(code){
       kpi('check', 'var(--green)', 'Realisasi', fmt(me.vol) + ' <small>ton</small>', {hint: fmt(me.trips) + ' trip'}) +
       kpi('target', 'var(--black)', 'Target MTD', me.hasTgt ? fmt(me.tgt) + ' <small>ton</small>' : '–', {hint: me.hasTgt ? 'bulan penuh ' + fmt(me.tgtFull) + ' t' : ''}) +
       kpi('truck', 'var(--black)', 'Truk aktif', fmt(trucks.length), {hint: fmt1(me.trips / Math.max(1, trucks.length)) + ' trip / truk'}) +
-      kpi('clock', 'var(--amber)', 'Rata-rata waktu muat', me.dwell == null ? '–' : fmt1(me.dwell) + ' <small>jam</small>', {hint: me.so ? 'Real/SO ' + pctTxt(me.of) : ''}) +
+      kpi('clock', 'var(--amber)', 'Rata-rata waktu muat', me.dwell == null ? '–' : fmt1(me.dwell) + ' <small>jam</small>', {hint: me.so ? '% OF ' + pctTxt(me.of) : ''}) +
     '</div>' + tabsHTML('eksp', [{k: 'kinerja', label: 'Kinerja & provinsi', html: incPerf(m, sc) +
     '<div class="dp-cols">' + trendPanel(sc, 'mingguan') +
-      '<div class="dp-panel"><div class="pt">Capaian per provinsi<span class="pt-sub">capaian target · Real/SO</span></div>' + (provs.length ? incGroups(() => capTable([...summarize('prov', m, sc).values()].filter(o => o.vol > 0 || o.tgt > 0).sort((a, b) => b.vol - a.vol), 'Provinsi', o => tc(B.dims.prov[o.key]), o => '#/provinsi/' + enc(B.dims.prov[o.key]), true, {group: 'prov', m, sc}), ekspSub(m, sc)) : '<div class="empty">Tidak ada data untuk filter ini.</div>') + '</div>' +
+      '<div class="dp-panel"><div class="pt">Capaian per provinsi<span class="pt-sub">% Ach. · % OF</span></div>' + (provs.length ? incGroups(() => capTable([...summarize('prov', m, sc).values()].filter(o => o.vol > 0 || o.tgt > 0).sort((a, b) => b.vol - a.vol), 'Provinsi', o => tc(B.dims.prov[o.key]), o => '#/provinsi/' + enc(B.dims.prov[o.key]), true, {group: 'prov', m, sc}), ekspSub(m, sc)) : '<div class="empty">Tidak ada data untuk filter ini.</div>') + '</div>' +
     '</div>' +
     '<div class="section-head"><div class="section-title">Target bulan berjalan</div></div>' +
     '<div class="tgt-panel"><div class="tgt-item"><div class="tl">Target bulan</div><div class="tv">' + (me.hasTgt ? fmt(me.tgtFull) : '–') + ' t</div></div><div class="tgt-item"><div class="tl">Target MTD</div><div class="tv">' + (me.hasTgt ? fmt(me.tgt) : '–') + ' t</div></div><div class="tgt-item"><div class="tl">Realisasi</div><div class="tv">' + fmt(me.frc) + ' t</div></div><div class="tgt-item"><div class="tl">Sisa ke target bulan</div><div class="tv ' + (me.tgtFull - me.frc > 0 ? 'bad' : 'good') + '">' + (me.hasTgt ? fmt(Math.max(0, me.tgtFull - me.frc)) : '–') + ' t</div></div></div>'},
@@ -2493,7 +2493,7 @@ function kontrakSection(){
   const pc = (a, b) => b > 0 ? a / b * 100 : null;
   const cols = [{h:'Ekspeditur', cls:'name', val: r => ekspLbl(r.key)}].concat(months.map((m, i) => ({h: monthShort(m) + (m === KM.asM ? ' *' : ''), num:true, val: r => pc(r.per[i].real, r.per[i].est),
       html: r => { const o = r.per[i], p = pc(o.real, o.est); return p == null ? '–' : '<b style="color:' + tierColor(p) + '">' + pctTxt(p) + '</b><small>R/SO ' + pctTxt(pc(o.real, o.so)) + '</small>'; }})),
-    [{h:'OF harian ' + monthShort(mSel), num:true, val: r => pc(r.cur.okDay, r.cur.soDay), html: r => { const p = pc(r.cur.okDay, r.cur.soDay); return p == null ? '–' : '<span style="color:' + tierColor(p) + '">' + pctTxt(p) + '</span>'; }},
+    [{h:'% OF harian ' + monthShort(mSel), num:true, val: r => pc(r.cur.okDay, r.cur.soDay), html: r => { const p = pc(r.cur.okDay, r.cur.soDay); return p == null ? '–' : '<span style="color:' + tierColor(p) + '">' + pctTxt(p) + '</span>'; }},
      {h:'Di luar rute ' + monthShort(mSel), num:true, val: r => r.cur.luar, html: r => r.cur.luar ? fmt(r.cur.luar) + ' t' : '–'}]);
   TRENDS.kontrak = {rows, mSel, KM};
   // shared routes: kuota vs aktual (selected month)
@@ -2516,12 +2516,12 @@ function kontrakSection(){
   sum.forEach(r => { const c = cell(r.key, mSel), q = pmS ? cell(r.key, pmS) : null;
     r.rso = pc(c.real, c.so); r.rsoP = q ? pc(q.real, q.so) : null; r.of = pc(c.okDay, c.soDay); r.ofP = q ? pc(q.okDay, q.soDay) : null; });
   const soCols = [{h:'Ekspeditur', cls:'name', val: r => ekspLbl(r.key)}, {h:'Estimasi (t)', num:true, val: r => r.est, html: r => fmt(r.est)}, {h:'Realisasi (t)', num:true, val: r => r.real, html: r => fmt(r.real)},
-    {h:'Capaian', num:true, val: r => pc(r.real, r.est), html: r => pcC(pc(r.real, r.est))}, {h:'SO kontrak (t)', num:true, val: r => r.so, html: r => fmt(r.so)},
-    {h:'Real / SO', num:true, val: r => pc(r.real, r.so), html: r => { const v = pc(r.real, r.so); return pcC(v, v == null ? '' : '<small>' + (v >= 105 ? 'lebih dari porsi' : v >= 90 ? 'sesuai porsi' : v >= 50 ? 'kurang dari porsi' : 'kritis') + '</small>'); }},
-    {h:'OF harian', num:true, val: r => pc(r.ok, r.sd), html: r => pcC(pc(r.ok, r.sd))},
+    {h:'% Ach.', num:true, val: r => pc(r.real, r.est), html: r => pcC(pc(r.real, r.est))}, {h:'SO kontrak (t)', num:true, val: r => r.so, html: r => fmt(r.so)},
+    {h:'% OF', num:true, val: r => pc(r.real, r.so), html: r => { const v = pc(r.real, r.so); return pcC(v, v == null ? '' : '<small>' + (v >= 105 ? 'lebih dari porsi' : v >= 90 ? 'sesuai porsi' : v >= 50 ? 'kurang dari porsi' : 'kritis') + '</small>'); }},
+    {h:'% OF harian', num:true, val: r => pc(r.ok, r.sd), html: r => pcC(pc(r.ok, r.sd))},
     {h:'Di luar rute (t)', num:true, val: r => r.luar, html: r => r.luar ? fmt(r.luar) : '–'},
-    {h:'Real/SO ' + monthShort(mSel), num:true, val: r => r.rso, html: r => pcC(r.rso)}, dCol('vs LM', r => r.rso, r => r.rsoP, 'pp', false, false),
-    {h:'OF harian ' + monthShort(mSel), num:true, val: r => r.of, html: r => pcC(r.of)}, dCol('vs LM', r => r.of, r => r.ofP, 'pp', false, false)];
+    {h:'% OF ' + monthShort(mSel), num:true, val: r => r.rso, html: r => pcC(r.rso)}, dCol('vs LM', r => r.rso, r => r.rsoP, 'pp', false, false),
+    {h:'% OF harian ' + monthShort(mSel), num:true, val: r => r.of, html: r => pcC(r.of)}, dCol('vs LM', r => r.of, r => r.ofP, 'pp', false, false)];
   ['est', 'real', 'so', 'luar'].forEach((k, i) => soCols[[1, 2, 4, 7][i]].total = fmt(sum.reduce((a, r) => a + r[k], 0)));
   soCols[0].total = '<b>Total</b>';
   const T = sum.reduce((a, r) => ({est: a.est + r.est, real: a.real + r.real, so: a.so + r.so, ok: a.ok + r.ok, sd: a.sd + r.sd}), {est: 0, real: 0, so: 0, ok: 0, sd: 0});
@@ -2529,7 +2529,7 @@ function kontrakSection(){
   return {mSel, months, cur: rows.map(r => r.cur), sum, T,
     note: '<div class="tab-note">realisasi rute pemenang vs estimasi kontrak (volume tahunan ÷ 12; amandemen dari bulannya) · R/SO = realisasi vs SO rute yang dibagi sesuai proporsi kontrak · semen sak, FRC · * bulan berjalan pro-rata s.d. ' + shortDate(B.asOf) + ' · klik baris untuk rincian rute ' + monthShort(mSel) + '</div>',
     monthly: table(cols, rows, {go: r => 'kontrak:' + r.key, sort: months.length}),
-    soTbl: '<div class="tab-note">' + monthShort(months[0]) + '–' + monthShort(months[months.length - 1]) + ' · SO kontrak = seluruh SO FRC sak di distrik kontrak, dibagi ke pemenang sesuai porsi volume kontrak · Real/SO &gt; 100% = mengangkut porsi ekspeditur lain · OF harian = SO terpenuhi di hari yang sama</div>' +
+    soTbl: '<div class="tab-note">' + monthShort(months[0]) + '–' + monthShort(months[months.length - 1]) + ' · SO kontrak = seluruh SO FRC sak di distrik kontrak, dibagi ke pemenang sesuai porsi volume kontrak · % OF &gt; 100% = mengangkut porsi ekspeditur lain · OF harian = SO terpenuhi di hari yang sama</div>' +
       table(soCols, sum, {total: true, sort: 5, go: r => 'kontrak:' + r.key}),
     shared: shTbl ? '<div class="tab-note">' + monthLabel(mSel) + ' · merah = porsi aktual selisih lebih dari 15 poin dari kuota · ▲/▼ = perubahan porsi vs LM: hijau = mendekati kuota, merah = menjauh</div>' + shTbl : ''};
 }
@@ -2559,9 +2559,9 @@ function kontrakKinerja(KM){
       return Object.assign(o, {cap: pc(o.real, o.est), rso: pc(o.real, o.so), of: pc(o.ok, o.sd), rsoP: q ? pc(q.real, q.so) : null, ofP: q ? pc(q.ok, q.sd) : null, realP: q ? q.real : null}); });
     const cols = [{h:'Ekspeditur', cls:'name', val: r => ekspLbl(r.key)}, {h:'Estimasi kontrak (t)', num:true, val: r => r.est, html: r => fmt(r.est)}, {h:'Realisasi (t)', num:true, val: r => r.real, html: r => fmt(r.real)},
       {h:'vs kontrak', num:true, val: r => r.cap, html: r => pcC(r.cap)}, {h:'SO kontrak (t)', num:true, val: r => r.so, html: r => fmt(r.so)},
-      {h:'Real / SO', num:true, val: r => r.rso, html: r => pcC(r.rso, r.rso == null ? '' : '<small>' + (r.rso >= 105 ? 'lebih dari porsi' : r.rso >= 90 ? 'sesuai porsi' : r.rso >= 50 ? 'kurang dari porsi' : 'kritis') + '</small>')},
-      {h:'OF harian', num:true, val: r => r.of, html: r => pcC(r.of)}].concat(v.tag ? [
-      dCol('Realisasi vs ' + v.tag, r => r.real, r => r.realP, 't', false, false), dCol('Real/SO vs ' + v.tag, r => r.rso, r => r.rsoP, 'pp', false, false), dCol('OF vs ' + v.tag, r => r.of, r => r.ofP, 'pp', false, false)] : []);
+      {h:'% OF', num:true, val: r => r.rso, html: r => pcC(r.rso, r.rso == null ? '' : '<small>' + (r.rso >= 105 ? 'lebih dari porsi' : r.rso >= 90 ? 'sesuai porsi' : r.rso >= 50 ? 'kurang dari porsi' : 'kritis') + '</small>')},
+      {h:'% OF harian', num:true, val: r => r.of, html: r => pcC(r.of)}].concat(v.tag ? [
+      dCol('Realisasi vs ' + v.tag, r => r.real, r => r.realP, 't', false, false), dCol('% OF vs ' + v.tag, r => r.rso, r => r.rsoP, 'pp', false, false), dCol('OF vs ' + v.tag, r => r.of, r => r.ofP, 'pp', false, false)] : []);
     const T = rows.reduce((a, o) => ({est: a.est + o.est, real: a.real + o.real, so: a.so + o.so, ok: a.ok + o.ok, sd: a.sd + o.sd}), {est: 0, real: 0, so: 0, ok: 0, sd: 0});
     const TP = prv ? [...prv.values()].reduce((a, o) => ({real: a.real + o.real, so: a.so + o.so, ok: a.ok + o.ok, sd: a.sd + o.sd}), {real: 0, so: 0, ok: 0, sd: 0}) : null;
     cols[0].total = '<b>Total</b>'; cols[1].total = fmt(T.est); cols[2].total = fmt(T.real); cols[3].total = pctTxt(pc(T.real, T.est)); cols[4].total = fmt(T.so); cols[5].total = pctTxt(pc(T.real, T.so)); cols[6].total = pctTxt(pc(T.ok, T.sd));
@@ -2614,7 +2614,7 @@ function kontrakKPI(KM){
       total: rpTxt(mx.reduce((a, r) => a + r.per[i].sanksi, 0))})),
     [{h:'Total', num:true, val: r => r.tot, html: r => '<b style="color:var(--red)">' + rpTxt(r.tot) + '</b>', total: '<b>' + rpTxt(mx.reduce((a, r) => a + r.tot, 0)) + '</b>'}]);
   mcols[0].total = '<b>Total</b>';
-  return '<div class="tab-note">KPI kontrak (Lampiran 12) per bulan · 1 = Real / SO kontrak, maks 100% · 2 = SPJ tepat waktu (Tgl SPJ − Tgl Kirim SO ≤ 1 hari) / SPJ, rute pemenang · 3–5 = 100% (rekap manual; sanksi diinformasikan terpisah) · Skor = Σ nilai × bobot, maks 100 · FRC truk, semen sak · * bulan berjalan</div>' +
+  return '<div class="tab-note">KPI kontrak (Lampiran 12) per bulan · 1 = % OF kontrak, maks 100% · 2 = SPJ tepat waktu (Tgl SPJ − Tgl Kirim SO ≤ 1 hari) / SPJ, rute pemenang · 3–5 = 100% (rekap manual; sanksi diinformasikan terpisah) · Skor = Σ nilai × bobot, maks 100 · FRC truk, semen sak · * bulan berjalan</div>' +
     tabsHTML('kkpi', views).replace('class="tabbar"', 'class="tabbar sub"') +
     '<div class="section-head" style="margin-top:22px"><div class="section-title">Estimasi sanksi per bulan</div></div><div class="tab-note">Rp' + fmt(SANKSI_RP) + ' × ton kekurangan order (SO kontrak − realisasi) + Rp' + fmt(SANKSI_RP) + ' × ton terlambat · arahkan kursor ke angka untuk rinciannya · estimasi, bukan tagihan resmi</div>' +
     (mx.length ? table(mcols, mx, {total: true, sort: months.length + 1, go: r => 'kontrak:' + r.key}) : '<div class="dp-review">Tidak ada estimasi sanksi.</div>');
@@ -2628,12 +2628,12 @@ function pageKontrak(){
   page('<div class="wrap">' + crumb([['Kontrak']]) +
     '<div class="dp-head"><div><div class="nm">Kontrak angkutan</div><div class="sub">' + fmt(S.sum.length) + ' ekspeditur pemenang · FRC truk, semen sak · rute sesuai pengumuman pemenang</div></div></div>' +
     '<div class="dp-grid4">' +
-      kpi('target', tierColor(pc(c.real, c.est) || 0), 'Capaian kontrak · ' + ml, pctTxt(pc(c.real, c.est)), {hint: fmt(c.real) + ' dari estimasi ' + fmt(c.est) + ' t'}) +
-      kpi('box', tierColor(pc(c.real, c.so) || 0), 'Real / SO kontrak', pctTxt(pc(c.real, c.so)), {hint: 'SO ' + fmt(c.so) + ' t'}) +
-      kpi('clock', tierColor(pc(c.ok, c.sd) || 0), 'OF harian', pctTxt(pc(c.ok, c.sd)), {hint: 'SO terpenuhi di hari yang sama'}) +
-      kpi('pin', low.length ? 'var(--red)' : 'var(--black)', 'Kritis (Real/SO &lt; 50%)', fmt(low.length) + ' <small>ekspeditur</small>', {hint: low.length ? esc(low.join(', ')) + ' · sejak ' + monthShort(S.months[0]) : 'tidak ada'}) +
+      kpi('target', tierColor(pc(c.real, c.est) || 0), '% Ach. kontrak · ' + ml, pctTxt(pc(c.real, c.est)), {hint: fmt(c.real) + ' dari estimasi ' + fmt(c.est) + ' t'}) +
+      kpi('box', tierColor(pc(c.real, c.so) || 0), '% OF kontrak', pctTxt(pc(c.real, c.so)), {hint: 'SO ' + fmt(c.so) + ' t'}) +
+      kpi('clock', tierColor(pc(c.ok, c.sd) || 0), '% OF harian', pctTxt(pc(c.ok, c.sd)), {hint: 'SO terpenuhi di hari yang sama'}) +
+      kpi('pin', low.length ? 'var(--red)' : 'var(--black)', 'Kritis (% OF &lt; 50%)', fmt(low.length) + ' <small>ekspeditur</small>', {hint: low.length ? esc(low.join(', ')) + ' · sejak ' + monthShort(S.months[0]) : 'tidak ada'}) +
     '</div>' + tabsHTML('kontrak', [
-      {k: 'so', label: 'Kinerja', html: '<div class="tab-note">Kinerja per ekspeditur: realisasi rute pemenang vs <b>estimasi kontrak</b> (volume tahunan ÷ 12, dibagi per hari) dan vs <b>SO kontrak</b> (SO FRC sak di distrik kontrak, dibagi sesuai porsi kontrak) · OF harian = SO terpenuhi di hari yang sama · Real/SO &gt; 100% = mengangkut porsi ekspeditur lain</div>' + kontrakKinerja(kontrakModel())},
+      {k: 'so', label: 'Kinerja', html: '<div class="tab-note">Kinerja per ekspeditur: realisasi rute pemenang vs <b>estimasi kontrak</b> (volume tahunan ÷ 12, dibagi per hari) dan vs <b>SO kontrak</b> (SO FRC sak di distrik kontrak, dibagi sesuai porsi kontrak) · OF harian = SO terpenuhi di hari yang sama · % OF &gt; 100% = mengangkut porsi ekspeditur lain</div>' + kontrakKinerja(kontrakModel())},
       {k: 'kpi', label: 'KPI & sanksi', html: kontrakKPI(kontrakModel())},
       {k: 'bulan', label: 'Capaian per bulan', html: S.note + S.monthly},
       {k: 'rute', label: 'Rute bersama', html: S.shared}]) +
@@ -2646,9 +2646,9 @@ function kontrakDetail(e){
   openModal(ekspLbl(e) + ' · kontrak ' + monthLabel(T.mSel), 'per rute pemenang', table([
     {h:'Rute', cls:'name', val: x => x.r[14], html: x => esc(tc(x.r[14])) + '<small>' + esc(tc(B.dims.src[x.r[1]] || '')) + (x.r[4] != null && x.r[4] < 1 ? ' · kuota ' + pctTxt(x.r[4] * 100) : '') + (x.r[9] ? ' · s.d. ' + monthShort(x.r[9]) : '') + (x.r[6] ? ' · amandemen' : '') + '</small>'},
     {h:'Estimasi (t)', num:true, val: x => x.est, html: x => fmt(x.est)}, {h:'Realisasi (t)', num:true, val: x => x.real, html: x => fmt(x.real)},
-    {h:'Capaian', num:true, cls:'pc', val: x => x.est ? x.real / x.est * 100 : null, html: x => x.est ? pctTxt(x.real / x.est * 100) : '–', style: x => 'color:' + tierColor(x.est ? x.real / x.est * 100 : null)},
+    {h:'% Ach.', num:true, cls:'pc', val: x => x.est ? x.real / x.est * 100 : null, html: x => x.est ? pctTxt(x.real / x.est * 100) : '–', style: x => 'color:' + tierColor(x.est ? x.real / x.est * 100 : null)},
     {h:'SO kontrak (t)', num:true, val: x => x.so, html: x => x.so ? fmt(x.so) : '–'},
-    {h:'Real / SO', num:true, cls:'pc', val: x => x.so ? x.real / x.so * 100 : null, html: x => x.so ? pctTxt(x.real / x.so * 100) : '–', style: x => 'color:' + tierColor(x.so ? x.real / x.so * 100 : null)},
+    {h:'% OF', num:true, cls:'pc', val: x => x.so ? x.real / x.so * 100 : null, html: x => x.so ? pctTxt(x.real / x.so * 100) : '–', style: x => 'color:' + tierColor(x.so ? x.real / x.so * 100 : null)},
     {h:'Lead / siklus (hari)', num:true, val: x => x.r[10], html: x => (x.r[10] != null ? fmt1(x.r[10]) : '–') + ' / ' + (x.r[11] != null ? fmt1(x.r[11]) : '–')},
     {h:'TOA (Rp/t)', num:true, val: x => x.r[13], html: x => x.r[13] ? fmt(x.r[13]) : '–'}], rs, {sort: 1}) +
     (o.luar ? '<div class="dp-review">Di luar rute pemenang: ' + fmt(o.luar) + ' t pada bulan ini.</div>' : ''));
