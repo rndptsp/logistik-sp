@@ -2163,7 +2163,7 @@ function kspjModal(n){
   const rs = v.spj.slice().sort((a, b) => a[0] - b[0] || (a[10] ?? 0) - (b[10] ?? 0));
   const cols = [{h:'Tanggal', cls:'name', val: r => r[0] * 1e4 + (r[10] ?? 0), html: r => shortDate(B.days[r[0]]) + '<small>SPJ ' + esc(r[2] || '–') + '</small>'},
     {h:'Nopol', val: r => r[5] >= 0 ? B.dims.truck[r[5]] : '', html: r => r[5] >= 0 ? '<a href="#/truk/' + enc(B.dims.truck[r[5]]) + '">' + esc(B.dims.truck[r[5]]) + '</a>' : '–'},
-    {h:'Distributor · tujuan', val: r => distrLbl(r[6]) || '', html: r => esc(distrLbl(r[6]) || '–') + '<small>' + esc(tc(B.dims.dist[r[7]] || '')) + '</small>'},
+    {h:'Distributor · tujuan', val: r => distrLbl(r[6]) || '', html: r => esc(distrLbl(r[6]) || '–') + '<small>' + esc(tc(B.dims.dist[r[7]] || '') + (r[15] ? ' · rute ' + r[15] : '')) + '</small>'},
     {h:'Masuk', num:true, val: r => r[10] ?? -1e9, html: r => hhmm(r[10])}, {h:'Keluar', num:true, val: r => r[11] ?? -1e9, html: r => hhmm(r[11])},
     {h:'Lama (jam)', num:true, val: r => r[10] != null && r[11] != null ? r[11] - r[10] : -1, html: r => r[10] != null && r[11] != null ? fmt1((r[11] - r[10]) / 60) : '–'},
     {h:'Tara (kg)', num:true, val: r => r[12] || 0, html: r => r[12] ? fmt(r[12]) : '–'}, {h:'Bruto (kg)', num:true, val: r => r[13] || 0, html: r => r[13] ? fmt(r[13]) : '–'},
@@ -2203,7 +2203,8 @@ function pageKapalDetail(name){
   const ki = (B.dims.kapal || []).indexOf(nm), hasW = !!B.kspj && ki >= 0;
   if(hasW){
     vs.forEach(v => { v.spj = B.kspj.filter(r => r[1] === ki && r[3] === v.src && v.days.has(r[0]) && incOk(r[4]) && kemOk(r[9])); const w = v.spj.filter(r => r[14]);
-      v.net = w.reduce((a, r) => a + r[14], 0) / 1000; v.netSpj = w.reduce((a, r) => a + r[8], 0); v.nW = w.length; });
+      v.net = w.reduce((a, r) => a + r[14], 0) / 1000; v.netSpj = w.reduce((a, r) => a + r[8], 0); v.nW = w.length; v.route = new Set(v.spj.map(r => r[15]).filter(Boolean)); });
+    if(vs.some(v => v.route.size)) cols.push({h:'Rute SAP', val: v => [...v.route].join(', '), html: v => v.route.size ? esc([...v.route].join(', ')) : '–'});
     cols.splice(4, 0, {h:'Timbangan netto (t)', num:true, val: v => v.nW ? v.net : -1, html: v => v.nW ? fmt(v.net) + (v.nW < v.spj.length ? '<small>' + v.nW + ' / ' + v.spj.length + ' SPJ</small>' : '') : '<span style="color:var(--sub)">–</span>'},
       {h:'Selisih vs SPJ', num:true, val: v => v.nW ? v.net - v.netSpj : 0, html: v => v.nW ? kspjDiff((v.net - v.netSpj) * 1000, v.netSpj * 1000) : '–'});
     TRENDS.kspj = {vs, title};

@@ -366,7 +366,8 @@ def build(cfg):
         if kapal:
             kspj.append([d.isoformat(), kapal_d(kapal), spj, s, INCOTERMS.index(inc), truck(nopol) if nopol else -1, distr(up(r.get("DISTRIBUTOR"))), di,
                          round(ton, 3), kem, mins(r.get("WAKTU_MASUK"), d), mins(r.get("WAKTU_KELUAR"), d),
-                         int(num(r.get("BERAT_KOSONG"))) or None, int(num(r.get("BERAT_ISI"))) or None, int(num(r.get("BERAT_REAL"))) or None])
+                         int(num(r.get("BERAT_KOSONG"))) or None, int(num(r.get("BERAT_ISI"))) or None, int(num(r.get("BERAT_REAL"))) or None,
+                         up(r.get("ROUTE")) or None])
         if nopol:
             tk = trucks[(d.isoformat(), truck(nopol), inc, e, s, p, kem, di)]
             tk[0] += 1; tk[1] += ton
@@ -534,7 +535,7 @@ def build(cfg):
         # contract KPI 2, FRC truk: [day, src, dist, eksp, kem, SPJ with SO, on time (Tgl SPJ - Tgl Kirim SO <= 1), ton late, SPJ without SO]
         "kpiw": [[day_idx[k[0]], k[1], k[2], k[3], k[4], v[0], v[1], round(v[2], 2), v[3]] for k, v in tw.items() if k[0] in day_idx],
         # Kapal page, one row per SPJ of a sea shipment: [day, kapal, spj, src, inc, truck (-1 none), distr, dist, ton SPJ, kem,
-        #   masuk, keluar (minutes after SPJ-date 00:00), berat kosong kg, berat isi kg, berat real kg]
+        #   masuk, keluar (minutes after SPJ-date 00:00), berat kosong kg, berat isi kg, berat real kg, route SAP]
         "kspj": [[day_idx[r[0]]] + r[1:] for r in kspj if r[0] in day_idx],
         "targets": targets,
         "tdistr": tdistr,
