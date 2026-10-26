@@ -457,7 +457,8 @@ def build(cfg):
             continue
         p, di = prov(up(r.get("PROPINSI"))), dist(up(r.get("NAMA_DISTRIK")))
         dist_prov.setdefault(di, p)
-        sod[(dk.isoformat(), p, di, eksp(up(r.get("EXPEDITUR_KODE"))) if inc_so.startswith("FRC") else eksp(up(r.get("DISTRIBUTOR"))),   # non-FRC: ekspeditur = distributor, as the realisasi kemasan(r.get("KEMASAN")), ii)] += num(r.get("TON_SO"))
+        e_so = eksp(up(r.get("EXPEDITUR_KODE"))) if inc_so.startswith("FRC") else eksp(up(r.get("DISTRIBUTOR")))   # non-FRC: ekspeditur = distributor, as the realisasi
+        sod[(dk.isoformat(), p, di, e_so, kemasan(r.get("KEMASAN")), ii)] += num(r.get("TON_SO"))
         dx = distr_by.get(" ".join(nk(r.get("DISTRIBUTOR"))))
         if dx is None:
             so_nodistr += 1
