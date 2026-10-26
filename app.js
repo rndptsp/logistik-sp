@@ -621,9 +621,11 @@ function tableInner(id){
 /* cmp = {group, m, sc}: adds "vs bulan lalu" = realisasi vs the same days of the previous month (prevPer), same incoterm context */
 function capTable(list, h, name, href, so, cmp){
   if(!list.length) return '';
-  const cols = [{h: h, cls:'name', val: name}, C.vol('Real (t)'), Object.assign({}, C.tgt, {h:'Target (t)'}), C.pct].concat(so ? [Object.assign({}, C.of, {h:'R/SO'})] : []);
-  if(cmp){
-    cols.push(vsCol(prevVols(cmp.group, cmp.m, cmp.sc), cmp.m));
+  const cols = [{h: h, cls:'name', val: name}, C.vol('Real (t)'), Object.assign({}, C.tgt, {h:'Target (t)'}), C.pct].concat(so ? [C.so, Object.assign({}, C.of, {h:'R/SO'})] : []);
+  if(cmp){   // last period volume, gap in ton and change in % (Rendy)
+    const pv = prevVols(cmp.group, cmp.m, cmp.sc), tag = cmpTag(cmp.m), p = r => pv.get(r.key) || 0;
+    cols.push({h: tag + ' (t)', num: true, val: p, html: r => p(r) ? fmt(p(r)) : '–'},
+      {h: 'Gap vs ' + tag + ' (t)', num: true, val: r => r.vol - p(r), html: r => dCell(r.vol, p(r), '', false, false)}, vsCol(pv, cmp.m));
   }
   return '<div class="cap-tbl">' + table(cols, list, {go: href, sort: 1}) + '</div>';
 }
