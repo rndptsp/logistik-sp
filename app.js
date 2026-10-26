@@ -990,21 +990,21 @@ function distMapHTML(pname, m, opt){
     const href = '#/distrik/' + enc(B.dims.dist[a.keys[0]]);
     const path = '<path class="map-region live' + (sel ? ' is-sel' : '') + '" d="' + g.d + '" fill="' + fill + '" stroke="' + (sel ? '#fff' : '#0F1A21') + '" stroke-width="' + (sel ? 3 : 1.2) + '" vector-effect="non-scaling-stroke" data-href="' + href + '" data-tip="' + esc(tip) + '"/>';
     if(sel) selShape = path; else shapes += path;
-    if(Math.min(g.w, g.h) >= Math.max(vw, vh) * 0.09){
-      const short = g.n.replace(/^Kota /, 'Kt. ');
-      labels += '<text x="' + g.cx + '" y="' + (g.cy - fs * 0.3) + '" class="map-lbl" style="font-size:' + fs.toFixed(1) + 'px">' + esc(short) + '</text>' +
+    const rz = Math.min(g.w, g.h) / Math.max(vw, vh), zFull = 0.09 / Math.max(rz, 1e-4);   // zoom needed for the full label
+    { const short = g.n.replace(/^Kota /, 'Kt. ');
+      labels += '<g class="zl" data-z="' + zFull.toFixed(2) + '"' + (zFull > 1 ? ' style="display:none"' : '') + '><text x="' + g.cx + '" y="' + (g.cy - fs * 0.3) + '" class="map-lbl" style="font-size:' + fs.toFixed(1) + 'px">' + esc(short) + '</text>' +
         '<text x="' + g.cx + '" y="' + (g.cy + fs * 1.05) + '" class="map-pct" style="font-size:' + (fs * 1.15).toFixed(1) + 'px">' + (a.pct != null ? pctTxt(a.pct) : fmt(a.vol) + ' t') + '</text>' +
-        (a.pct != null ? '<text x="' + g.cx + '" y="' + (g.cy + fs * 2.15) + '" class="map-vol" style="font-size:' + (fs * 0.9).toFixed(1) + 'px">' + fmtT(a.vol) + '</text>' : '');
-    } else if(Math.min(g.w, g.h) >= Math.max(vw, vh) * 0.045){   // smaller district: volume only (name and capaian in the tooltip)
-      labels += '<text x="' + g.cx + '" y="' + (g.cy + fs * 0.3) + '" class="map-vol" style="font-size:' + (fs * 0.85).toFixed(1) + 'px">' + fmtT(a.vol) + '</text>';
+        (a.pct != null ? '<text x="' + g.cx + '" y="' + (g.cy + fs * 2.15) + '" class="map-vol" style="font-size:' + (fs * 0.9).toFixed(1) + 'px">' + fmtT(a.vol) + '</text>' : '') + '</g>';
     }
+    if(zFull > 1 && rz >= 0.045)   // smaller district: volume only until zoomed in (name and capaian in the tooltip)
+      labels += '<g class="zl" data-z="1" data-zmax="' + zFull.toFixed(2) + '"><text x="' + g.cx + '" y="' + (g.cy + fs * 0.3) + '" class="map-vol" style="font-size:' + (fs * 0.85).toFixed(1) + 'px">' + fmtT(a.vol) + '</text></g>';
   });
   const pins = PLANTS.filter(p => mapProv(p[4]) === mapProv(pname)).map(p => {
     const x = (p[1] - 95) * 200, y = (6.2 - p[2]) * 200, on = plantOn(p);
     return '<g class="map-pin' + (on ? '' : ' off') + '" data-tip="' + esc(plantTip(p)) + '" data-href="' + pinHref(p) + '"><circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + (fs * 0.55).toFixed(1) + '" fill="#fff" stroke="#000" stroke-width="1.6" vector-effect="non-scaling-stroke"/><circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="' + (fs * 0.22).toFixed(1) + '" fill="' + (on ? 'var(--red)' : '#9AA5AB') + '"/>' +
       '<text x="' + (x + fs * 0.9).toFixed(1) + '" y="' + (y + fs * 0.35).toFixed(1) + '" class="pin-lbl" style="font-size:' + (fs * 0.95).toFixed(1) + 'px">' + esc(p[0]) + '</text></g>';
   }).join('');
-  const svg = '<svg class="map-svg" viewBox="' + G.vb.join(' ') + '" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Peta capaian per distrik di ' + esc(tc(pname)) + '">' +
+  const svg = '<svg class="map-svg zoomable" viewBox="' + G.vb.join(' ') + '" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Peta capaian per distrik di ' + esc(tc(pname)) + '">' +
     defs + shapes + selShape + labels + pins + '</svg>';
   const list = [...agg.entries()].map(([i, a]) => Object.assign({n: G.d[i].n}, a))
     .sort((a, b) => (b.pct == null ? -1 : b.pct) - (a.pct == null ? -1 : a.pct) || b.vol - a.vol);
@@ -1041,6 +1041,56 @@ function kpiChips(t){
 }
 const heroTier = p => p == null ? '#C9D3D9' : p >= 100 ? '#5FD08F' : p >= 85 ? '#E8B04A' : '#FF6B74';
 const heroChip = (l, v, sub, color) => '<div class="mh-chip"><div class="l">' + l + '</div><div class="v"' + (color ? ' style="color:' + color + '"' : '') + '>' + v + '</div>' + (sub ? '<div class="s">' + sub + '</div>' : '') + '</div>';
+/* Map zoom (Rendy): +/− buttons, drag to pan, pinch / ctrl+wheel / double-click to zoom, full screen. Works on the viewBox, so
+   paths stay sharp; label text shrinks as you zoom in, and labels of small districts (g.zl, data-z) appear once there is room. */
+function initZoom(svg){
+  if(svg.__z) return; svg.__z = 1;
+  const wrap = svg.closest('.mh-map') || svg.parentElement, b = svg.getAttribute('viewBox').split(/\s+/).map(Number);
+  let k = 1, cx = b[0] + b[2] / 2, cy = b[1] + b[3] / 2, dragged = false;
+  const texts = [...svg.querySelectorAll('text')].map(t => [t, parseFloat(t.style.fontSize) || parseFloat(getComputedStyle(t).fontSize) || 11]);
+  const zls = [...svg.querySelectorAll('g.zl')];
+  const ctl = document.createElement('div'); ctl.className = 'zoom-ctl';
+  ctl.innerHTML = '<button type="button" data-zm="in" title="Perbesar">+</button><button type="button" data-zm="out" title="Perkecil">−</button><button type="button" data-zm="reset" title="Kembali">⟲</button><button type="button" data-zm="full" title="Layar penuh">⛶</button>';
+  wrap.appendChild(ctl);
+  const apply = () => {
+    const W = b[2] / k, H = b[3] / k;
+    cx = Math.min(Math.max(cx, b[0] + W / 2), b[0] + b[2] - W / 2); cy = Math.min(Math.max(cy, b[1] + H / 2), b[1] + b[3] - H / 2);
+    svg.setAttribute('viewBox', [cx - W / 2, cy - H / 2, W, H].map(v => v.toFixed(2)).join(' '));
+    const f = Math.pow(k, 0.72); texts.forEach(([t, fs]) => { t.style.fontSize = (fs / f).toFixed(2) + 'px'; });
+    zls.forEach(g => { const z = +g.dataset.z, zm = g.dataset.zmax ? +g.dataset.zmax : Infinity; g.style.display = k >= z && k < zm ? '' : 'none'; });
+    svg.style.touchAction = k > 1 || wrap.classList.contains('zoom-full') ? 'none' : '';
+    svg.classList.toggle('zoomed', k > 1);
+  };
+  const pt = (x, y) => { const m = svg.getScreenCTM(); if(!m) return [cx, cy]; const p = new DOMPoint(x, y).matrixTransform(m.inverse()); return [p.x, p.y]; };
+  const zoomAt = (f, px, py) => { const nk = Math.min(10, Math.max(1, k * f)); if(px == null){ px = cx; py = cy; } cx = px - (px - cx) * k / nk; cy = py - (py - cy) * k / nk; k = nk; apply(); };
+  let ph = null;   // full screen: the map moves to <body> (an animated ancestor would trap position:fixed), a placeholder keeps its spot
+  const full = on => {
+    if(on && !ph){ ph = document.createComment('map'); wrap.before(ph); document.body.appendChild(wrap); }
+    if(!on && ph){ ph.replaceWith(wrap); ph = null; }
+    wrap.classList.toggle('zoom-full', on); document.body.classList.toggle('noscroll', on); apply(); };
+  window.addEventListener('hashchange', () => { if(ph){ wrap.remove(); ph = null; document.body.classList.remove('noscroll'); } });
+  ctl.addEventListener('click', e => { const z = e.target.closest('[data-zm]'); if(!z) return; e.stopPropagation();
+    const a = z.dataset.zm; if(a === 'in') zoomAt(1.6); else if(a === 'out') zoomAt(1 / 1.6); else if(a === 'reset'){ k = 1; apply(); } else full(!wrap.classList.contains('zoom-full')); });
+  svg.addEventListener('wheel', e => { if(!(e.ctrlKey || e.metaKey || wrap.classList.contains('zoom-full'))) return; e.preventDefault(); const [x, y] = pt(e.clientX, e.clientY); zoomAt(e.deltaY < 0 ? 1.25 : 0.8, x, y); }, {passive: false});
+  svg.addEventListener('dblclick', e => { e.preventDefault(); const [x, y] = pt(e.clientX, e.clientY); zoomAt(2, x, y); });
+  const P = new Map(); let pinch = null;
+  svg.addEventListener('pointerdown', e => { P.set(e.pointerId, [e.clientX, e.clientY]); dragged = false; if(P.size === 2){ const [a, c] = [...P.values()]; pinch = {d: Math.hypot(a[0] - c[0], a[1] - c[1]), k}; } });
+  svg.addEventListener('pointermove', e => {
+    const last = P.get(e.pointerId); if(!last) return;
+    if(P.size === 2 && pinch){ P.set(e.pointerId, [e.clientX, e.clientY]); const [a, c] = [...P.values()], d = Math.hypot(a[0] - c[0], a[1] - c[1]);
+      const [x, y] = pt((a[0] + c[0]) / 2, (a[1] + c[1]) / 2); zoomAt(pinch.k * d / pinch.d / k, x, y); dragged = true; return; }
+    if(k <= 1) return;
+    const dx = e.clientX - last[0], dy = e.clientY - last[1]; if(Math.abs(dx) + Math.abs(dy) > 3) dragged = true;
+    const m = svg.getScreenCTM(); if(m){ cx -= dx / m.a; cy -= dy / m.d; apply(); }
+    P.set(e.pointerId, [e.clientX, e.clientY]);
+  });
+  const up = e => { P.delete(e.pointerId); if(P.size < 2) pinch = null; };
+  svg.addEventListener('pointerup', up); svg.addEventListener('pointercancel', up); svg.addEventListener('pointerleave', up);
+  svg.addEventListener('click', e => { if(dragged){ e.stopPropagation(); e.preventDefault(); dragged = false; } }, true);
+  document.addEventListener('keydown', e => { if(e.key === 'Escape' && wrap.classList.contains('zoom-full')) full(false); });
+  apply();
+}
+new MutationObserver(() => document.querySelectorAll('svg.zoomable').forEach(initZoom)).observe(document.documentElement, {childList: true, subtree: true});
 function heroPanel(o){
   const bg = (window.BG || {})[provBg(o.photo)];
   return '<section class="map-hero mh-page' + (o.cls ? ' ' + o.cls : '') + '"><div class="mh-bg"' + (bg ? ' style="background-image:linear-gradient(90deg,rgba(15,26,33,.95) 0%,rgba(15,26,33,.8) 42%,rgba(15,26,33,.38) 100%),url(&quot;assets/bg/' + bg.f + '&quot;)"' : '') + '></div><div class="mh-inner">' +
@@ -1182,7 +1232,7 @@ function kecMapSection(name, pname, m, di){
     pins += '<g class="toko-shared" data-tip="' + esc(tip) + '"><circle class="toko-pin"' + (mode === 'toko' ? '' : ' style="fill:' + (colOf.get(o.gk) || '#8C9AA2') + '"') + (o.gk != null ? ' data-k="' + o.gk + '"' : '') + ' cx="' + o.x.toFixed(1) + '" cy="' + o.y.toFixed(1) + '" r="' + r.toFixed(2) + '" stroke-width="1.6" vector-effect="non-scaling-stroke"/>' +
       '<text x="' + o.x.toFixed(1) + '" y="' + o.y.toFixed(1) + '" class="toko-n" style="font-size:' + (r * 1.1).toFixed(2) + 'px">' + l.length + '</text></g>';
   });
-  const svg = '<svg class="map-svg" viewBox="' + K.vb.join(' ') + '" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Peta kecamatan dan toko/gudang tujuan di ' + esc(tc(name)) + '">' +
+  const svg = '<svg class="map-svg zoomable" viewBox="' + K.vb.join(' ') + '" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Peta kecamatan dan toko/gudang tujuan di ' + esc(tc(name)) + '">' +
     shapes + labels + pins + '</svg>';
   const list = [...per.values()].filter(o => (B.dims.toko[o.ti] || [])[0]).sort((a, b) => b.vol - a.vol);
   const tot = list.reduce((a, o) => a + o.vol, 0), maxV = Math.max(1, ...list.map(o => o.vol));

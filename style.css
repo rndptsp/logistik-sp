@@ -810,3 +810,12 @@ table.tree tr.lv0 td.fz{background:var(--white)}
 table.tree td.name{white-space:nowrap}
 table.tree td.name .t-cnt{white-space:nowrap}
 @media (max-width:700px){table.tree td.name{white-space:normal;min-width:150px}}
+/* map zoom */
+.zoom-ctl{position:absolute;top:8px;right:8px;display:flex;flex-direction:column;gap:4px;z-index:5}
+.zoom-ctl button{width:32px;height:32px;border:1px solid rgba(255,255,255,.35);background:rgba(15,26,33,.75);color:#fff;font-size:17px;font-weight:700;line-height:1;border-radius:6px;cursor:pointer;padding:0}
+.zoom-ctl button:hover{background:rgba(15,26,33,.95)}
+svg.zoomable.zoomed{cursor:grab}
+svg.zoomable.zoomed:active{cursor:grabbing}
+.zoom-full{position:fixed!important;inset:0;z-index:3000;background:#0F1A21;padding:12px;display:flex!important;flex-direction:column;justify-content:center}
+.zoom-full .map-svg{max-height:none!important;height:calc(100vh - 60px);width:100%}
+body.noscroll{overflow:hidden}
