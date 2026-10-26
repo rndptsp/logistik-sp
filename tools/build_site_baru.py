@@ -291,6 +291,7 @@ def build(cfg):
     today = datetime.date.today()
     spj_rows = []   # per-SPJ truck detail for the truck page, last 45 days (encrypted bundle only)
     spj_from = today - datetime.timedelta(days=45)
+    so_ship = defaultdict(float)   # SO no -> realisasi tonnage on that SO (all incoterms), for % OF per SO
     kspj = []     # sea shipments, one row per SPJ (whole history): weighbridge detail for the Kapal page
     tw_raw = []   # FRC truk SPJ for contract KPI 2 (ketepatan waktu): (day, src, dist, eksp, kem, SO no, ton)
     def mins(v, d0):   # WAKTU_* -> minutes after 00:00 of the SPJ date (may be negative / > 1440), None if unreadable
@@ -347,6 +348,9 @@ def build(cfg):
         f[0] += ton; f[1] += 1
         if ok_dwell:
             f[2] += num(dwell); f[3] += 1
+        sn_r = str(r.get("NO_SO") or "").strip().split(".")[0]
+        if sn_r:
+            so_ship[sn_r] += ton
         if inc == "FRC":
             tw_raw.append((d, s, di, e, kem, str(r.get("NO_SO") or "").strip().split(".")[0], ton))
         kt = str(r.get("KODE_TOKO") or "").strip().split(".")[0]
@@ -444,6 +448,7 @@ def build(cfg):
     distr_by = {" ".join(nk(n)): i for i, n in enumerate(distr.items) if n}   # SO names matched to the Rilis distributor list
     so_nodistr = 0
     so_kirim = {}   # SO no -> earliest Tgl Kirim (KPI 2)
+    so_lines = []   # (SO no, due date, SO date, prov, dist, eksp, distributor, kem, incoterm, ton, rejected/blocked)
     for r in read_store(os.path.join(base, "data", "so.csv.gz")):
         sn, dk0 = str(r.get("SALES_ORDER") or "").strip().split(".")[0], as_date(r.get("TGL_KIRIM"))
         if sn and dk0 and (sn not in so_kirim or dk0 < so_kirim[sn]):
@@ -460,11 +465,33 @@ def build(cfg):
         e_so = eksp(up(r.get("EXPEDITUR_KODE"))) if inc_so.startswith("FRC") else eksp(up(r.get("DISTRIBUTOR")))   # non-FRC: ekspeditur = distributor, as the realisasi
         sod[(dk.isoformat(), p, di, e_so, kemasan(r.get("KEMASAN")), ii)] += num(r.get("TON_SO"))
         dx = distr_by.get(" ".join(nk(r.get("DISTRIBUTOR"))))
+        so_lines.append((sn, dk, as_date(r.get("TGL_SO")) or dk, p, di, e_so, -1 if dx is None else dx, kemasan(r.get("KEMASAN")), ii, num(r.get("TON_SO")),
+                         up(r.get("REJECTION")) == "YES" or up(r.get("BLOCKING")) == "YES"))
         if dx is None:
             so_nodistr += 1
         else:
             sodd[(dk.isoformat(), p, di, dx, kemasan(r.get("KEMASAN")), ii)] += num(r.get("TON_SO"))
     print(f"  SO groups: {len(sod):,} per tgl kirim (SOCC); per distributor {len(sodd):,}, baris SO tanpa distributor yang cocok: {so_nodistr:,}")
+
+    # % OF per SO (Rendy, option 1): SO due (Tgl Kirim) in the period vs realisasi on those same SO numbers (Rilis NO_SO), capped at the SO;
+    # SO open = unshipped remainder today, without rejected/blocked SO, by age since Tgl SO (valid 30 days: older = kedaluwarsa)
+    so_tot = defaultdict(float)
+    for x in so_lines:
+        if not x[10]:
+            so_tot[x[0]] += x[9]
+    sof, soopen = defaultdict(lambda: [0.0, 0.0]), defaultdict(float)
+    for sn, dk, dso, p_, di_, e_, dx, k_, ii, ton, bad in so_lines:
+        if bad or ton <= 0 or not sn:
+            continue
+        shipped = ton * min(1.0, so_ship.get(sn, 0.0) / so_tot[sn]) if so_tot[sn] > 0 else 0.0
+        if dk < today:
+            g = sof[(dk.isoformat(), p_, di_, e_, k_, ii, dx)]
+            g[0] += ton; g[1] += shipped
+        rest = ton - shipped
+        if rest > 0.01:
+            age = (today - dso).days
+            soopen[(p_, di_, e_, dx, k_, ii, 0 if age <= 7 else 1 if age <= 30 else 2)] += rest
+    print(f"  % OF per SO: {len(sof):,} grup jatuh tempo; SO open {sum(soopen.values()):,.0f} t ({sum(v for k, v in soopen.items() if k[6] == 2):,.0f} t > 30 hari)")
 
     # KPI 2 kontrak (Lampiran 12): SPJ tepat waktu = Tgl SPJ - Tgl Kirim SO <= 1 hari (as the Monitoring sheet); SPJ whose SO
     # is not in the SO store are counted apart (not in the KPI)
@@ -557,6 +584,10 @@ def build(cfg):
         "hours": [[day_idx[k[0]], k[1], INCOTERMS.index(k[2]), k[3], round(v[0], 2), v[1], k[4]] for k, v in hours.items() if k[0] in day_idx],   # FRC targets per distributor, same layout as targets (distributor achievement only)
         "so": [[k[0], k[1], k[2], k[3], round(v, 2)] for k, v in so.items() if v],
         "sod": [[k[0], k[1], k[2], k[3], round(v, 2), k[4], k[5]] for k, v in sod.items() if v],   # [date, prov, dist, eksp, ton, kem, incoterm]
+        # % OF per SO: [due date, prov, dist, eksp, ton SO, kem, inc, ton shipped on those SO, distributor (-1 = unmatched)]
+        "sof": [[k[0], k[1], k[2], k[3], round(v[0], 2), k[4], k[5], round(v[1], 2), k[6]] for k, v in sof.items() if v[0]],
+        # SO open today: [prov, dist, eksp, distributor, kem, inc, age bucket (0 <= 7 d, 1 = 8-30 d, 2 > 30 d = kedaluwarsa), ton]
+        "soopen": [list(k) + [round(v, 2)] for k, v in soopen.items() if v >= 0.5],
         # SO FRC per distributor by delivery day: [date, prov, dist, distributor, ton, kem]
         "sodd": [[k[0], k[1], k[2], k[3], round(v, 2), k[4], k[5]] for k, v in sodd.items() if v],
         "prog": {"date": "", "time": "", "fields": [], "rows": []},

@@ -257,7 +257,19 @@ function targetBetween(t, from, to){
   if(t[6]){ let s = 0; for(let d = d0; d <= d1; d++) s += t[6][d - 1] || 0; return s * tgtK(); }
   return t[5] * (d1 - d0 + 1) / n * tgtK();
 }
-function blank(){ return {vol:0, frc:0, frc0:0, trips:0, dwS:0, dwN:0, tgt:0, tgtFull:0, so:0, hasTgt:false}; }
+function blank(){ return {vol:0, frc:0, frc0:0, trips:0, dwS:0, dwN:0, tgt:0, tgtFull:0, so:0, soShip:0, soOpen:null, hasTgt:false}; }
+/* % OF per SO (Rendy, option 1; builds with B.sof): SO due (Tgl Kirim) inside the period up to the last data day vs the realisasi on
+   those same SO numbers. SO open = unshipped remainder today by age since Tgl SO: [<= 7 d, 8-30 d, > 30 d = kedaluwarsa (SO valid 30 days)].
+   sc may hold prov / dist / eksp / distr. */
+const sofOn = () => !!B.sof;
+function sofScan(per, sc, keyOf, add){
+  per = toPer(per); const to = per.tgtTo || per.to;
+  B.sof.forEach(r => { if(r[0] < per.from || r[0] > to || !kemOk(r[5]) || !incOk(r[6]) || (sc.prov != null && r[1] !== sc.prov) || (sc.dist != null && r[2] !== sc.dist) || (sc.eksp != null && r[3] !== sc.eksp) || (sc.distr != null && r[8] !== sc.distr)) return;
+    add(keyOf(r), r[4], r[7], null, 0, r[1]); });
+  (B.soopen || []).forEach(r => { if(!kemOk(r[4]) || !incOk(r[5]) || (sc.prov != null && r[0] !== sc.prov) || (sc.dist != null && r[1] !== sc.dist) || (sc.eksp != null && r[2] !== sc.eksp) || (sc.distr != null && r[3] !== sc.distr)) return;
+    add(keyOf([null, r[0], r[1], r[2], 0, 0, 0, 0, r[3]]), 0, 0, r[6], r[7], r[0]); });
+}
+const sofAdd = o => (k, so, ship, b, t) => { o.so += so; o.soShip += ship; if(b != null){ o.soOpen = o.soOpen || [0, 0, 0]; o.soOpen[b] += t; } };
 
 /** Summary per group for a period (or a 'YYYY-MM' month). vol = selected incoterm(s); frc = realisasi of the selected incoterm(s) vs their targets (achievement basis); frc0 = FRC only (Real/SO).
     tgt = target up to the last data day; tgtFull = target for the whole period (whole month for a month period). */
@@ -280,7 +292,9 @@ function summarize(group, per, sc, opt){
     const o = get(TK[group](t));
     o.tgt += targetBetween(t, per.from, per.tgtTo); o.tgtFull += targetBetween(t, per.from, fullTo); o.hasTgt = true;
   });
-  if(soOn() && sc.src == null){   // SO has no plant: not shown for a plant scope
+  if(sofOn() && sc.src == null && group !== 'src'){
+    sofScan(per, sc, r => SK[group](r), (k, so, ship, b, t, p) => { if(k == null || nkSkip(p, group, sc)) return; sofAdd(get(k))(k, so, ship, b, t); });
+  } else if(soOn() && sc.src == null){   // SO has no plant: not shown for a plant scope
     // SO counts every month the period touches in full: by delivery month (TGL_KIRIM, B.sod) when the build has it,
     // otherwise by PERIODE (B.so)
     if(group !== 'src'){
@@ -297,7 +311,7 @@ function summarize(group, per, sc, opt){
   }
   out.forEach(o => {
     o.pct = o.hasTgt ? (o.tgt > 0 ? pctOf(o.frc, o.tgt) : 100) : (F.kem !== 'CURAH' && (o.vol > 0 || o.frc > 0) ? 100 : null);   // no target but shipped = 100% (Rendy); curah market has no target: –
-    o.of = soOn() && o.so > 0 ? pctOf(o.frc0, o.so) : null;
+    o.of = sofOn() ? (o.so > 0 ? pctOf(o.soShip, o.so) : null) : soOn() && o.so > 0 ? pctOf(o.frc0, o.so) : null;
     o.gap = o.frc - o.tgt;
     o.dwell = o.dwN ? o.dwS / o.dwN : null;
   });
@@ -598,6 +612,10 @@ const TABLES = {};
 /* Column layout (Rendy): tables built from the C.* columns show volumes first (Target FM | Target MTD | Realisasi | Gap | SO,
    then LM (t) | Gap vs LM (t)), counts, then the % columns (Capaian, Real/SO, vs LM); comparison columns are shaded (lmc).
    A "vs LM" column (vsCol) brings its LM (t) and Gap vs LM (t) columns along. Other tables are left as they are. */
+/* SO open cell: valid open SO (<= 30 days) with its age split; expired (> 30 days) apart in red */
+const soOpenHtml = a => { if(!a || a[0] + a[1] + a[2] < 0.5) return '–';
+  const tip = 'SO open per hari ini · umur ≤7 hari ' + fmt(a[0]) + ' t · 8–30 hari ' + fmt(a[1]) + ' t · >30 hari (kedaluwarsa) ' + fmt(a[2]) + ' t';
+  return '<span title="' + esc(tip) + '">' + fmt(a[0] + a[1]) + '</span>' + (a[2] >= 0.5 ? '<small title="' + esc(tip) + '" style="display:block;font-weight:600;color:var(--red)">&gt;30 hr ' + fmt(a[2]) + '</small>' : ''); };
 function arrangeCols(cols, rows, opt){
   const vs = cols.find(c => c.kind === 'lmp' && c.pv);
   if(vs && !cols.some(c => c.kind === 'lmv')){
@@ -610,10 +628,14 @@ function arrangeCols(cols, rows, opt){
   // SO group gets its own gap: realisasi FRC truk (the % OF basis) - SO
   const so = cols.find(c => c.slot === 5), of = cols.find(c => c.slot === 7);
   if(so && of && !cols.some(c => c.slot === 6)){
-    const g = r => r.so ? (r.frc0 != null ? r.frc0 : r.vol) - r.so : null;
+    const sh = r => r.soShip != null && sofOn() ? r.soShip : r.frc0 != null ? r.frc0 : r.vol, g = r => r.so ? sh(r) - r.so : null;
     const gc = {h: 'Gap vs SO (Ton)', num: true, kind: 'v', slot: 6, val: r => g(r) == null ? -1e12 : g(r), html: r => g(r) == null ? '–' : '<span style="color:' + (g(r) < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(g(r)) + '</span>'};
-    if(opt.total){ const sv = rows.reduce((a, r) => a + (r.so || 0), 0), fv = rows.reduce((a, r) => a + (r.so ? (r.frc0 != null ? r.frc0 : r.vol) : 0), 0); gc.total = sv ? signed(fv - sv) : '–'; }
+    if(opt.total){ const sv = rows.reduce((a, r) => a + (r.so || 0), 0), fv = rows.reduce((a, r) => a + (r.so ? sh(r) : 0), 0); gc.total = sv ? signed(fv - sv) : '–'; }
     cols = cols.slice(); cols.splice(cols.indexOf(so) + 1, 0, gc);
+  }
+  if(so && of && B.soopen && !cols.some(c => c.slot === 7.5)){
+    const oc = Object.assign({}, C.soOpen); if(opt.total){ const t = [0, 1, 2].map(i => rows.reduce((a, r) => a + (r.soOpen ? r.soOpen[i] : 0), 0)); oc.total = soOpenHtml(t); }
+    cols = cols.slice(); cols.splice(cols.indexOf(of) + 1, 0, oc);
   }
   /* order (Rendy): Target FM | Realisasi | Target MTD | Gap | % Ach. | SO | Gap vs SO | % OF | LM | Gap vs LM | vs LM | other numbers | notes */
   const firstNum = cols.findIndex(c => c.num);
@@ -639,7 +661,7 @@ function tableInner(id){
   const nfz = /\brank\b/.test(T.cols[0] && T.cols[0].cls || '') && T.cols.length > 2 ? 2 : 1;
   const fz = i => i < nfz ? ' fz fz' + i + (i === nfz - 1 ? ' fzl' : '') : '';
   // width / colour groups: C.* kinds, otherwise read from the header (".. (t)" = volume, "% .." / "vs .." = percent, Target/Estimasi = target)
-  const kc = c => { if(c.kind) return (c.kind === 'v' || c.kind === 'lmv' ? ' cv' : c.kind === 'p' || c.kind === 'lmp' ? ' cp' : '') + (c.slot >= 2 && c.slot <= 4 ? ' ga' : c.slot >= 5 && c.slot <= 7 ? ' gb' : '');
+  const kc = c => { if(c.kind) return (c.kind === 'v' || c.kind === 'lmv' ? ' cv' : c.kind === 'p' || c.kind === 'lmp' ? ' cp' : '') + (c.slot >= 2 && c.slot <= 4 ? ' ga' : c.slot >= 5 && c.slot <= 7.5 ? ' gb' : '');
     if(!c.num) return ''; const h = String(c.h || '').replace(/<[^>]*>/g, '');
     return /\((t|ton)\)\s*$/i.test(h) ? ' cv' + (/^(Target|Estimasi)/i.test(h) ? ' ct' : '') : /^(%|vs |Real ?\/|OF )/i.test(h) || /%\s*$/.test(h) ? ' cp' : ''; };
   const head = '<tr>' + T.cols.map((c, i) => '<th class="' + (c.num ? 'num' : '') + (/\blmc\b/.test(c.cls || '') ? ' lmc' : '') + kc(c) + fz(i) + '" data-sort="' + id + ':' + i + '">' + c.h + (T.sort === i ? '<span class="arr">' + (T.dir > 0 ? '▲' : '▼') + '</span>' : '') + '</th>').join('') + '</tr>';
@@ -677,6 +699,7 @@ const C = {
   gap: {h:'Gap (Ton)', num:true, kind:'v', vo:3, slot:3, val: r => r.hasTgt ? r.gap : null, html: r => r.hasTgt ? '<span style="color:' + (r.gap < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(r.gap) + '</span>' : '–'},
   so: {h:'SO (Ton)', num:true, kind:'v', vo:4, slot:5, val: r => r.so || null, html: r => r.so ? fmt(r.so) : '–'},
   of: {h:'% OF', num:true, cls:'pc', kind:'p', slot:7, val: r => r.of, html: r => pctTxt(r.of), style: r => 'color:' + tierColor(r.of)},   // same colour tiers as % Ach.
+  soOpen: {h:'SO open (Ton)', num:true, kind:'v', slot:7.5, val: r => r.soOpen ? r.soOpen[0] + r.soOpen[1] : 0, html: r => soOpenHtml(r.soOpen)},
   trips: {h:'Trip', num:true, val: r => r.trips, html: r => fmt(r.trips)},
   dwell: {h:'SLA (jam)', num:true, val: r => r.dwell, html: r => r.dwell == null ? '–' : '<span style="color:' + slaColor(r.dwell) + '">' + fmt1(r.dwell) + '</span>'},
   note: {h:'Catatan', cls:'note-c', val: r => reviewText(r.pct), sortVal: r => r.pct}
@@ -1334,6 +1357,7 @@ function nodeHref(n){
 /** Put distributor targets on tree nodes (levels distr / prov / dist), within scope `base` ({dist} or {distr}). */
 /* SO FRC for a scope that includes a distributor (B.sodd, by delivery day); every month the period touches counts in full, as summarize() */
 function distrSO(m, sc){
+  if(sofOn()){ const o = {so: 0, soShip: 0, soOpen: null}; sofScan(m, sc, () => 0, sofAdd(o)); return o; }
   if(!B.sodd || !soOn()) return 0;
   const per = toPer(m), m0 = per.from.slice(0, 7), m9 = per.to.slice(0, 7);
   let v = 0;
@@ -1349,7 +1373,9 @@ function annotateDistrTargets(nodes, m, base, ctx, only){
       const sc = Object.assign({}, base, here), tg = distrTargets(m, sc), tf = distrTargets(m, sc, true);
       const one = mp => sc.distr != null ? (mp.get(sc.distr) || 0) : [...mp.values()].reduce((a, v) => a + v, 0), t = one(tg);
       n.t = t > 0 ? {hasTgt: true, tgt: t, tgtFull: one(tf), pct: pctOf(n.az, t)} : {hasTgt: false};
-      const so = distrSO(m, sc); if(so > 0){ n.t.so = so; n.t.frc0 = n.frc0; n.t.of = pctOf(n.frc0, so); }
+      const so = distrSO(m, sc);
+      if(typeof so === 'object'){ Object.assign(n.t, so); if(so.so > 0) n.t.of = pctOf(so.soShip, so.so); }
+      else if(so > 0){ n.t.so = so; n.t.frc0 = n.frc0; n.t.of = pctOf(n.frc0, so); }
     }
     if(n.children) annotateDistrTargets(n.children, m, base, here, only);
   });
@@ -1367,7 +1393,7 @@ function treeHTML(nodes, levels, opt){
       // order (Rendy): FM | Realisasi | [MTD | Gap | % Ach.] | [SO | Gap vs SO | % OF] | [LM | Gap vs LM | vs LM] | Trip — each bracket one colour
       (hasT ? '<th class="num cv">Target FM (Ton)</th>' : '') + '<th class="num cv">Realisasi (Ton)</th>' +
       (hasT ? '<th class="num cv ga">Target MTD (Ton)</th><th class="num cv ga">Gap (Ton)</th><th class="num cp ga">% Ach.</th>' : '') +
-      (hasT && soCols ? '<th class="num cv gb">SO (Ton)</th><th class="num cv gb">Gap vs SO (Ton)</th><th class="num cp gb">% OF</th>' : '') +
+      (hasT && soCols ? '<th class="num cv gb">SO (Ton)</th><th class="num cv gb">Gap vs SO (Ton)</th><th class="num cp gb">% OF</th>' + (B.soopen ? '<th class="num cv gb">SO open (Ton)</th>' : '') : '') +
       (tag ? '<th class="num lmc cv">' + tag + ' (Ton)</th><th class="num lmc cv">Gap vs ' + tag + ' (Ton)</th><th class="num lmc cp">vs ' + tag + '</th>' : '') + '<th class="num">Trip</th></tr></thead><tbody>';
   const walk = (list, depth, parent, kp) => list.forEach((n, i) => {
     const kpath = (kp || '') + '/' + n.key;
@@ -1380,8 +1406,8 @@ function treeHTML(nodes, levels, opt){
       (hasT ? '<td class="num">' + (t && t.hasTgt && t.tgtFull != null ? fmt(t.tgtFull) : '–') + '</td>' : '') + '<td class="num"><b>' + fmt(n.vol) + '</b></td>' +
       (hasT ? (t && t.hasTgt ? (g => '<td class="num ga">' + fmt(t.tgt) + '</td><td class="num ga"><span style="color:' + (g < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(g) + '</span></td><td class="num pc ga" style="color:' + tierColor(t.pct) + '">' + pctTxt(t.pct) + '</td>')(t.gap != null ? t.gap : (n.az != null ? n.az : n.vol) - t.tgt)
         : '<td class="num ga">–</td><td class="num ga">–</td><td class="num ga">–</td>') : '') +
-      (hasT && soCols ? (t && t.so ? (g => '<td class="num gb">' + fmt(t.so) + '</td><td class="num gb"><span style="color:' + (g < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(g) + '</span></td><td class="num pc gb" style="color:' + tierColor(t.of) + '">' + pctTxt(t.of) + '</td>')((t.frc0 != null ? t.frc0 : n.vol) - t.so)
-        : '<td class="num gb">–</td><td class="num gb">–</td><td class="num gb">–</td>') : '') +
+      (hasT && soCols ? (t && t.so ? (g => '<td class="num gb">' + fmt(t.so) + '</td><td class="num gb"><span style="color:' + (g < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(g) + '</span></td><td class="num pc gb" style="color:' + tierColor(t.of) + '">' + pctTxt(t.of) + '</td>')((t.soShip != null && sofOn() ? t.soShip : t.frc0 != null ? t.frc0 : n.vol) - t.so)
+        : '<td class="num gb">–</td><td class="num gb">–</td><td class="num gb">–</td>') + (B.soopen ? '<td class="num gb cv">' + soOpenHtml(t && t.soOpen) + '</td>' : '') : '') +
       (tag ? '<td class="num lmc">' + (pvv ? fmt(pvv) : '–') + '</td><td class="num lmc">' + dCell(n.vol, pvv, '', false, false) + '</td><td class="num lmc">' + (pvv > 0 ? vsTot(n.vol, pvv) : n.vol > 0 ? 'baru' : '–') + '</td>' : '') +
       '<td class="num">' + fmt(n.trips) + '</td>' +
       '</tr>';
@@ -1437,8 +1463,10 @@ function distrTable(m, sc, limit){
   const html = kemGroups(() => { const o = distrTableOne(m, sc, limit); return o.list.length ? o.html : ''; }, () => { const o = distrTableOne(m, sc, limit); return fmt(o.list.length) + ' distributor · ' + fmt(o.tot) + ' t'; });
   return Object.assign(all, {html: html || all.html});
 }
-function distrSOMap(m, sc){   // distributor -> SO FRC (B.sodd), scope prov/dist; every month the period touches, as summarize()
-  const out = new Map(); if(!B.sodd || !soOn()) return out;
+function distrSOMap(m, sc){   // distributor -> SO (number, or {so, soShip, soOpen} with B.sof)
+  const out = new Map();
+  if(sofOn()){ sofScan(m, Object.assign({}, sc, {distr: undefined}), r => r[8], (k, so, ship, b, t) => { if(k < 0) return; let o = out.get(k); if(!o){ o = {so: 0, soShip: 0, soOpen: null}; out.set(k, o); } sofAdd(o)(k, so, ship, b, t); }); return out; }
+  if(!B.sodd || !soOn()) return out;
   const per = toPer(m), m0 = per.from.slice(0, 7), m9 = per.to.slice(0, 7);
   B.sodd.forEach(r => { const mo = r[0].slice(0, 7); if(mo < m0 || mo > m9 || !kemOk(r[5]) || !soIncOk(r) || (sc.prov != null && r[1] !== sc.prov) || (sc.dist != null && r[2] !== sc.dist) || (sc.distr != null && r[3] !== sc.distr)) return; out.set(r[3], (out.get(r[3]) || 0) + r[4]); });
   return out;
@@ -1447,7 +1475,9 @@ function distrTableOne(m, sc, limit){
   const rows = shipRows(m, sc), list = distrSummary(rows), tg = distrTargets(m, sc), tf = distrTargets(m, sc, true), som = distrSOMap(m, sc);
   tg.forEach((v, k) => { if(B.dims.distr[k] && !list.some(o => o.key === k)) list.push(blankDistr(k)); });
   list.forEach(o => { o.tgt = tg.get(o.key) || 0; o.tgtFull = tf.get(o.key) || 0; o.hasTgt = o.tgt > 0; o.pct = o.hasTgt ? pctOf(o.nfz, o.tgt) : (o.vol > 0 ? 100 : null);   // no target but shipped = 100%
-    o.gap = o.nfz - o.tgt; o.so = som.get(o.key) || 0; o.frc0 = soAll() ? o.vol : o.frc; o.of = o.so > 0 ? pctOf(o.frc0, o.so) : null; });
+    o.gap = o.nfz - o.tgt; const sv = som.get(o.key);
+    if(sv && typeof sv === 'object'){ o.so = sv.so; o.soShip = sv.soShip; o.soOpen = sv.soOpen; o.of = o.so > 0 ? pctOf(o.soShip, o.so) : null; }
+    else { o.so = sv || 0; o.frc0 = soAll() ? o.vol : o.frc; o.of = o.so > 0 ? pctOf(o.frc0, o.so) : null; } });
   list.sort((a, b) => b.vol - a.vol || (b.tgt || 0) - (a.tgt || 0));
   list.forEach((o, i) => o.rank = i + 1);
   const tot = list.reduce((a, o) => a + o.vol, 0), unk = rows.filter(r => !(B.dims.toko[r[7]] && B.dims.toko[r[7]][0])).reduce((a, r) => a + r[8], 0);
@@ -1455,7 +1485,7 @@ function distrTableOne(m, sc, limit){
   const cols = [{h:'#', cls:'rank', val: o => o.rank, html: o => '#' + o.rank},
     {h:'Distributor', cls:'name', val: o => distrLbl(o.key), html: o => esc(distrLbl(o.key) || '(tanpa distributor)') + '<small>' + fmt(o.toko.size) + ' toko / gudang · ' + fmt(o.dist.size) + ' distrik' + (o.last >= 0 ? ' · kirim ' + shortDate(B.days[o.last]) : '') + '</small><small>' + [['FRC truk', o.frc], ['FRC kontainer/kapal', o.fc], ['ambil sendiri', o.nf]].filter(x => x[1] > 0).map(x => x[0] + ' ' + fmt(x[1]) + ' t').join(' · ') + '</small>'},
     C.fm, C.vol(), C.tgt, C.gap, C.pct, C.so, C.of, vsCol(new Map(distrSummary(shipRows(prevPer(toPer(m)), sc)).map(o => [o.key, o.vol])), m), C.trips].map(c => Object.assign({}, c));   // incoterm split: second line under the name
-  const sum = f => list.reduce((a, o) => a + (f(o) || 0), 0), wt = list.filter(o => o.hasTgt), tTgt = sum(o => o.tgt), tNfz = wt.reduce((a, o) => a + o.nfz, 0), tSo = sum(o => o.so), tFrcSo = list.filter(o => o.so).reduce((a, o) => a + o.frc0, 0);
+  const sum = f => list.reduce((a, o) => a + (f(o) || 0), 0), wt = list.filter(o => o.hasTgt), tTgt = sum(o => o.tgt), tNfz = wt.reduce((a, o) => a + o.nfz, 0), tSo = sum(o => o.so), tFrcSo = list.filter(o => o.so).reduce((a, o) => a + (o.soShip != null ? o.soShip : o.frc0), 0);
   const T = {'Target FM (Ton)': tTgt ? fmt(sum(o => o.tgtFull)) : '–', 'Realisasi (Ton)': '<b>' + fmt(tot) + '</b>', 'Target MTD (Ton)': tTgt ? fmt(tTgt) : '–', 'Gap (Ton)': tTgt ? signed(tNfz - tTgt) : '–',
     '% Ach.': tTgt ? '<b style="color:' + tierColor(pctOf(tNfz, tTgt)) + '">' + pctTxt(pctOf(tNfz, tTgt)) + '</b>' : '–', 'SO (Ton)': tSo ? fmt(tSo) : '–', '% OF': tSo ? pctTxt(pctOf(tFrcSo, tSo)) : '–', 'Trip': fmt(sum(o => o.trips)),
     'FRC TRUK (Ton)': fmt(sum(o => o.frc)), 'FRC KONTAINER/KAPAL (Ton)': fmt(sum(o => o.fc)), 'Ambil sendiri (Ton)': fmt(sum(o => o.nf)), 'Share': '100%'};
