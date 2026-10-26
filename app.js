@@ -569,10 +569,10 @@ function modalBody(){
     const tabs = '<div class="gran-chips" style="margin-bottom:14px">' + dims.map(k => '<span class="' + (k === dim ? 'on' : '') + '" data-mdim="' + k + '">Per ' + DIM_LBL[k].toLowerCase() + '</span>').join('') + '</div>';
     const cols = [C.rank,
       {h: DIM_LBL[dim], cls: 'name', val: o => dimName(dim, o.key), html: o => esc(dimName(dim, o.key)) + (dim === 'dist' ? '<small>' + esc(tc(B.dims.prov[B.dims.distProv[o.key]])) + '</small>' : '')},
-      {h: 'Realisasi (t)', num: true, val: o => o.vol, html: o => fmt(o.vol)},
-      {h: 'Target (t)', num: true, val: o => o.hasTgt ? o.tgt : null, html: o => o.hasTgt ? fmt(o.tgt) : '–'},
+      {h: 'Realisasi (Ton)', num: true, val: o => o.vol, html: o => fmt(o.vol)},
+      {h: 'Target (Ton)', num: true, val: o => o.hasTgt ? o.tgt : null, html: o => o.hasTgt ? fmt(o.tgt) : '–'},
       C.pct, C.gap, C.trips,
-      {h: PREV_LBL[T.gran] + ' (t)', num: true, val: o => o.prev, html: o => fmt(o.prev)},
+      {h: PREV_LBL[T.gran] + ' (Ton)', num: true, val: o => o.prev, html: o => fmt(o.prev)},
       {h: 'vs ' + PREV_LBL[T.gran], num: true, val: o => o.prev ? o.vol / o.prev - 1 : null, html: o => o.prev ? '<span style="color:' + (o.vol >= o.prev ? 'var(--green)' : 'var(--red)') + '">' + (o.vol >= o.prev ? '+' : '') + Math.round((o.vol / o.prev - 1) * 100) + '%</span>' : (o.vol ? 'baru' : '–')}];
     const tbl = rows => table(cols, rows, {go: o => dimHref(dim, o.key)});
     if(actInc.length > 1){   // one group per incoterm: header with the incoterm's own totals, then its rows
@@ -597,8 +597,8 @@ const TABLES = {};
 function arrangeCols(cols, rows, opt){
   const vs = cols.find(c => c.kind === 'lmp' && c.pv);
   if(vs && !cols.some(c => c.kind === 'lmv')){
-    const p = r => vs.pv.get(vs.keyOf(r)) || 0, add = [{h: vs.tag + ' (t)', num: true, cls: 'lmc', kind: 'lmv', val: p, html: r => p(r) ? fmt(p(r)) : '–'},
-      {h: 'Gap vs ' + vs.tag + ' (t)', num: true, cls: 'lmc', kind: 'lmv', val: r => r.vol - p(r), html: r => dCell(r.vol, p(r), '', false, false)}];
+    const p = r => vs.pv.get(vs.keyOf(r)) || 0, add = [{h: vs.tag + ' (Ton)', num: true, cls: 'lmc', kind: 'lmv', val: p, html: r => p(r) ? fmt(p(r)) : '–'},
+      {h: 'Gap vs ' + vs.tag + ' (Ton)', num: true, cls: 'lmc', kind: 'lmv', val: r => r.vol - p(r), html: r => dCell(r.vol, p(r), '', false, false)}];
     if(opt.total){ const pt = rows.reduce((a, r) => a + p(r), 0), vt = rows.reduce((a, r) => a + (r.vol || 0), 0); add[0].total = fmt(pt); add[1].total = dCell(vt, pt, '', false, false); }
     cols = cols.slice(); cols.splice(cols.indexOf(vs), 0, ...add);
   }
@@ -627,7 +627,7 @@ function tableInner(id){
   // width / colour groups: C.* kinds, otherwise read from the header (".. (t)" = volume, "% .." / "vs .." = percent, Target/Estimasi = target)
   const kc = c => { if(c.kind) return (c.kind === 'v' || c.kind === 'lmv' ? ' cv' : c.kind === 'p' || c.kind === 'lmp' ? ' cp' : '') + (c.kind === 'v' && c.vo <= 1 ? ' ct' : '');
     if(!c.num) return ''; const h = String(c.h || '').replace(/<[^>]*>/g, '');
-    return /\(t\)\s*$/.test(h) ? ' cv' + (/^(Target|Estimasi)/i.test(h) ? ' ct' : '') : /^(%|vs |Real ?\/|OF )/i.test(h) || /%\s*$/.test(h) ? ' cp' : ''; };
+    return /\((t|ton)\)\s*$/i.test(h) ? ' cv' + (/^(Target|Estimasi)/i.test(h) ? ' ct' : '') : /^(%|vs |Real ?\/|OF )/i.test(h) || /%\s*$/.test(h) ? ' cp' : ''; };
   const head = '<tr>' + T.cols.map((c, i) => '<th class="' + (c.num ? 'num' : '') + (/\blmc\b/.test(c.cls || '') ? ' lmc' : '') + kc(c) + fz(i) + '" data-sort="' + id + ':' + i + '">' + c.h + (T.sort === i ? '<span class="arr">' + (T.dir > 0 ? '▲' : '▼') + '</span>' : '') + '</th>').join('') + '</tr>';
   const body = rows.slice(0, lim).map((r, ri) => {
     const href = T.opt.go ? T.opt.go(r) : null;
@@ -641,30 +641,30 @@ function tableInner(id){
 /* cmp = {group, m, sc}: adds "vs bulan lalu" = realisasi vs the same days of the previous month (prevPer), same incoterm context */
 function capTable(list, h, name, href, so, cmp){
   if(!list.length) return '';
-  const cols = [{h: h, cls:'name', val: name}, C.vol('Real (t)'), Object.assign({}, C.fm, {h:'FM (t)'}), Object.assign({}, C.tgt, {h:'MTD (t)'}), C.pct].concat(so ? [C.so, Object.assign({}, C.of, {h:'% OF'})] : []);
+  const cols = [{h: h, cls:'name', val: name}, C.vol('Real (Ton)'), Object.assign({}, C.fm, {h:'FM (Ton)'}), Object.assign({}, C.tgt, {h:'MTD (Ton)'}), C.pct].concat(so ? [C.so, Object.assign({}, C.of, {h:'% OF'})] : []);
   if(cmp){   // last period volume, gap in ton and change in % (Rendy)
     const pv = prevVols(cmp.group, cmp.m, cmp.sc), tag = cmpTag(cmp.m), p = r => pv.get(r.key) || 0;
-    cols.push({h: tag + ' (t)', num: true, cls: 'lmc', kind: 'lmv', val: p, html: r => p(r) ? fmt(p(r)) : '–'},
-      {h: 'Gap vs ' + tag + ' (t)', num: true, cls: 'lmc', kind: 'lmv', val: r => r.vol - p(r), html: r => dCell(r.vol, p(r), '', false, false)}, vsCol(pv, cmp.m));
+    cols.push({h: tag + ' (Ton)', num: true, cls: 'lmc', kind: 'lmv', val: p, html: r => p(r) ? fmt(p(r)) : '–'},
+      {h: 'Gap vs ' + tag + ' (Ton)', num: true, cls: 'lmc', kind: 'lmv', val: r => r.vol - p(r), html: r => dCell(r.vol, p(r), '', false, false)}, vsCol(pv, cmp.m));
   }
   return '<div class="cap-tbl">' + table(cols, list, {go: href, sort: 1}) + '</div>';
 }
 function volTable(list, h, name, href){
   if(!list.length) return '';
   const tot = list.reduce((a, o) => a + o.vol, 0) || 1;
-  return '<div class="cap-tbl">' + table([{h: h, cls:'name', val: name}, {h:'Tonase (t)', num:true, val: o => o.vol, html: o => fmt(o.vol)}, {h:'Porsi', num:true, val: o => o.vol / tot, html: o => pctTxt(pctOf(o.vol, tot))}], list, {go: href, sort: 1}) + '</div>';
+  return '<div class="cap-tbl">' + table([{h: h, cls:'name', val: name}, {h:'Tonase (Ton)', num:true, val: o => o.vol, html: o => fmt(o.vol)}, {h:'Porsi', num:true, val: o => o.vol / tot, html: o => pctTxt(pctOf(o.vol, tot))}], list, {go: href, sort: 1}) + '</div>';
 }
 const C = {
   rank: {h:'Rank', cls:'rank', val: r => r.rank, html: r => r.rank ? '#' + r.rank : '–', num:false},
-  vol: (h) => ({h: h || 'Realisasi (t)', num:true, kind:'v', vo:2, val: r => r.vol, html: r => '<b>' + fmt(r.vol) + '</b>'}),
-  fm: {h:'Target FM (t)', num:true, kind:'v', vo:0, val: r => r.hasTgt ? r.tgtFull : null, html: r => r.hasTgt ? fmt(r.tgtFull) : '–'},   // full month (whole period)
-  tgt: {h:'Target MTD (t)', num:true, kind:'v', vo:1, val: r => r.hasTgt ? r.tgt : null, html: r => r.hasTgt ? fmt(r.tgt) : '–'},
+  vol: (h) => ({h: h || 'Realisasi (Ton)', num:true, kind:'v', vo:2, val: r => r.vol, html: r => '<b>' + fmt(r.vol) + '</b>'}),
+  fm: {h:'Target FM (Ton)', num:true, kind:'v', vo:0, val: r => r.hasTgt ? r.tgtFull : null, html: r => r.hasTgt ? fmt(r.tgtFull) : '–'},   // full month (whole period)
+  tgt: {h:'Target MTD (Ton)', num:true, kind:'v', vo:1, val: r => r.hasTgt ? r.tgt : null, html: r => r.hasTgt ? fmt(r.tgt) : '–'},
   pct: {h:'% Ach.', num:true, cls:'pc', kind:'p', val: r => r.pct, html: r => pctTxt(r.pct), style: r => 'color:' + tierColor(r.pct)},
-  gap: {h:'Gap (t)', num:true, kind:'v', vo:3, val: r => r.hasTgt ? r.gap : null, html: r => r.hasTgt ? '<span style="color:' + (r.gap < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(r.gap) + '</span>' : '–'},
-  so: {h:'SO (t)', num:true, kind:'v', vo:4, val: r => r.so || null, html: r => r.so ? fmt(r.so) : '–'},
+  gap: {h:'Gap (Ton)', num:true, kind:'v', vo:3, val: r => r.hasTgt ? r.gap : null, html: r => r.hasTgt ? '<span style="color:' + (r.gap < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(r.gap) + '</span>' : '–'},
+  so: {h:'SO (Ton)', num:true, kind:'v', vo:4, val: r => r.so || null, html: r => r.so ? fmt(r.so) : '–'},
   of: {h:'% OF', num:true, kind:'p', val: r => r.of, html: r => pctTxt(r.of)},   // neutral: SO is a whole month, realisasi is MTD
   trips: {h:'Trip', num:true, val: r => r.trips, html: r => fmt(r.trips)},
-  dwell: {h:'Waktu muat (jam)', num:true, val: r => r.dwell, html: r => r.dwell == null ? '–' : '<span style="color:' + slaColor(r.dwell) + '">' + fmt1(r.dwell) + '</span>'},
+  dwell: {h:'SLA (jam)', num:true, val: r => r.dwell, html: r => r.dwell == null ? '–' : '<span style="color:' + slaColor(r.dwell) + '">' + fmt1(r.dwell) + '</span>'},
   note: {h:'Catatan', cls:'note-c', val: r => reviewText(r.pct), sortVal: r => r.pct}
 };
 
@@ -836,7 +836,7 @@ function buildSearch(){
   B.ship.forEach(r => { seenD.add(r[5]); if(B.dims.toko[r[7]] && B.dims.toko[r[7]][0] && !tokoDistr.has(r[7])) tokoDistr.set(r[7], r[5]); });
   seenD.forEach(i => { if(B.dims.distr[i]) searchIndex.push({t: distrLbl(i), k: 'Distributor', h: '#/distributor/' + enc(B.dims.distr[i])}); });
   tokoDistr.forEach((d, i) => { const t = B.dims.toko[i]; searchIndex.push({t: (t[1] || t[0]) + (t[2] ? ' — ' + t[2] : ''), k: 'Toko · ' + distrLbl(d).slice(0, 22), h: '#/distributor/' + enc(B.dims.distr[d])}); });
-  [['Ringkasan','#/'],['Semua provinsi','#/provinsi'],['Peringkat ekspeditur & scorecard','#/ekspeditur'],['Distributor & toko tujuan','#/distributor'],['Armada / truk / waktu muat','#/armada'],['Kontrak angkutan (kuota, SO kontrak)','#/kontrak'],['Kualitas data (cek master)','#/kualitas'],['Prognosa minggu ini','#/prognosa/minggu-ini'],['Prognosa akhir bulan (proyeksi)','#/prognosa/akhir-bulan']]
+  [['Ringkasan','#/'],['Semua provinsi','#/provinsi'],['Peringkat ekspeditur & scorecard','#/ekspeditur'],['Distributor & toko tujuan','#/distributor'],['Armada / truk / SLA','#/armada'],['Kontrak angkutan (kuota, SO kontrak)','#/kontrak'],['Kualitas data (cek master)','#/kualitas'],['Prognosa minggu ini','#/prognosa/minggu-ini'],['Prognosa akhir bulan (proyeksi)','#/prognosa/akhir-bulan']]
     .forEach(x => searchIndex.push({t: x[0], k: 'Halaman', h: x[1]}));
 }
 function doSearch(q){
@@ -1342,8 +1342,8 @@ function treeHTML(nodes, levels, opt){
   let html = '<div class="tree-tools"><span>' + levels.map(l => LV_LBL[l]).join(' &rsaquo; ') + '</span><span><a data-tree-all="' + id + ':1">Buka semua</a> · <a data-tree-all="' + id + ':0">Tutup semua</a></span></div>' +
     '<div class="tbl-wrap' + (nodes.length > 15 ? ' tall' : '') + '"><table class="tbl tree" id="' + id + '"><thead><tr><th class="fz fz0 fzl">Tujuan</th>' +
       // volumes first, then the % columns (Rendy); comparison-period columns shaded
-      (hasT ? '<th class="num cv ct">Target FM (t)</th><th class="num cv ct">Target MTD (t)</th>' : '') + '<th class="num cv">Realisasi (t)</th>' + (hasT && soCols ? '<th class="num cv">SO (t)</th>' : '') +
-      (tag ? '<th class="num lmc cv">' + tag + ' (t)</th><th class="num lmc cv">Gap vs ' + tag + ' (t)</th>' : '') + '<th class="num">Trip</th>' +
+      (hasT ? '<th class="num cv ct">Target FM (Ton)</th><th class="num cv ct">Target MTD (Ton)</th>' : '') + '<th class="num cv">Realisasi (Ton)</th>' + (hasT && soCols ? '<th class="num cv">SO (Ton)</th>' : '') +
+      (tag ? '<th class="num lmc cv">' + tag + ' (Ton)</th><th class="num lmc cv">Gap vs ' + tag + ' (Ton)</th>' : '') + '<th class="num">Trip</th>' +
       (hasT ? '<th class="num cp">% Ach.</th>' + (soCols ? '<th class="num cp">% OF</th>' : '') : '') + (tag ? '<th class="num lmc cp">vs ' + tag + '</th>' : '') + '<th></th></tr></thead><tbody>';
   const walk = (list, depth, parent, kp) => list.forEach((n, i) => {
     const kpath = (kp || '') + '/' + n.key;
@@ -1420,18 +1420,18 @@ function distrTableOne(m, sc, limit){
   list.forEach((o, i) => o.rank = i + 1);
   const tot = list.reduce((a, o) => a + o.vol, 0), unk = rows.filter(r => !(B.dims.toko[r[7]] && B.dims.toko[r[7]][0])).reduce((a, r) => a + r[8], 0);
   const cols = [{h:'#', cls:'rank', val: o => o.rank, html: o => '#' + o.rank}, {h:'Distributor', cls:'name', val: o => distrLbl(o.key)},
-    {h:'FRC TRUK (t)', num:true, val: o => o.frc, html: o => o.frc ? fmt(o.frc) : '–'}].concat(list.some(o => o.fc) ? [
-    {h:'FRC KONTAINER/KAPAL (t)', num:true, val: o => o.fc, html: o => o.fc ? fmt(o.fc) : '–'}] : [], [{h:'Ambil sendiri (t)', num:true, val: o => o.nf, html: o => o.nf ? fmt(o.nf) : '–'},
-    {h:'Total (t)', num:true, val: o => o.vol, html: o => '<b>' + fmt(o.vol) + '</b>'}, {h:'Share', num:true, val: o => o.vol / (tot || 1), html: o => pctTxt(pctOf(o.vol, tot))}].concat(tg.size ? [
-    {h:'Target distributor ' + tgtLbl() + ' (t)', num:true, val: o => o.tgt || 0, html: o => o.tgt ? fmt(o.tgt) : '–'},
+    {h:'FRC TRUK (Ton)', num:true, val: o => o.frc, html: o => o.frc ? fmt(o.frc) : '–'}].concat(list.some(o => o.fc) ? [
+    {h:'FRC KONTAINER/KAPAL (Ton)', num:true, val: o => o.fc, html: o => o.fc ? fmt(o.fc) : '–'}] : [], [{h:'Ambil sendiri (Ton)', num:true, val: o => o.nf, html: o => o.nf ? fmt(o.nf) : '–'},
+    {h:'Total (Ton)', num:true, val: o => o.vol, html: o => '<b>' + fmt(o.vol) + '</b>'}, {h:'Share', num:true, val: o => o.vol / (tot || 1), html: o => pctTxt(pctOf(o.vol, tot))}].concat(tg.size ? [
+    {h:'Target distributor ' + tgtLbl() + ' (Ton)', num:true, val: o => o.tgt || 0, html: o => o.tgt ? fmt(o.tgt) : '–'},
     {h:'% Ach.', num:true, val: o => o.pct == null ? -1 : o.pct, html: o => o.pct == null ? '–' : '<b style="color:' + tierColor(o.pct) + '">' + pctTxt(o.pct) + '</b>'}] : [], [
     {h:'Trip', num:true, val: o => o.trips}, {h:'Provinsi', num:true, val: o => o.prov.size}, {h:'Distrik', num:true, val: o => o.dist.size},
     {h:'Toko / gudang', num:true, val: o => o.toko.size}, {h:'Kirim terakhir', num:true, val: o => o.last, html: o => o.last >= 0 ? dayLabel(B.days[o.last]) : '–'}], [vsCol(new Map(distrSummary(shipRows(prevPer(toPer(m)), sc)).map(o => [o.key, o.vol])), m)]));
       const sum = f => list.reduce((a, o) => a + (f(o) || 0), 0), uni = k => { const u = new Set(); list.forEach(o => o[k].forEach(x => u.add(x))); return u.size; };
       const wt = list.filter(o => o.tgt), tTgt = sum(o => o.tgt), tNfz = wt.reduce((a, o) => a + o.nfz, 0);
-      const T = {'FRC TRUK (t)': fmt(sum(o => o.frc)), 'FRC KONTAINER/KAPAL (t)': fmt(sum(o => o.fc)), 'Ambil sendiri (t)': fmt(sum(o => o.nf)), 'Total (t)': '<b>' + fmt(tot) + '</b>', 'Share': '100%',
+      const T = {'FRC TRUK (Ton)': fmt(sum(o => o.frc)), 'FRC KONTAINER/KAPAL (Ton)': fmt(sum(o => o.fc)), 'Ambil sendiri (Ton)': fmt(sum(o => o.nf)), 'Total (Ton)': '<b>' + fmt(tot) + '</b>', 'Share': '100%',
         'Trip': fmt(sum(o => o.trips)), 'Provinsi': fmt(uni('prov')), 'Distrik': fmt(uni('dist')), 'Toko / gudang': fmt(uni('toko')), 'Kirim terakhir': list.some(o => o.last >= 0) ? dayLabel(B.days[Math.max(...list.map(o => o.last))]) : '–'};
-      T['Target distributor ' + tgtLbl() + ' (t)'] = tTgt ? fmt(tTgt) : '–'; T['% Ach.'] = tTgt ? '<b style="color:' + tierColor(pctOf(tNfz, tTgt)) + '">' + pctTxt(pctOf(tNfz, tTgt)) + '</b>' : '–';
+      T['Target distributor ' + tgtLbl() + ' (Ton)'] = tTgt ? fmt(tTgt) : '–'; T['% Ach.'] = tTgt ? '<b style="color:' + tierColor(pctOf(tNfz, tTgt)) + '">' + pctTxt(pctOf(tNfz, tTgt)) + '</b>' : '–';
       cols.forEach(c => { if(T[c.h] != null) c.total = T[c.h]; });
   return {list, rows, tot, unk, html: list.length ? table(cols, list, {go: o => '#/distributor/' + enc(B.dims.distr[o.key]), limit: limit || 400, total: true}) : '<div class="dp-review">Tidak ada pengiriman untuk filter ini.</div>'};
 }
@@ -1457,10 +1457,10 @@ function pageDistr(name){
   })).filter(o => o.vol > 0 || o.tgt > 0);
   const incT = incRows.reduce((a, o) => ({vol: a.vol + o.vol, az: a.az + (o.tgt ? o.az : 0), tgt: a.tgt + o.tgt, trips: a.trips + o.trips}), {vol: 0, az: 0, tgt: 0, trips: 0});
   const incCols = [{h:'Incoterm', cls:'name', val: o => incLbl(o.n), html: o => esc(incLbl(o.n))},
-    {h:'Realisasi (t)', num:true, val: o => o.vol, html: o => fmt(o.vol)},
-    {h:'Target ' + tgtLbl() + ' MTD (t)', num:true, val: o => o.tgt, html: o => o.tgt ? fmt(o.tgt) : '–'},
+    {h:'Realisasi (Ton)', num:true, val: o => o.vol, html: o => fmt(o.vol)},
+    {h:'Target ' + tgtLbl() + ' MTD (Ton)', num:true, val: o => o.tgt, html: o => o.tgt ? fmt(o.tgt) : '–'},
     {h:'% Ach.', num:true, val: o => o.pct == null ? -1 : o.pct, html: o => o.pct == null ? '–' : '<b style="color:' + tierColor(o.pct) + '">' + pctTxt(o.pct) + '</b>'},
-    {h:'Gap (t)', num:true, val: o => o.tgt ? o.gap : 0, html: o => o.tgt ? '<span style="color:' + (o.gap < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(o.gap) + '</span>' : '–'},
+    {h:'Gap (Ton)', num:true, val: o => o.tgt ? o.gap : 0, html: o => o.tgt ? '<span style="color:' + (o.gap < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(o.gap) + '</span>' : '–'},
     {h:'Trip', num:true, val: o => o.trips}];
   if(incRows.length > 1){
     const tp = incT.tgt ? pctOf(incT.az, incT.tgt) : null;
@@ -1617,7 +1617,7 @@ function pageHome(){
     '<div class="kpi-row">' +
       kpi('trend', 'var(--black)', 'Trip truk', fmt(tTrips), {href:'#/armada', hint: incTxt + ' · ' + esc(m.label)}) +
       kpi('truck', 'var(--black)', 'Truk aktif', fmt(tTrucks), {href:'#/armada', hint: fmt1(tTrips / Math.max(1, tTrucks)) + ' trip / truk'}) +
-      kpi('clock', 'var(--amber)', 'Rata-rata waktu muat', t.dwell == null ? '–' : fmt1(t.dwell) + ' <small>jam</small>', {href:'#/armada', hint:'masuk → keluar pabrik'}) +
+      kpi('clock', 'var(--amber)', 'Rata-rata SLA', t.dwell == null ? '–' : fmt1(t.dwell) + ' <small>jam</small>', {href:'#/armada', hint:'masuk → keluar pabrik'}) +
       kpi('check', 'var(--green)', 'Realisasi / SO', pctTxt(t.of), {href:'#/ekspeditur', hint: t.so ? 'SO ' + fmt(t.so) + ' t' + ' (bulan penuh yang tercakup)' : 'SO tidak tersedia'}) +
     '</div>' +
     '</div>', 'home');
@@ -1673,8 +1673,8 @@ function incTable(m, sc){
     const T = rows.reduce((a, o) => ({fm: a.fm + o.tgtFull, tgt: a.tgt + o.tgt, vol: a.vol + o.vol, frc: a.frc + (o.hasTgt ? o.frc : 0), so: a.so + o.so, trips: a.trips + o.trips, prev: a.prev + o.prev, dwS: a.dwS + o.dwS, dwN: a.dwN + o.dwN}), {fm: 0, tgt: 0, vol: 0, frc: 0, so: 0, trips: 0, prev: 0, dwS: 0, dwN: 0});
     const cols = [{h:'Incoterm', cls:'name', val: o => o.i, html: o => '<span class="inc-dot" style="background:' + incColor(o.i) + '"></span>' + esc(incLbl(INCS()[o.i]))},
       C.fm, C.tgt, C.vol(), C.pct, C.gap, C.so, C.of, C.trips,
-      {h: tag + ' (t)', num: true, cls: 'lmc', kind: 'lmv', val: o => o.prev, html: o => o.prev ? fmt(o.prev) : '–'},
-      {h: 'Gap vs ' + tag + ' (t)', num: true, cls: 'lmc', kind: 'lmv', val: o => o.vol - o.prev, html: o => dCell(o.vol, o.prev, '', false, false)},
+      {h: tag + ' (Ton)', num: true, cls: 'lmc', kind: 'lmv', val: o => o.prev, html: o => o.prev ? fmt(o.prev) : '–'},
+      {h: 'Gap vs ' + tag + ' (Ton)', num: true, cls: 'lmc', kind: 'lmv', val: o => o.vol - o.prev, html: o => dCell(o.vol, o.prev, '', false, false)},
       {h: 'vs ' + tag, num: true, cls: 'lmc', kind: 'lmp', val: o => o.prev ? o.vol / o.prev : -1, html: o => o.prev ? '<span style="color:' + (o.vol >= o.prev ? 'var(--green)' : 'var(--red)') + '">' + (o.vol >= o.prev ? '+' : '−') + fmt(Math.abs((o.vol / o.prev - 1) * 100)) + '%</span>' : (o.vol ? 'baru' : '–')},
       C.dwell];
     const tp = T.tgt > 0 ? pctOf(T.frc, T.tgt) : null;
@@ -1849,7 +1849,7 @@ function plantChart(R){
     xl += '<text x="' + cx.toFixed(1) + '" y="' + (H - 10) + '" class="pc-ax" text-anchor="middle">' + lab + '</text>';
     const tip = (R.title ? R.title(k) : R.monthly ? monthLabel(k) : dayLabel(k)) + '|' + (b.tot ? 'Rilis ' + fmt(b.tot) + ' t · ' + fmt(b.trips) + ' trip' + (R.hourly ? '' : ' · ' + b.trucks.size + ' truk') : 'Belum ada rilis') +
       segs.slice().reverse().map(ii => '|' + incLbl(INCS()[ii]) + ': ' + fmt(b.inc.get(ii)) + ' t').join('') +
-      (b.tgt ? '|Target ' + tgtLbl() + ' ' + fmt(b.tgt * tgtK()) + ' t' + (b.tot ? ' · capaian ' + pctTxt(pctOf(b.tot, b.tgt * tgtK())) : '') : '') + (b.prev != null ? '|' + (R.prevLbl || 'Bulan lalu (tgl sama)') + ' ' + fmt(b.prev) + ' t' : '') + (b.dwN ? '|Waktu muat ' + fmt1(b.dwS / b.dwN) + ' jam' : '');
+      (b.tgt ? '|Target ' + tgtLbl() + ' ' + fmt(b.tgt * tgtK()) + ' t' + (b.tot ? ' · capaian ' + pctTxt(pctOf(b.tot, b.tgt * tgtK())) : '') : '') + (b.prev != null ? '|' + (R.prevLbl || 'Bulan lalu (tgl sama)') + ' ' + fmt(b.prev) + ' t' : '') + (b.dwN ? '|SLA ' + fmt1(b.dwS / b.dwN) + ' jam' : '');
     hits += '<rect x="' + (cx - step / 2).toFixed(1) + '" y="' + T + '" width="' + step.toFixed(1) + '" height="' + (H - T - Bm) + '" class="pc-hit" data-tip="' + esc(tip) + '"/>';
   });
   const pts = (f) => bs.map((b, i) => f(b) == null ? null : [L + step * (i + 0.5), y(f(b))]);
@@ -1940,7 +1940,7 @@ function pagePlant(name){
     heroChip('Target Internal', tgt ? fmt(tI) + ' <small>t</small>' : '–', tgt ? 'capaian <b style="color:' + heroTier(pI) + '">' + pctTxt(pI) + '</b> · ' + signed(az - tI) + ' t' : '115% SNOP'),
     heroChip(R.monthly ? 'Rata-rata / bulan' : 'Rata-rata / hari', fmt(R.monthly ? vol / Math.max(1, dayKeys.length) : avg) + ' <small>t</small>', lastK ? (R.monthly ? monthShort(lastK) : shortDate(lastK)) + ': ' + fmt(R.Bk.get(lastK).tot) + ' t' : ''),
     heroChip('vs ' + cmpTag(m), chg == null ? '–' : (chg >= 0 ? '▲ ' : '▼ ') + fmt1(Math.abs(chg)) + '%', prev ? fmt(prev) + ' t · ' + shortDate(R.pp.from) + '–' + shortDate(R.pp.to) : '', chg == null ? null : chg >= 0 ? '#5FD08F' : '#FF6B74'),
-    heroChip('Waktu muat rata-rata', dwN ? fmt1(dwS / dwN) + ' <small>jam</small>' : '–', 'target ' + SLA_TARGET + ' jam · masuk → keluar', dwN ? (dwS / dwN <= SLA_TARGET ? '#5FD08F' : '#FF6B74') : null)];
+    heroChip('SLA rata-rata', dwN ? fmt1(dwS / dwN) + ' <small>jam</small>' : '–', 'target ' + SLA_TARGET + ' jam · masuk → keluar', dwN ? (dwS / dwN <= SLA_TARGET ? '#5FD08F' : '#FF6B74') : null)];
   const cards = R.I.map(o => {
     const n = INCS()[o.i], ps = o.tgt ? pctOf(o.az, o.tgt) : null, pi = o.tgt ? pctOf(o.az, o.tgt * TGT_INTERNAL) : null;
     return '<div class="ph-card" style="--c:' + incColor(o.i) + '"><div class="ph-n">' + esc(incLbl(n)) + '</div><div class="ph-v">' + fmt(o.vol) + ' <small>t</small></div>' +
@@ -1963,14 +1963,14 @@ function pagePlant(name){
   const rows = R.I.map(o => ({n: o.i, vol: o.vol, tgt: o.tgt, ps: o.tgt ? pctOf(o.az, o.tgt) : null, pi: o.tgt ? pctOf(o.az, o.tgt * TGT_INTERNAL) : null, gap: o.az - o.tgt, prev: o.prev, chg: o.prev ? (o.vol / o.prev - 1) * 100 : null, trips: o.trips, sla: o.dwN ? o.dwS / o.dwN : null}));
   const pc = p => p == null ? '–' : '<b style="color:' + tierColor(p) + '">' + pctTxt(p) + '</b>';
   const cols = [{h:'Incoterm', cls:'name', val: r => incLbl(INCS()[r.n]), html: r => '<span class="inc-dot" style="background:' + incColor(r.n) + '"></span>' + esc(incLbl(INCS()[r.n]))},
-    {h:'Realisasi (t)', num:true, val: r => r.vol, html: r => fmt(r.vol)},
-    {h:'Target SNOP (t)', num:true, val: r => r.tgt, html: r => r.tgt ? fmt(r.tgt) : '–'},
+    {h:'Realisasi (Ton)', num:true, val: r => r.vol, html: r => fmt(r.vol)},
+    {h:'Target SNOP (Ton)', num:true, val: r => r.tgt, html: r => r.tgt ? fmt(r.tgt) : '–'},
     {h:'vs SNOP', num:true, val: r => r.ps == null ? -1 : r.ps, html: r => pc(r.ps)},
     {h:'vs Internal', num:true, val: r => r.pi == null ? -1 : r.pi, html: r => pc(r.pi)},
-    {h:'Gap SNOP (t)', num:true, val: r => r.tgt ? r.gap : 0, html: r => r.tgt ? '<span style="color:' + (r.gap < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(r.gap) + '</span>' : '–'},
-    {h:cmpTag(m) + ' (t)', num:true, val: r => r.prev, html: r => r.prev ? fmt(r.prev) : '–'},
+    {h:'Gap SNOP (Ton)', num:true, val: r => r.tgt ? r.gap : 0, html: r => r.tgt ? '<span style="color:' + (r.gap < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(r.gap) + '</span>' : '–'},
+    {h:cmpTag(m) + ' (Ton)', num:true, val: r => r.prev, html: r => r.prev ? fmt(r.prev) : '–'},
     {h:'vs ' + cmpTag(m), num:true, val: r => r.chg == null ? -999 : r.chg, html: r => r.chg == null ? '–' : '<span style="color:' + (r.chg >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (r.chg >= 0 ? '+' : '−') + fmt1(Math.abs(r.chg)) + '%</span>'},
-    {h:'Trip', num:true, val: r => r.trips}, {h:'Waktu muat (jam)', num:true, val: r => r.sla == null ? -1 : r.sla, html: r => r.sla == null ? '–' : fmt1(r.sla)}];
+    {h:'Trip', num:true, val: r => r.trips}, {h:'SLA (jam)', num:true, val: r => r.sla == null ? -1 : r.sla, html: r => r.sla == null ? '–' : fmt1(r.sla)}];
   if(rows.length > 1){
     cols[0].total = '<b>Total</b>'; cols[1].total = '<b>' + fmt(vol) + '</b>'; cols[2].total = tgt ? '<b>' + fmt(tgt) + '</b>' : '–'; cols[3].total = pc(pS); cols[4].total = pc(pI);
     cols[5].total = tgt ? signed(az - tgt) : '–'; cols[6].total = prev ? fmt(prev) : '–'; cols[7].total = chg == null ? '–' : (chg >= 0 ? '+' : '−') + fmt1(Math.abs(chg)) + '%'; cols[8].total = fmt(trips); cols[9].total = dwN ? fmt1(dwS / dwN) : '–';
@@ -2074,7 +2074,7 @@ function pageEksp(code){
   const one = trucks.filter(t => t.trips === 1).length;
   const distCols = [C.rank, {h:'Distrik', cls:'name', val: r => tc(B.dims.dist[r.key]), html: r => esc(tc(B.dims.dist[r.key])) + '<small>' + esc(tc(B.dims.prov[B.dims.distProv[r.key]])) + '</small>'}, C.fm, C.tgt, C.vol(), C.pct, C.gap, C.trips, C.note];
   const truckCols = [{h:'Nopol', cls:'name', val: r => B.dims.truck[r.truck]}, {h:'Trip', num:true, val: r => r.trips}, {h:'Tonase', num:true, val: r => r.ton, html: r => fmt(r.ton)},
-    {h:'Hari aktif', num:true, val: r => r.days}, {h:'Waktu muat (jam)', num:true, val: r => r.dwN ? r.dwS / r.dwN : null, html: r => r.dwN ? fmt1(r.dwS / r.dwN) : '–'},
+    {h:'Hari aktif', num:true, val: r => r.days}, {h:'SLA (jam)', num:true, val: r => r.dwN ? r.dwS / r.dwN : null, html: r => r.dwN ? fmt1(r.dwS / r.dwN) : '–'},
     {h:'Aktif', val: r => r.first, html: r => activeTxt(r)}, {h:'Provinsi utama', val: r => tc(B.dims.prov[r.prov])}];
   page('<div class="wrap">' + crumb([['Ekspeditur', '#/ekspeditur'], [code]]) +
     '<div class="dp-head"><div><div class="nm">' + esc(code) + '</div><div class="sub">' + ekspFull(code) + 'Mitra ekspeditur FRC · ' + periodSub() + '</div></div><div class="badges">' + (me.rank ? '<div class="dp-badge">Rank ' + me.rank + ' / ' + all.filter(o => D.frcEksp.has(o.key) && o.rank).length + '</div>' : '') + '<div class="dp-badge ' + tierClass(me.pct) + '">' + pctTxt(me.pct) + ' dari target</div></div></div>' +
@@ -2083,7 +2083,7 @@ function pageEksp(code){
       kpi('check', 'var(--green)', 'Realisasi', fmt(me.vol) + ' <small>ton</small>', {hint: fmt(me.trips) + ' trip'}) +
       kpi('target', 'var(--black)', 'Target MTD', me.hasTgt ? fmt(me.tgt) + ' <small>ton</small>' : '–', {hint: me.hasTgt ? 'bulan penuh ' + fmt(me.tgtFull) + ' t' : ''}) +
       kpi('truck', 'var(--black)', 'Truk aktif', fmt(trucks.length), {hint: fmt1(me.trips / Math.max(1, trucks.length)) + ' trip / truk'}) +
-      kpi('clock', 'var(--amber)', 'Rata-rata waktu muat', me.dwell == null ? '–' : fmt1(me.dwell) + ' <small>jam</small>', {hint: me.so ? '% OF ' + pctTxt(me.of) : ''}) +
+      kpi('clock', 'var(--amber)', 'Rata-rata SLA', me.dwell == null ? '–' : fmt1(me.dwell) + ' <small>jam</small>', {hint: me.so ? '% OF ' + pctTxt(me.of) : ''}) +
     '</div>' + tabsHTML('eksp', [{k: 'kinerja', label: 'Kinerja & provinsi', html: incPerf(m, sc) +
     '<div class="dp-cols">' + trendPanel(sc, 'mingguan') +
       '<div class="dp-panel"><div class="pt">Capaian per provinsi<span class="pt-sub">% Ach. · % OF</span></div>' + (provs.length ? incGroups(() => capTable([...summarize('prov', m, sc).values()].filter(o => o.vol > 0 || o.tgt > 0).sort((a, b) => b.vol - a.vol), 'Provinsi', o => tc(B.dims.prov[o.key]), o => '#/provinsi/' + enc(B.dims.prov[o.key]), true, {group: 'prov', m, sc}), ekspSub(m, sc)) : '<div class="empty">Tidak ada data untuk filter ini.</div>') + '</div>' +
@@ -2304,7 +2304,7 @@ function pageKapalDetail(name){
   const rr = (mp, lbl, href, h) => volTable([...mp.entries()].sort((a, b) => b[1] - a[1]).map(([k, t]) => ({key: k, vol: t})), h, o => lbl(o.key), o => href(o.key));
   const cols = [{h:'Voyage', cls:'rank', val: v => v.n, html: v => '#' + v.n},
     {h:'Muat', cls:'name', val: v => v.d0, html: v => shortDate(B.days[v.d0]) + (v.d1 !== v.d0 ? ' – ' + shortDate(B.days[v.d1]) : '') + '<small>' + v.days.size + ' hari muat · ' + esc(B.dims.src[v.src] || '') + '</small>'},
-    {h:'Tonase (t)', num:true, val: v => v.vol, html: v => '<b>' + fmt(v.vol) + '</b>'}, {h:'SPJ', num:true, val: v => v.trips},
+    {h:'Tonase (Ton)', num:true, val: v => v.vol, html: v => '<b>' + fmt(v.vol) + '</b>'}, {h:'SPJ', num:true, val: v => v.trips},
     {h:'Incoterm', val: v => [...v.inc].join(', '), html: v => esc([...v.inc].map(incLbl).join(', '))},
     {h:'Distributor', val: v => v.distr.size, html: v => [...v.distr.entries()].sort((a, b) => b[1] - a[1]).map(([d, t]) => '<a href="#/distributor/' + enc(B.dims.distr[d]) + '">' + esc(distrLbl(d) || '–') + '</a> <small>' + fmt(t) + ' t</small>').join('<br>')},
     {h:'Tujuan', val: v => v.prov.size, html: v => setTxt(v.dist, B.dims.dist, 'distrik') + '<small>' + esc([...v.prov].map(p => tc(B.dims.prov[p])).join(', ')) + '</small>'}];
@@ -2314,7 +2314,7 @@ function pageKapalDetail(name){
     vs.forEach(v => { v.spj = B.kspj.filter(r => r[1] === ki && r[3] === v.src && v.days.has(r[0]) && incOk(r[4]) && kemOk(r[9])); const w = v.spj.filter(r => r[14]);
       v.net = w.reduce((a, r) => a + r[14], 0) / 1000; v.netSpj = w.reduce((a, r) => a + r[8], 0); v.nW = w.length; v.route = new Set(v.spj.map(r => r[15]).filter(Boolean)); });
     if(vs.some(v => v.route.size)) cols.push({h:'Rute SAP', val: v => [...v.route].join(', '), html: v => v.route.size ? esc([...v.route].join(', ')) : '–'});
-    cols.splice(4, 0, {h:'Timbangan netto (t)', num:true, val: v => v.nW ? v.net : -1, html: v => v.nW ? fmt(v.net) + (v.nW < v.spj.length ? '<small>' + v.nW + ' / ' + v.spj.length + ' SPJ</small>' : '') : '<span style="color:var(--sub)">–</span>'},
+    cols.splice(4, 0, {h:'Timbangan netto (Ton)', num:true, val: v => v.nW ? v.net : -1, html: v => v.nW ? fmt(v.net) + (v.nW < v.spj.length ? '<small>' + v.nW + ' / ' + v.spj.length + ' SPJ</small>' : '') : '<span style="color:var(--sub)">–</span>'},
       {h:'Selisih vs SPJ', num:true, val: v => v.nW ? v.net - v.netSpj : 0, html: v => v.nW ? kspjDiff((v.net - v.netSpj) * 1000, v.netSpj * 1000) : '–'});
     TRENDS.kspj = {vs, title};
   }
@@ -2351,7 +2351,7 @@ function pageKapal(){
       return list;
     };
     const cols = [{h:'#', cls:'rank', val: o => o.rank || 999, html: o => o.rank ? '#' + o.rank : '–'}, {h:'Kapal', cls:'name', val: o => o.nm, html: o => { const I = o.k === '\u0000' ? null : kapalInfo(o.nm); return esc(o.nm.replace(/^KAPAL /, '')) + '<small>' + esc([o.k === '\u0000' ? '' : 'kapal ' + shipKind(o.nm), I && I.jenis, I && I.gt && 'GT ' + I.gt].filter(Boolean).join(' · ')) + '</small>'; }},
-      {h:'Voyage', num:true, val: o => o.voy == null ? -1 : o.voy, html: o => o.voy == null ? '–' : fmt(o.voy)}, {h:'Tonase (t)', num:true, val: o => o.vol, html: o => '<b>' + fmt(o.vol) + '</b>'},
+      {h:'Voyage', num:true, val: o => o.voy == null ? -1 : o.voy, html: o => o.voy == null ? '–' : fmt(o.voy)}, {h:'Tonase (Ton)', num:true, val: o => o.vol, html: o => '<b>' + fmt(o.vol) + '</b>'},
       {h:'t / voyage', num:true, val: o => o.voy ? o.vol / o.voy : 0, html: o => o.voy ? fmt(o.vol / o.voy) : '–'}, {h:'Hari muat', num:true, val: o => o.days.size},
       {h:'Muat terakhir', val: o => o.last, html: o => o.last >= 0 ? shortDate(B.days[o.last]) : '–'},
       {h:'Distributor', val: o => o.distr.size, html: o => setTxt(o.distr, B.dims.distr.map((x, i) => distrLbl(i)), 'distributor')}, {h:'Provinsi', val: o => o.prov.size, html: o => setTxt(o.prov, B.dims.prov, 'provinsi')},
@@ -2519,11 +2519,11 @@ function kontrakSection(){
   const pmS = months[months.indexOf(mSel) - 1];   // LM of the selected month (contract months only)
   sum.forEach(r => { const c = cell(r.key, mSel), q = pmS ? cell(r.key, pmS) : null;
     r.rso = pc(c.real, c.so); r.rsoP = q ? pc(q.real, q.so) : null; r.of = pc(c.okDay, c.soDay); r.ofP = q ? pc(q.okDay, q.soDay) : null; });
-  const soCols = [{h:'Ekspeditur', cls:'name', val: r => ekspLbl(r.key)}, {h:'Estimasi (t)', num:true, val: r => r.est, html: r => fmt(r.est)}, {h:'Realisasi (t)', num:true, val: r => r.real, html: r => fmt(r.real)},
-    {h:'% Ach.', num:true, val: r => pc(r.real, r.est), html: r => pcC(pc(r.real, r.est))}, {h:'SO kontrak (t)', num:true, val: r => r.so, html: r => fmt(r.so)},
+  const soCols = [{h:'Ekspeditur', cls:'name', val: r => ekspLbl(r.key)}, {h:'Estimasi (Ton)', num:true, val: r => r.est, html: r => fmt(r.est)}, {h:'Realisasi (Ton)', num:true, val: r => r.real, html: r => fmt(r.real)},
+    {h:'% Ach.', num:true, val: r => pc(r.real, r.est), html: r => pcC(pc(r.real, r.est))}, {h:'SO kontrak (Ton)', num:true, val: r => r.so, html: r => fmt(r.so)},
     {h:'% OF', num:true, val: r => pc(r.real, r.so), html: r => { const v = pc(r.real, r.so); return pcC(v, v == null ? '' : '<small>' + (v >= 105 ? 'lebih dari porsi' : v >= 90 ? 'sesuai porsi' : v >= 50 ? 'kurang dari porsi' : 'kritis') + '</small>'); }},
     {h:'% OF harian', num:true, val: r => pc(r.ok, r.sd), html: r => pcC(pc(r.ok, r.sd))},
-    {h:'Di luar rute (t)', num:true, val: r => r.luar, html: r => r.luar ? fmt(r.luar) : '–'},
+    {h:'Di luar rute (Ton)', num:true, val: r => r.luar, html: r => r.luar ? fmt(r.luar) : '–'},
     {h:'% OF ' + monthShort(mSel), num:true, val: r => r.rso, html: r => pcC(r.rso)}, dCol('vs LM', r => r.rso, r => r.rsoP, 'pp', false, false),
     {h:'% OF harian ' + monthShort(mSel), num:true, val: r => r.of, html: r => pcC(r.of)}, dCol('vs LM', r => r.of, r => r.ofP, 'pp', false, false)];
   ['est', 'real', 'so', 'luar'].forEach((k, i) => soCols[[1, 2, 4, 7][i]].total = fmt(sum.reduce((a, r) => a + r[k], 0)));
@@ -2561,8 +2561,8 @@ function kontrakKinerja(KM){
     const cur = kontrakRange(KM, v.from, v.to), prv = v.tag ? kontrakRange(KM, v.pf, v.pt) : null;
     const rows = [...cur.values()].filter(o => o.est > 0 || o.real > 0 || o.so > 0).map(o => { const q = prv && prv.get(o.key);
       return Object.assign(o, {cap: pc(o.real, o.est), rso: pc(o.real, o.so), of: pc(o.ok, o.sd), rsoP: q ? pc(q.real, q.so) : null, ofP: q ? pc(q.ok, q.sd) : null, realP: q ? q.real : null}); });
-    const cols = [{h:'Ekspeditur', cls:'name', val: r => ekspLbl(r.key)}, {h:'Estimasi kontrak (t)', num:true, val: r => r.est, html: r => fmt(r.est)}, {h:'Realisasi (t)', num:true, val: r => r.real, html: r => fmt(r.real)},
-      {h:'vs kontrak', num:true, val: r => r.cap, html: r => pcC(r.cap)}, {h:'SO kontrak (t)', num:true, val: r => r.so, html: r => fmt(r.so)},
+    const cols = [{h:'Ekspeditur', cls:'name', val: r => ekspLbl(r.key)}, {h:'Estimasi kontrak (Ton)', num:true, val: r => r.est, html: r => fmt(r.est)}, {h:'Realisasi (Ton)', num:true, val: r => r.real, html: r => fmt(r.real)},
+      {h:'vs kontrak', num:true, val: r => r.cap, html: r => pcC(r.cap)}, {h:'SO kontrak (Ton)', num:true, val: r => r.so, html: r => fmt(r.so)},
       {h:'% OF', num:true, val: r => r.rso, html: r => pcC(r.rso, r.rso == null ? '' : '<small>' + (r.rso >= 105 ? 'lebih dari porsi' : r.rso >= 90 ? 'sesuai porsi' : r.rso >= 50 ? 'kurang dari porsi' : 'kritis') + '</small>')},
       {h:'% OF harian', num:true, val: r => r.of, html: r => pcC(r.of)}].concat(v.tag ? [
       dCol('Realisasi vs ' + v.tag, r => r.real, r => r.realP, 't', false, false), dCol('% OF vs ' + v.tag, r => r.rso, r => r.rsoP, 'pp', false, false), dCol('OF vs ' + v.tag, r => r.of, r => r.ofP, 'pp', false, false)] : []);
@@ -2599,8 +2599,8 @@ function kontrakKPI(KM){
       fix('3 · Mutu (20%)'), fix('4 · Tujuan (20%)'), fix('5 · K3 (5%)'),
       {h:'Skor KPI', num:true, val: r => r.skor, html: r => skC(r.skor)}]
       .concat(pm ? [dCol('Skor vs LM', r => r.skor, r => r.p && r.p.skor, '', false, true)] : [])
-      .concat([{h:'Kekurangan order (t)', num:true, val: r => r.short, html: r => r.short >= 0.5 ? fmt(r.short) : '–'},
-        {h:'Terlambat (t)', num:true, val: r => r.late, html: r => r.late >= 0.5 ? fmt(r.late) : '–'},
+      .concat([{h:'Kekurangan order (Ton)', num:true, val: r => r.short, html: r => r.short >= 0.5 ? fmt(r.short) : '–'},
+        {h:'Terlambat (Ton)', num:true, val: r => r.late, html: r => r.late >= 0.5 ? fmt(r.late) : '–'},
         {h:'Estimasi sanksi', num:true, val: r => r.sanksi, html: r => r.sanksi >= 500 ? '<b style="color:var(--red)">' + rpTxt(r.sanksi) + '</b>' : '–'}]);
     const T = rows.reduce((a, r) => ({short: a.short + r.short, late: a.late + r.late, s: a.s + r.sanksi}), {short: 0, late: 0, s: 0}), n = cols.length;
     cols[0].total = '<b>Total</b>'; cols[6].total = rows.length ? fmt1(rows.reduce((a, r) => a + r.skor, 0) / rows.length) + ' <small>rata-rata</small>' : '–';
@@ -2649,9 +2649,9 @@ function kontrakDetail(e){
   const rs = [...o.rt.entries()].map(([i, x]) => ({r: K[i], ...x})).filter(x => x.est > 0 || x.real > 0).sort((a, b) => b.est - a.est);
   openModal(ekspLbl(e) + ' · kontrak ' + monthLabel(T.mSel), 'per rute pemenang', table([
     {h:'Rute', cls:'name', val: x => x.r[14], html: x => esc(tc(x.r[14])) + '<small>' + esc(tc(B.dims.src[x.r[1]] || '')) + (x.r[4] != null && x.r[4] < 1 ? ' · kuota ' + pctTxt(x.r[4] * 100) : '') + (x.r[9] ? ' · s.d. ' + monthShort(x.r[9]) : '') + (x.r[6] ? ' · amandemen' : '') + '</small>'},
-    {h:'Estimasi (t)', num:true, val: x => x.est, html: x => fmt(x.est)}, {h:'Realisasi (t)', num:true, val: x => x.real, html: x => fmt(x.real)},
+    {h:'Estimasi (Ton)', num:true, val: x => x.est, html: x => fmt(x.est)}, {h:'Realisasi (Ton)', num:true, val: x => x.real, html: x => fmt(x.real)},
     {h:'% Ach.', num:true, cls:'pc', val: x => x.est ? x.real / x.est * 100 : null, html: x => x.est ? pctTxt(x.real / x.est * 100) : '–', style: x => 'color:' + tierColor(x.est ? x.real / x.est * 100 : null)},
-    {h:'SO kontrak (t)', num:true, val: x => x.so, html: x => x.so ? fmt(x.so) : '–'},
+    {h:'SO kontrak (Ton)', num:true, val: x => x.so, html: x => x.so ? fmt(x.so) : '–'},
     {h:'% OF', num:true, cls:'pc', val: x => x.so ? x.real / x.so * 100 : null, html: x => x.so ? pctTxt(x.real / x.so * 100) : '–', style: x => 'color:' + tierColor(x.so ? x.real / x.so * 100 : null)},
     {h:'Lead / siklus (hari)', num:true, val: x => x.r[10], html: x => (x.r[10] != null ? fmt1(x.r[10]) : '–') + ' / ' + (x.r[11] != null ? fmt1(x.r[11]) : '–')},
     {h:'TOA (Rp/t)', num:true, val: x => x.r[13], html: x => x.r[13] ? fmt(x.r[13]) : '–'}], rs, {sort: 1}) +
@@ -2690,7 +2690,7 @@ function korCols(first, extra){
   return [first].concat(extra || [], [n1('Trip', r => r.trips, fmt), n1('t / trip', r => r.tpt), n1('Siklus aktual (hari)', r => r.cyc, v => '<b>' + fmt1(v) + '</b>'),
     n1('Kebutuhan armada · kontrak', r => r.plan, fmt), n1('Kebutuhan armada · real', r => r.rk, fmt),
     n1('Kebutuhan armada · selisih', korDiff, v => Math.abs(v) < 0.5 ? '0' : '<b style="color:' + (v > 0 ? 'var(--red)' : 'var(--green)') + '">' + (v > 0 ? '+' : '−') + fmt(Math.abs(v)) + '</b>'),
-    {h: 'Waktu muat (jam)', num: true, val: r => r.sla == null ? -1 : r.sla, html: r => r.sla == null ? '–' : '<b style="color:' + slaColor(r.sla) + '">' + fmt1(r.sla) + '</b>'},
+    {h: 'SLA (jam)', num: true, val: r => r.sla == null ? -1 : r.sla, html: r => r.sla == null ? '–' : '<b style="color:' + slaColor(r.sla) + '">' + fmt1(r.sla) + '</b>'},
     n1('Antri (jam)', r => r.wait)]);
 }
 /* model: plant -> provinsi -> distrik nodes with siklus, kebutuhan armada kontrak / real (pemenang rute) */
@@ -2752,7 +2752,7 @@ function korTruckModal(i){
   const list = [...byT.entries()].map(([tk, rs]) => Object.assign(korStat(rs, K.med('T' + tk)), {key: tk, days: new Set(rs.map(t => t[0])).size, last: Math.max(...rs.map(t => t[0]))}));
   const cols = [{h: 'Nopol', cls: 'name', val: r => B.dims.truck[r.key]}, {h: 'Hari muat', num: true, val: r => r.days}, {h: 'Trip', num: true, val: r => r.trips}, {h: 'Tonase', num: true, val: r => r.ton, html: r => fmt(r.ton)},
     {h: 't / trip', num: true, val: r => r.tpt, html: r => fmt1(r.tpt)}, {h: 'Siklus truk (hari)', num: true, val: r => r.cyc == null ? -1 : r.cyc, html: r => r.cyc == null ? '–' : fmt1(r.cyc)},
-    {h: 'Waktu muat (jam)', num: true, val: r => r.sla == null ? -1 : r.sla, html: r => r.sla == null ? '–' : '<b style="color:' + slaColor(r.sla) + '">' + fmt1(r.sla) + '</b>'},
+    {h: 'SLA (jam)', num: true, val: r => r.sla == null ? -1 : r.sla, html: r => r.sla == null ? '–' : '<b style="color:' + slaColor(r.sla) + '">' + fmt1(r.sla) + '</b>'},
     {h: 'Antri (jam)', num: true, val: r => r.wait == null ? -1 : r.wait, html: r => r.wait == null ? '–' : fmt1(r.wait)}, {h: 'Muat terakhir', val: r => r.last, html: r => shortDate(B.days[r.last])}];
   openModal(ekspLbl(x.key) + ' · ' + d.lbl, list.length + ' truk · ' + periodSub() + ' · klik truk untuk detail',
     '<div class="tab-note"><a class="section-link" data-href="kor:' + esc(K.cur.k) + '">&lsaquo; semua ekspeditur di koridor ini</a></div>' + table(cols, list, {sort: 2, go: r => '#/truk/' + enc(B.dims.truck[r.key])}));
@@ -2787,14 +2787,14 @@ function pageTruk(nopol){
     {h: 'Ton', num: true, val: r => r[9], html: r => fmt1(r[9]) + (r[16] ? '<small>' + esc(tc(r[16])) + '</small>' : '')},
     {h: 'Antri', num: true, val: r => r[11] == null ? -1e9 : r[11], html: r => hhmm(r[11])}, {h: 'Masuk', num: true, val: r => r[12] == null ? -1e9 : r[12], html: r => hhmm(r[12])},
     {h: 'Keluar', num: true, val: r => r[13] == null ? -1e9 : r[13], html: r => hhmm(r[13])},
-    {h: 'Waktu muat (jam)', num: true, val: r => r[12] != null && r[13] != null ? r[13] - r[12] : -1, html: r => { if(r[12] == null || r[13] == null || r[13] <= r[12]) return '–'; const h = (r[13] - r[12]) / 60; return '<b style="color:' + slaColor(h) + '">' + fmt1(h) + '</b>'; }},
+    {h: 'SLA (jam)', num: true, val: r => r[12] != null && r[13] != null ? r[13] - r[12] : -1, html: r => { if(r[12] == null || r[13] == null || r[13] <= r[12]) return '–'; const h = (r[13] - r[12]) / 60; return '<b style="color:' + slaColor(h) + '">' + fmt1(h) + '</b>'; }},
     {h: 'Berat kosong (kg)', num: true, val: r => r[14] || 0, html: r => r[14] ? fmt(r[14]) : '–'}];
   page('<div class="wrap">' + crumb([['Armada', '#/armada'], ['Truk ' + nopol]]) +
     '<div class="dp-head"><div><div class="nm">' + esc(nopol) + '</div><div class="sub">' + esc([...ek.keys()].map(ekspLbl).join(' · ') || 'tidak muat di periode ini') + (reg ? ' · plat ' + esc(pre) + ' = ' + esc(reg) : '') + ' · ' + periodSub() + '</div></div></div>' +
     '<div class="dp-grid4">' +
       kpi('trend', 'var(--black)', 'Trip', fmt(st.trips), {hint: fmt(st.ton) + ' t · ' + fmt1(st.tpt) + ' t / trip'}) +
       kpi('truck', 'var(--black)', 'Hari muat', fmt(new Set(rows.map(t => t[0])).size), {hint: gaps.length ? 'siklus median ' + fmt1(median(gaps)) + ' hari (60 hari)' : 'siklus: data belum cukup'}) +
-      kpi('clock', st.sla == null ? 'var(--black)' : slaColor(st.sla), 'Waktu muat', st.sla == null ? '–' : fmt1(st.sla) + ' <small>jam</small>', {hint: st.wait == null ? '' : 'antri ' + fmt1(st.wait) + ' jam'}) +
+      kpi('clock', st.sla == null ? 'var(--black)' : slaColor(st.sla), 'SLA', st.sla == null ? '–' : fmt1(st.sla) + ' <small>jam</small>', {hint: st.wait == null ? '' : 'antri ' + fmt1(st.wait) + ' jam'}) +
       kpi('box', 'var(--black)', 'Berat kosong', tare ? fmt1(tare / 1000) + ' <small>t</small>' : '–', {hint: tare ? 'median timbangan · muatan ' + fmt1(st.tpt) + ' t/trip' : 'tersedia setelah build data berikutnya'}) +
     '</div>' +
     '<div class="section-head"><div class="section-title">Hari muat · 30 hari</div></div>' + strip +
@@ -2829,8 +2829,8 @@ function pageArmada(){
     return {key: si, n: tc(B.dims.src[si] || '(tanpa plant)'), tpd: median(ds.map(d => new Set(rs.filter(t => t[0] === d).map(t => t[1])).size)), trips: sum(rs, 6), ton: sum(rs, 7), tpt: sum(rs, 7) / Math.max(1, sum(rs, 6)),
       sla: sum(rs, 9) ? sum(rs, 8) / sum(rs, 9) : null, o4: over4(rs), wait: sum(rs, 13) ? sum(rs, 12) / sum(rs, 13) : null}; }).sort((a, b) => b.ton - a.ton);
   const plantTbl = plantRows.length ? table([{h:'Plant', cls:'name', val: r => r.n}, {h:'Truk / hari', num:true, val: r => r.tpd, html: r => fmt(r.tpd)}, {h:'Trip', num:true, val: r => r.trips, html: r => fmt(r.trips)},
-    {h:'t / trip', num:true, val: r => r.tpt, html: r => fmt1(r.tpt)}, jam('Antri (jam)', r => r.wait), jam('Waktu muat (jam)', r => r.sla, true), pctCol('> ' + SLA_TARGET + ' jam', r => r.o4),
-    dCol('Waktu muat vs ' + tag, r => r.sla, r => (pSrc.get(r.key) || P0).sla, 'jam', true, true), dCol('Antri vs ' + tag, r => r.wait, r => (pSrc.get(r.key) || P0).wait, 'jam', true, true),
+    {h:'t / trip', num:true, val: r => r.tpt, html: r => fmt1(r.tpt)}, jam('Antri (jam)', r => r.wait), jam('SLA (jam)', r => r.sla, true), pctCol('> ' + SLA_TARGET + ' jam', r => r.o4),
+    dCol('SLA vs ' + tag, r => r.sla, r => (pSrc.get(r.key) || P0).sla, 'jam', true, true), dCol('Antri vs ' + tag, r => r.wait, r => (pSrc.get(r.key) || P0).wait, 'jam', true, true),
     dCol('> ' + SLA_TARGET + ' jam vs ' + tag, r => r.o4, r => (pSrc.get(r.key) || P0).o4, 'pp', true, false)], plantRows, {sort: 2, go: r => B.dims.src[r.key] ? plantHref(B.dims.src[r.key]) : null}) : '';
   // daily: time in plant per day (all plants in the filter), click = per ekspeditur that day
   const dData = dayIdx.map(d => { const rs = rows.filter(t => t[0] === d), n = sum(rs, 9), v = n ? sum(rs, 8) / n : 0;
@@ -2839,7 +2839,7 @@ function pageArmada(){
     const d = dData[i].d, per = new Map();
     rows.forEach(t => { if(t[0] !== d) return; const o = per.get(t[3]) || {key: t[3], s: 0, n: 0, trips: 0, vol: 0}; o.s += t[8]; o.n += t[9]; o.trips += t[6]; o.vol += t[7]; per.set(t[3], o); });
     const rs = [...per.values()].filter(o => o.n).map(o => Object.assign(o, {dw: o.s / o.n}));
-    openModal('Waktu muat · ' + dayLabel(B.days[d]), 'per ekspeditur', rs.length ? table([{h:'Ekspeditur', cls:'name', val: o => ekspLbl(o.key)}, {h:'Rata-rata (jam)', num:true, cls:'pc', val: o => o.dw, html: o => fmt1(o.dw), style: o => 'color:' + slaColor(o.dw)}, {h:'Trip', num:true, val: o => o.trips}, {h:'Tonase', num:true, val: o => o.vol, html: o => fmt(o.vol)}], rs, {go: o => ekspHref(o.key), sort: 1}) : '<div class="dp-review">Tidak ada data.</div>');
+    openModal('SLA · ' + dayLabel(B.days[d]), 'per ekspeditur', rs.length ? table([{h:'Ekspeditur', cls:'name', val: o => ekspLbl(o.key)}, {h:'Rata-rata (jam)', num:true, cls:'pc', val: o => o.dw, html: o => fmt1(o.dw), style: o => 'color:' + slaColor(o.dw)}, {h:'Trip', num:true, val: o => o.trips}, {h:'Tonase', num:true, val: o => o.vol, html: o => fmt(o.vol)}], rs, {go: o => ekspHref(o.key), sort: 1}) : '<div class="dp-review">Tidak ada data.</div>');
   }};
 
   // 2. Koridor
@@ -2870,8 +2870,8 @@ function pageArmada(){
     return table([{h:'Ekspeditur', cls:'name', val: r => ekspLbl(r.key)}, {h:'Truk', num:true, val: r => r.trucks}, {h:'Truk / hari', num:true, val: r => r.tpd, html: r => fmt(r.tpd)},
       {h:'Trip', num:true, val: r => r.trips, html: r => fmt(r.trips)}, {h:'Ton', num:true, val: r => r.ton, html: r => fmt(r.ton)},
       {h:'Siklus vs koridor', num:true, val: r => r.cyc, html: r => r.cyc == null ? '–' : '<b style="color:' + (r.cyc <= 100 ? 'var(--green)' : r.cyc <= 120 ? 'var(--amber)' : 'var(--red)') + '">' + pctTxt(r.cyc) + '</b>'},
-      {h:'Truk 1 trip', num:true, val: r => r.one, html: r => pctTxt(r.one)}, jam('Antri (jam)', r => r.wait), jam('Waktu muat (jam)', r => r.sla, true), pctCol('> ' + SLA_TARGET + ' jam', r => r.o4),
-      dCol('Waktu muat vs ' + tag, r => r.sla, r => (pEk.get(r.key) || P0).sla, 'jam', true, true), dCol('Truk 1 trip vs ' + tag, r => r.one, r => (pEk.get(r.key) || P0).one, 'pp', true, false),
+      {h:'Truk 1 trip', num:true, val: r => r.one, html: r => pctTxt(r.one)}, jam('Antri (jam)', r => r.wait), jam('SLA (jam)', r => r.sla, true), pctCol('> ' + SLA_TARGET + ' jam', r => r.o4),
+      dCol('SLA vs ' + tag, r => r.sla, r => (pEk.get(r.key) || P0).sla, 'jam', true, true), dCol('Truk 1 trip vs ' + tag, r => r.one, r => (pEk.get(r.key) || P0).one, 'pp', true, false),
       C.pct], list, {go: r => ekspHref(r.key), sort: 4});
   };
 
@@ -2881,10 +2881,10 @@ function pageArmada(){
     '<div class="dp-grid4">' +
       kpi('truck', 'var(--black)', 'Truk dimuat / hari', fmt(tpdAll), {hint: 'median · ' + fmt(new Set(rows.map(t => t[1])).size) + ' truk berbeda'}) +
       kpi('trend', 'var(--black)', 'Trip', fmt(trips), {hint: fmt1(ton / Math.max(1, trips)) + ' t / trip'}) +
-      kpi('clock', 'var(--amber)', 'Waktu muat', dwN ? fmt1(dwS / dwN) + ' <small>jam</small>' : '–', {hint: 'masuk → keluar · ' + pctTxt(over4(rows)) + ' truk > ' + SLA_TARGET + ' jam'}) +
+      kpi('clock', 'var(--amber)', 'SLA', dwN ? fmt1(dwS / dwN) + ' <small>jam</small>' : '–', {hint: 'masuk → keluar · ' + pctTxt(over4(rows)) + ' truk > ' + SLA_TARGET + ' jam'}) +
       kpi('clock', 'var(--black)', 'Antri', wN ? fmt1(wS / wN) + ' <small>jam</small>' : '–', {hint: 'antri → masuk pabrik'}) +
     '</div>' + tabsHTML('armada', [{k: 'rilis', label: 'Kinerja rilis', html:
-    '<div class="dp-panel" style="margin-bottom:14px"><div class="pt">Waktu muat per hari (jam)</div>' + barsHTML('ad', dData) +
+    '<div class="dp-panel" style="margin-bottom:14px"><div class="pt">SLA per hari (jam)</div>' + barsHTML('ad', dData) +
       '<div class="trend-legend"><span><i style="background:var(--green)"></i>&le;' + SLA_TARGET + ' jam</span><span><i style="background:var(--red)"></i>&gt;' + SLA_TARGET + ' jam</span><span><i class="dash"></i>target ' + SLA_TARGET + ' jam</span><span>klik batang = per ekspeditur</span></div></div>' +
     (plantTbl || '<div class="dp-review">Tidak ada data truk untuk filter ini.</div>')},
     {k: 'koridor', label: 'Koridor', html: '<div class="tab-note">Kebutuhan armada = trip per hari × siklus aktual (median jeda antar muat truk yang sama, 60 hari) · kontrak hanya FRC, jadi <b>kontrak</b> dan <b>real</b> hanya ekspeditur pemenang rute: kontrak = volume kontrak per hari ÷ t/trip aktual, real = trip aktual pemenang per hari · <b>selisih = kontrak − real</b>, merah = armada kurang · klik provinsi → distrik → ekspeditur → truk</div>' +
