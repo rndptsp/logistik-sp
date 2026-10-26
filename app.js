@@ -2099,10 +2099,24 @@ function voyagesOf(rows){
 }
 // ship views follow the incoterm filter when it is a sea incoterm (FOB, FAS, ...); a land incoterm or 'semua' = every sea incoterm
 const seaView = () => { if(F.inc === 'ALL' || modaOf(F.inc) !== 'LAUT') F.inc = 'ALL'; F.moda = 'LAUT'; };
-const kapalRows = (m, name) => {   // sea shipments (FOB/FAS/kontainer/kapal), any incoterm of moda LAUT
+/* Tujuan filter of the Kapal pages (Rendy): destination province of the shipment; null = all. Per browser tab. */
+let KTUJ = (() => { try { const v = sessionStorage.getItem('kapal:tuj'); return v == null ? null : +v; } catch(e){ return null; } })();
+const ktujOk = r => KTUJ == null || r[3] === KTUJ;
+const kapalRows = (m, name, all) => {   // sea shipments (FOB/FAS/kontainer/kapal), any incoterm of moda LAUT; all = ignore the tujuan filter
   const sv = [F.inc, F.moda]; seaView();
-  try { return shipRows(m).filter(r => name == null || shipName(r) === name); } finally { F.inc = sv[0]; F.moda = sv[1]; }
+  try { return shipRows(m).filter(r => (name == null || shipName(r) === name) && (all || ktujOk(r))); } finally { F.inc = sv[0]; F.moda = sv[1]; }
 };
+/* main destination of a set of ship rows: "Kota Medan" (+n distrik) */
+const tujTxt = rs => { const t = new Map(); rs.forEach(r => t.set(r[4], (t.get(r[4]) || 0) + r[8])); const a = [...t].sort((x, y) => y[1] - x[1]);
+  return a.length ? tc(B.dims.dist[a[0][0]] || '') + (a.length > 1 ? ' +' + (a.length - 1) : '') : ''; };
+function ktujChips(rows){
+  const t = new Map(); rows.forEach(r => t.set(r[3], (t.get(r[3]) || 0) + r[8]));
+  const list = [...t].sort((a, b) => b[1] - a[1]);
+  if(list.length < 2 && KTUJ == null) return '';
+  return '<div class="gran-chips ktuj" style="margin:0 0 16px;flex-wrap:wrap"><span style="background:none;border:0;padding-left:0;color:var(--sub);cursor:default">Tujuan</span>' +
+    [[null, 'Semua', rows.reduce((a, r) => a + r[8], 0)]].concat(list).map(([k, n, v]) => { const lbl = k === null && n === 'Semua' ? 'Semua' : tc(B.dims.prov[k]), key = k === null && n === 'Semua' ? '' : k, vol = k === null && n === 'Semua' ? v : n;
+      return '<span class="' + ((KTUJ == null ? '' : String(KTUJ)) === String(key) ? 'on' : '') + '" data-ktuj="' + key + '">' + esc(lbl) + ' <small>' + fmt(vol) + ' t</small></span>'; }).join('') + '</div>';
+}
 /* Vessel master (admin slot "kapal", public registry facts) for a ship name "KAPAL X"; null when not filled in. */
 const kapalInfo = name => { const K = B.dims.kapal || [], i = K.indexOf(String(name).replace(/^KAPAL /, '')); return i >= 0 ? (B.dims.kapalInfo || [])[i] || null : null; };
 /* Commons file page -> direct thumbnail (Special:FilePath redirects to upload.wikimedia.org). */
@@ -2129,10 +2143,10 @@ function shipGantt(m, name, opt){
     const vol = list.reduce((a, o) => a + o.vol, 0), nv = list.reduce((a, o) => a + o.vs.length, 0);
     const lines = list.map(o => {
       const dayT = new Map(); o.rs.forEach(r => dayT.set(r[0], (dayT.get(r[0]) || 0) + r[8]));
-      const bars = o.vs.map(v => '<a class="kg-v ' + o.kind + '" href="#/kapal/' + enc(o.nm) + '" style="left:' + pc(v.d0) + ';width:' + wd(v.d1 - v.d0 + 1) + '" title="' + esc(o.nm.replace(/^KAPAL /, '') + ' · ' + shortDate(B.days[v.d0]) + (v.d1 !== v.d0 ? '–' + shortDate(B.days[v.d1]) : '') + ' · ' + fmt(v.vol) + ' t · ' + v.days.size + ' hari muat') + '">' +
+      const bars = o.vs.map(v => '<a class="kg-v ' + o.kind + '" href="#/kapal/' + enc(o.nm) + '" style="left:' + pc(v.d0) + ';width:' + wd(v.d1 - v.d0 + 1) + '" title="' + esc(o.nm.replace(/^KAPAL /, '') + ' · ' + shortDate(B.days[v.d0]) + (v.d1 !== v.d0 ? '–' + shortDate(B.days[v.d1]) : '') + ' · ' + fmt(v.vol) + ' t · ' + v.days.size + ' hari muat · tujuan ' + tujTxt(o.rs.filter(r => r[2] === v.src && v.days.has(r[0])))) + '">' +
         '</a>' + (v.d1 - v.d0 + 1 >= 2 ? '<span class="kg-lb" style="left:' + pc(v.d0) + ';width:' + wd(v.d1 - v.d0 + 1) + '">' + fmt(v.vol) + ' t</span>' : '')).join('') +
         [...dayT.entries()].map(([d, t]) => '<i class="kg-day ' + o.kind + '" style="left:' + pc(d) + ';width:' + wd(1) + '" title="' + esc(dayLabel(B.days[d]) + ' · ' + fmt(t) + ' t') + '"></i>').join('');
-      return '<div class="kg-row"><a class="kg-nm" href="#/kapal/' + enc(o.nm) + '">' + esc(o.nm.replace(/^KAPAL /, '')) + '<small>' + o.kind + ' · ' + fmt(o.vol) + ' t</small></a><div class="kg-track">' + bars + '</div></div>';
+      return '<div class="kg-row"><a class="kg-nm" href="#/kapal/' + enc(o.nm) + '">' + esc(o.nm.replace(/^KAPAL /, '')) + '<small>' + o.kind + ' · ' + fmt(o.vol) + ' t' + (tujTxt(o.rs) ? ' · → ' + esc(tujTxt(o.rs)) : '') + '</small></a><div class="kg-track">' + bars + '</div></div>';
     }).join('');
     return {vol, html: (name == null && !opt.bare ? '<div class="inc-grp" style="--c:var(--black)"><b>' + esc(dermagaLbl(si)) + '</b><small>' + fmt(list.length) + ' kapal · ' + fmt(nv) + ' voyage · ' + fmt(vol) + ' t</small></div>' : '') +
       '<div class="kgantt"><div class="kg-row kg-head"><span class="kg-nm">' + (name == null ? 'Kapal (urut kedatangan)' : esc(dermagaLbl(si))) + '</span><div class="kg-days">' + head + '</div></div>' + lines + '</div>'};
@@ -2164,7 +2178,7 @@ function kspjModal(n){
 }
 function pageKapalDetail(name){
   if(!/^KAPAL /.test(name) && !B.ship.some(r => shipName(r) === name) && B.ship.some(r => shipName(r) === 'KAPAL ' + name)) name = 'KAPAL ' + name;   // bare vessel name (search, typed link)
-  const m = PER(), rows = kapalRows(m, name);
+  const m = PER(), rows = kapalRows(m, name), rowsAllT = kapalRows(m, name, true);
   if(!rows.length && !B.ship.some(r => shipName(r) === name)) return notFound('Kapal ' + name);
   const vs = voyagesOf(rows), vol = rows.reduce((a, r) => a + r[8], 0), trips = rows.reduce((a, r) => a + r[9], 0);
   const days = new Set(rows.map(r => r[0])), distr = new Map(), prov = new Map(), src = new Map();
@@ -2202,7 +2216,7 @@ function pageKapalDetail(name){
       (facts.length ? '<dl class="ks-facts">' + facts.map(f => '<div><dt>' + f[0] + '</dt><dd>' + esc(String(f[1])) + '</dd></div>').join('') + '</dl>' : '<div class="ks-empty">Data registri kapal (IMO, GT, operator) belum ada di master kapal.</div>') +
       (srcLinks.length ? '<div class="ks-src">' + conf + (I.catatan && facts.length ? esc(I.catatan) + ' · ' : '') + 'Sumber: ' + srcLinks.map(u => '<a href="' + esc(u) + '" target="_blank" rel="noopener">' + esc(u.replace(/^https:\/\/(www\.)?/, '').split('/')[0]) + '</a>').join(' · ') + '</div>' : '') +
     '</div><div class="ks-right">' + photo + '</div></section>' +
-    '<div class="section-head"><div class="section-title">Timeline 30 hari</div></div>' + (shipGantt(m, name) || '<div class="dp-review">Tidak ada muatan kapal ini dalam 30 hari terakhir periode.</div>') +
+    ktujChips(rowsAllT) + '<div class="section-head"><div class="section-title">Timeline 30 hari</div></div>' + (shipGantt(m, name) || '<div class="dp-review">Tidak ada muatan kapal ini dalam 30 hari terakhir periode.</div>') +
     (vs.length ? '' : '<div class="dp-review">Tidak ada muatan kapal ini pada filter (plant, kemasan, periode).' + (() => { let l = -1; B.ship.forEach(r => { if(shipName(r) === name) l = Math.max(l, r[0]); }); return l >= 0 ? ' Muat terakhir di data: <b>' + dayLabel(B.days[l]) + '</b> — ubah periode untuk melihat riwayatnya.' : ''; })() + '</div>') +
     (rows.length ? '<div class="dp-cols even"><div class="dp-panel"><div class="pt">Muat dari</div>' + rr(src, k => tc(B.dims.src[k] || '(tanpa plant)'), k => B.dims.src[k] ? '#/plant/' + enc(B.dims.src[k]) : null, 'Plant / dermaga') + '</div>' +
       '<div class="dp-panel"><div class="pt">Tujuan provinsi</div>' + rr(prov, k => tc(B.dims.prov[k]), k => '#/provinsi/' + enc(B.dims.prov[k]), 'Provinsi') + '</div></div>' : '') +
@@ -2213,7 +2227,7 @@ function pageKapalDetail(name){
 function pageKapal(){
   const sv = [F.inc, F.moda], landInc = F.inc !== 'ALL' && modaOf(F.inc) !== 'LAUT'; seaView();
   try {
-    const m = PER(), rows = shipRows(m), tot = rows.reduce((a, r) => a + r[8], 0);
+    const m = PER(), rowsAll = shipRows(m), rows = rowsAll.filter(ktujOk), tot = rows.reduce((a, r) => a + r[8], 0);
     const agg = rs => {
       const by = new Map();
       rs.forEach(r => {
@@ -2231,7 +2245,7 @@ function pageKapal(){
       {h:'t / voyage', num:true, val: o => o.voy ? o.vol / o.voy : 0, html: o => o.voy ? fmt(o.vol / o.voy) : '–'}, {h:'Hari muat', num:true, val: o => o.days.size},
       {h:'Muat terakhir', val: o => o.last, html: o => o.last >= 0 ? shortDate(B.days[o.last]) : '–'},
       {h:'Distributor', val: o => o.distr.size, html: o => setTxt(o.distr, B.dims.distr.map((x, i) => distrLbl(i)), 'distributor')}, {h:'Provinsi', val: o => o.prov.size, html: o => setTxt(o.prov, B.dims.prov, 'provinsi')},
-      {h:'Distrik', val: o => o.dist.size, html: o => setTxt(o.dist, B.dims.dist, 'distrik')}];
+      {h:'Tujuan (distrik)', val: o => o.dist.size, html: o => setTxt(o.dist, B.dims.dist, 'distrik')}];
     const all = agg(rows), named = all.filter(o => o.k !== '\u0000'), unk = all.find(o => o.k === '\u0000');
     // grouping: per dermaga (loading point = source plant); vessel names exist for FOB only, so an incoterm split adds nothing
     const srcs = [...new Set(rows.map(r => r[2]))].map(si => ({si, rs: rows.filter(r => r[2] === si)})).map(g => Object.assign(g, {vol: g.rs.reduce((a, r) => a + r[8], 0)})).sort((a, b) => b.vol - a.vol);
@@ -2249,7 +2263,7 @@ function pageKapal(){
       '<div class="dp-head"><div><div class="nm">Kapal · moda laut</div><div class="sub">' + fmt(named.length) + ' kapal di ' + fmt(srcs.length) + ' dermaga · voyage: kapal reguler (rata-rata < ' + VOY_SMALL + ' t/hari muat) = tiap hari muat; kapal kargo = hari muat berjeda ≤ ' + VOY_GAP + ' hari · ' + periodSub() + '</div></div></div>' +
       '<div class="dp-hint" style="font-size:12px;color:var(--sub);margin:-6px 0 14px">Filter aktif: ' + srcTxt() + ' · incoterm <b>' + (F.inc === 'ALL' ? 'semua laut' : esc(incLbl(F.inc))) + '</b>' + (landInc ? ' (filter ' + esc(incLbl(sv[0])) + ' adalah darat: semua incoterm laut ditampilkan)' : '') + ' · kemasan <b>' + esc(kemName()) + '</b> · area <b>' + esc(areaName()) + '</b> · <a class="section-link" data-act="openfilter" style="cursor:pointer;color:var(--red);font-weight:700">ubah filter</a></div>' +
       (unk && tot ? '<div class="dp-review">' + pctTxt(pctOf(unk.vol, tot)) + ' tonase laut periode ini (' + fmt(unk.vol) + ' t) belum punya nama kapal di sumber Rilis. Yang tercatat nama kapalnya baru FOB; FAS, kontainer, FRC KAPAL, FRC KONTAINER dan FOB KAPAL (polysling) menunggu data tambahan.</div>' : '') +
-      '<div class="section-head"><div class="section-title">Kapal per dermaga</div><div class="section-sub">timeline: kapal masuk berurutan dari atas · klik bar untuk detail kapal</div></div>' + shipKey(Math.max(0, e30 - 29), e30) +
+      '<div class="section-head"><div class="section-title">Kapal per dermaga</div><div class="section-sub">timeline: kapal masuk berurutan dari atas · klik bar untuk detail kapal</div></div>' + ktujChips(rowsAll) + shipKey(Math.max(0, e30 - 29), e30) +
       (rows.length ? groups : '<div class="dp-review">Tidak ada pengiriman laut pada filter ini (plant, kemasan, periode).</div>') + '</div>', 'armada');
   } finally { F.inc = sv[0]; F.moda = sv[1]; }
 }
@@ -2916,6 +2930,8 @@ function bindEvents(){
     if(src){ src.checked ? draft.srcOff.delete(src.dataset.src) : draft.srcOff.add(src.dataset.src); return; }
     const gran = e.target.closest('[data-gran]');
     if(gran){ const [id, g] = gran.dataset.gran.split(':'); TRENDS[id].gran = g; $('#' + id).innerHTML = trendInner(id); return; }
+    const kt = e.target.closest('[data-ktuj]');
+    if(kt){ KTUJ = kt.dataset.ktuj === '' ? null : +kt.dataset.ktuj; try { KTUJ == null ? sessionStorage.removeItem('kapal:tuj') : sessionStorage.setItem('kapal:tuj', KTUJ); } catch(x){} route(); return; }
     const mdim = e.target.closest('[data-mdim]');
     if(mdim && MODAL){ MODAL.dim = mdim.dataset.mdim; $('#modalBody').innerHTML = modalBody(); return; }
     if(e.target.id === 'modal'){ closeModal(); return; }
