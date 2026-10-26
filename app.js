@@ -613,9 +613,7 @@ const TABLES = {};
    then LM (t) | Gap vs LM (t)), counts, then the % columns (Capaian, Real/SO, vs LM); comparison columns are shaded (lmc).
    A "vs LM" column (vsCol) brings its LM (t) and Gap vs LM (t) columns along. Other tables are left as they are. */
 /* SO open cell: valid open SO (<= 30 days) with its age split; expired (> 30 days) apart in red */
-const soOpenHtml = a => { if(!a || a[0] + a[1] + a[2] < 0.5) return '–';
-  const tip = 'SO open per hari ini · umur ≤7 hari ' + fmt(a[0]) + ' t · 8–30 hari ' + fmt(a[1]) + ' t · >30 hari (kedaluwarsa) ' + fmt(a[2]) + ' t';
-  return '<span title="' + esc(tip) + '">' + fmt(a[0] + a[1]) + '</span>' + (a[2] >= 0.5 ? '<small title="' + esc(tip) + '" style="display:block;font-weight:600;color:var(--red)">&gt;30 hr ' + fmt(a[2]) + '</small>' : ''); };
+const soOpenHtml = a => !a || a[0] + a[1] < 0.5 ? '–' : fmt(a[0] + a[1]);   // SO still valid (<= 30 days) and not shipped; no age shown (Rendy)
 function arrangeCols(cols, rows, opt){
   const vs = cols.find(c => c.kind === 'lmp' && c.pv);
   if(vs && !cols.some(c => c.kind === 'lmv')){
