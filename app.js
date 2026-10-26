@@ -158,7 +158,11 @@ const tInc = t => t[7] || 0;
 const achOk = inc => incOk(inc) && (isFrc(inc) || D.nfTgt);   // realisasi counted against target
 /* Only realisasi in a kemasan that has targets counts toward achievement (volume still shows the chosen kemasan). */
 const achKem = k => !KEMS().length || D.tgtKem.has(k);
-const soOn = () => F.inc === 'FRC' || (F.inc === 'ALL' && F.moda !== 'LAUT');   // SO is FRC TRUK only
+/* SO: newer builds carry SO of every incoterm (sod[6]); % OF = realisasi of the selected incoterm(s) / their SO (Rendy: SO total).
+   Older builds: SO is FRC TRUK only. */
+const soAll = () => !!(B.sod && B.sod.length && B.sod[0].length > 6);
+const soIncOk = r => r[6] == null ? true : incOk(r[6]);
+const soOn = () => soAll() || F.inc === 'FRC' || (F.inc === 'ALL' && F.moda !== 'LAUT');
 const incName = () => F.inc === 'ALL' ? 'semua incoterm' + (F.moda === 'ALL' ? '' : ' ' + MODA_LBL[F.moda].toLowerCase()) : incLbl(F.inc);
 const setInc = (inc, moda) => { F.inc = inc; F.moda = moda || (inc === 'ALL' ? F.moda : modaOf(inc)); };
 const saveFilter = () => { try { sessionStorage.setItem('osp_f3', JSON.stringify({per: F.per, inc: F.inc, moda: F.moda, kem: F.kem, area: F.area, srcOff: [...F.srcOff], tgt: F.tgt})); } catch(e) {} };
@@ -266,7 +270,7 @@ function summarize(group, per, sc, opt){
   B.facts.forEach(f => {
     if(!inPer(f[0], per) || !srcOkS(f[2], sc) || !kemOk(f[10]) || !scopeOkF(f, sc) || nkSkip(f[3], group, sc)) return;
     const o = get(FK[group](f));
-    if(f[1] === 0) o.frc0 += f[6];   // FRC TRUK (Real/SO)
+    if(soAll() ? incOk(f[1]) : f[1] === 0) o.frc0 += f[6];   // % OF basis: selected incoterm(s), or FRC TRUK on older builds
     if(achOk(f[1]) && achKem(f[10]) && nkAch(f[3])) o.frc += f[6];
     if(incOk(f[1])){ o.vol += f[6]; o.trips += f[7]; o.dwS += f[8]; o.dwN += f[9]; }
   });
@@ -282,7 +286,7 @@ function summarize(group, per, sc, opt){
     if(group !== 'src'){
       const m9 = per.to.slice(0, 7);
       B.sod.forEach(s => {
-        if(s[0].slice(0, 7) < m0 || s[0].slice(0, 7) > m9 || !kemOk(s[5]) || !scopeOkT(s, sc) || nkSkip(s[1], group, sc)) return;
+        if(s[0].slice(0, 7) < m0 || s[0].slice(0, 7) > m9 || !kemOk(s[5]) || !soIncOk(s) || !scopeOkT(s, sc) || nkSkip(s[1], group, sc)) return;
         get(SK[group](s)).so += s[4];
       });
       B.so.forEach(s => {
@@ -1303,7 +1307,7 @@ function shipRows(m, sc){
 function buildTree(rows, levels, depth){
   depth = depth || 0;
   const lv = levels[depth], groups = new Map();
-  rows.forEach(r => { const k = SHK[lv](r); let g = groups.get(k); if(!g){ g = {lv, key: k, vol: 0, az: 0, frc0: 0, trips: 0, last: -1, rows: []}; groups.set(k, g); } g.vol += r[8]; if(r[1] === 0) g.frc0 += r[8]; if(achKem(r[10])) g.az += r[8]; g.trips += r[9]; g.last = Math.max(g.last, r[0]); g.rows.push(r); });
+  rows.forEach(r => { const k = SHK[lv](r); let g = groups.get(k); if(!g){ g = {lv, key: k, vol: 0, az: 0, frc0: 0, trips: 0, last: -1, rows: []}; groups.set(k, g); } g.vol += r[8]; if(soAll() || r[1] === 0) g.frc0 += r[8]; if(achKem(r[10])) g.az += r[8]; g.trips += r[9]; g.last = Math.max(g.last, r[0]); g.rows.push(r); });
   const nodes = [...groups.values()].sort((a, b) => b.vol - a.vol);
   nodes.forEach(n => { if(depth + 1 < levels.length) n.children = buildTree(n.rows, levels, depth + 1); n.rows = null; });
   return nodes;
@@ -1333,7 +1337,7 @@ function distrSO(m, sc){
   if(!B.sodd || !soOn()) return 0;
   const per = toPer(m), m0 = per.from.slice(0, 7), m9 = per.to.slice(0, 7);
   let v = 0;
-  B.sodd.forEach(r => { const mo = r[0].slice(0, 7); if(mo < m0 || mo > m9 || !kemOk(r[5]) || (sc.distr != null && r[3] !== sc.distr) || (sc.prov != null && r[1] !== sc.prov) || (sc.dist != null && r[2] !== sc.dist)) return; v += r[4]; });
+  B.sodd.forEach(r => { const mo = r[0].slice(0, 7); if(mo < m0 || mo > m9 || !kemOk(r[5]) || !soIncOk(r) || (sc.distr != null && r[3] !== sc.distr) || (sc.prov != null && r[1] !== sc.prov) || (sc.dist != null && r[2] !== sc.dist)) return; v += r[4]; });
   return v;
 }
 function annotateDistrTargets(nodes, m, base, ctx, only){
@@ -1436,14 +1440,14 @@ function distrTable(m, sc, limit){
 function distrSOMap(m, sc){   // distributor -> SO FRC (B.sodd), scope prov/dist; every month the period touches, as summarize()
   const out = new Map(); if(!B.sodd || !soOn()) return out;
   const per = toPer(m), m0 = per.from.slice(0, 7), m9 = per.to.slice(0, 7);
-  B.sodd.forEach(r => { const mo = r[0].slice(0, 7); if(mo < m0 || mo > m9 || !kemOk(r[5]) || (sc.prov != null && r[1] !== sc.prov) || (sc.dist != null && r[2] !== sc.dist) || (sc.distr != null && r[3] !== sc.distr)) return; out.set(r[3], (out.get(r[3]) || 0) + r[4]); });
+  B.sodd.forEach(r => { const mo = r[0].slice(0, 7); if(mo < m0 || mo > m9 || !kemOk(r[5]) || !soIncOk(r) || (sc.prov != null && r[1] !== sc.prov) || (sc.dist != null && r[2] !== sc.dist) || (sc.distr != null && r[3] !== sc.distr)) return; out.set(r[3], (out.get(r[3]) || 0) + r[4]); });
   return out;
 }
 function distrTableOne(m, sc, limit){
   const rows = shipRows(m, sc), list = distrSummary(rows), tg = distrTargets(m, sc), tf = distrTargets(m, sc, true), som = distrSOMap(m, sc);
   tg.forEach((v, k) => { if(B.dims.distr[k] && !list.some(o => o.key === k)) list.push(blankDistr(k)); });
   list.forEach(o => { o.tgt = tg.get(o.key) || 0; o.tgtFull = tf.get(o.key) || 0; o.hasTgt = o.tgt > 0; o.pct = o.hasTgt ? pctOf(o.nfz, o.tgt) : (o.vol > 0 ? 100 : null);   // no target but shipped = 100%
-    o.gap = o.nfz - o.tgt; o.so = som.get(o.key) || 0; o.frc0 = o.frc; o.of = o.so > 0 ? pctOf(o.frc, o.so) : null; });
+    o.gap = o.nfz - o.tgt; o.so = som.get(o.key) || 0; o.frc0 = soAll() ? o.vol : o.frc; o.of = o.so > 0 ? pctOf(o.frc0, o.so) : null; });
   list.sort((a, b) => b.vol - a.vol || (b.tgt || 0) - (a.tgt || 0));
   list.forEach((o, i) => o.rank = i + 1);
   const tot = list.reduce((a, o) => a + o.vol, 0), unk = rows.filter(r => !(B.dims.toko[r[7]] && B.dims.toko[r[7]][0])).reduce((a, r) => a + r[8], 0);
@@ -1451,7 +1455,7 @@ function distrTableOne(m, sc, limit){
   const cols = [{h:'#', cls:'rank', val: o => o.rank, html: o => '#' + o.rank},
     {h:'Distributor', cls:'name', val: o => distrLbl(o.key), html: o => esc(distrLbl(o.key) || '(tanpa distributor)') + '<small>' + fmt(o.toko.size) + ' toko / gudang · ' + fmt(o.dist.size) + ' distrik' + (o.last >= 0 ? ' · kirim ' + shortDate(B.days[o.last]) : '') + '</small><small>' + [['FRC truk', o.frc], ['FRC kontainer/kapal', o.fc], ['ambil sendiri', o.nf]].filter(x => x[1] > 0).map(x => x[0] + ' ' + fmt(x[1]) + ' t').join(' · ') + '</small>'},
     C.fm, C.vol(), C.tgt, C.gap, C.pct, C.so, C.of, vsCol(new Map(distrSummary(shipRows(prevPer(toPer(m)), sc)).map(o => [o.key, o.vol])), m), C.trips].map(c => Object.assign({}, c));   // incoterm split: second line under the name
-  const sum = f => list.reduce((a, o) => a + (f(o) || 0), 0), wt = list.filter(o => o.hasTgt), tTgt = sum(o => o.tgt), tNfz = wt.reduce((a, o) => a + o.nfz, 0), tSo = sum(o => o.so), tFrcSo = list.filter(o => o.so).reduce((a, o) => a + o.frc, 0);
+  const sum = f => list.reduce((a, o) => a + (f(o) || 0), 0), wt = list.filter(o => o.hasTgt), tTgt = sum(o => o.tgt), tNfz = wt.reduce((a, o) => a + o.nfz, 0), tSo = sum(o => o.so), tFrcSo = list.filter(o => o.so).reduce((a, o) => a + o.frc0, 0);
   const T = {'Target FM (Ton)': tTgt ? fmt(sum(o => o.tgtFull)) : '–', 'Realisasi (Ton)': '<b>' + fmt(tot) + '</b>', 'Target MTD (Ton)': tTgt ? fmt(tTgt) : '–', 'Gap (Ton)': tTgt ? signed(tNfz - tTgt) : '–',
     '% Ach.': tTgt ? '<b style="color:' + tierColor(pctOf(tNfz, tTgt)) + '">' + pctTxt(pctOf(tNfz, tTgt)) + '</b>' : '–', 'SO (Ton)': tSo ? fmt(tSo) : '–', '% OF': tSo ? pctTxt(pctOf(tFrcSo, tSo)) : '–', 'Trip': fmt(sum(o => o.trips)),
     'FRC TRUK (Ton)': fmt(sum(o => o.frc)), 'FRC KONTAINER/KAPAL (Ton)': fmt(sum(o => o.fc)), 'Ambil sendiri (Ton)': fmt(sum(o => o.nf)), 'Share': '100%'};
@@ -1693,7 +1697,7 @@ function incTable(m, sc){
   return kemGroups(() => {
     const rows = act.map(i => withInc({incFix: INCS()[i]}, () => Object.assign({i, key: i}, total(m, sc), {prev: total(pm, sc).vol}))).filter(o => o.vol > 0 || o.tgt > 0 || o.prev > 0);
     if(!rows.length) return '';
-    const T = rows.reduce((a, o) => ({fm: a.fm + o.tgtFull, tgt: a.tgt + o.tgt, vol: a.vol + o.vol, frc: a.frc + (o.hasTgt ? o.frc : 0), so: a.so + o.so, trips: a.trips + o.trips, prev: a.prev + o.prev, dwS: a.dwS + o.dwS, dwN: a.dwN + o.dwN}), {fm: 0, tgt: 0, vol: 0, frc: 0, so: 0, trips: 0, prev: 0, dwS: 0, dwN: 0});
+    const T = rows.reduce((a, o) => ({fm: a.fm + o.tgtFull, tgt: a.tgt + o.tgt, vol: a.vol + o.vol, frc: a.frc + (o.hasTgt ? o.frc : 0), so: a.so + o.so, f0: a.f0 + (o.so ? o.frc0 : 0), trips: a.trips + o.trips, prev: a.prev + o.prev, dwS: a.dwS + o.dwS, dwN: a.dwN + o.dwN}), {fm: 0, tgt: 0, vol: 0, frc: 0, so: 0, f0: 0, trips: 0, prev: 0, dwS: 0, dwN: 0});
     const cols = [{h:'Incoterm', cls:'name', val: o => o.i, html: o => '<span class="inc-dot" style="background:' + incColor(o.i) + '"></span>' + esc(incLbl(INCS()[o.i]))},
       C.fm, C.tgt, C.vol(), C.pct, C.gap, C.so, C.of, C.trips,
       {h: tag + ' (Ton)', num: true, cls: 'lmc', kind: 'lmv', val: o => o.prev, html: o => o.prev ? fmt(o.prev) : '–'},
@@ -1701,7 +1705,7 @@ function incTable(m, sc){
       {h: 'vs ' + tag, num: true, cls: 'lmc', kind: 'lmp', val: o => o.prev ? o.vol / o.prev : -1, html: o => o.prev ? '<span style="color:' + (o.vol >= o.prev ? 'var(--green)' : 'var(--red)') + '">' + (o.vol >= o.prev ? '+' : '−') + fmt(Math.abs((o.vol / o.prev - 1) * 100)) + '%</span>' : (o.vol ? 'baru' : '–')},
       C.dwell];
     const tp = T.tgt > 0 ? pctOf(T.frc, T.tgt) : null;
-    const tot = ['<b>Total</b>', fmt(T.fm), fmt(T.tgt), fmt(T.vol), tp == null ? '–' : pctTxt(tp), T.tgt ? signed(T.frc - T.tgt) : '–', T.so ? fmt(T.so) : '–', '', fmt(T.trips), fmt(T.prev), dCell(T.vol, T.prev, '', false, false), vsTot(T.vol, T.prev), T.dwN ? fmt1(T.dwS / T.dwN) : '–'];
+    const tot = ['<b>Total</b>', fmt(T.fm), fmt(T.tgt), fmt(T.vol), tp == null ? '–' : pctTxt(tp), T.tgt ? signed(T.frc - T.tgt) : '–', T.so ? fmt(T.so) : '–', T.so ? pctTxt(pctOf(T.f0, T.so)) : '–', fmt(T.trips), fmt(T.prev), dCell(T.vol, T.prev, '', false, false), vsTot(T.vol, T.prev), T.dwN ? fmt1(T.dwS / T.dwN) : '–'];
     const cs = cols.map((c, j) => Object.assign({}, c, {total: tot[j]}));
     return table(cs, rows, {total: rows.length > 1, sort: 3});
   }, kemSub(m, sc));
@@ -2493,7 +2497,8 @@ function kontrakModel(){
     const ix = byDist.get(di) || [], v = ix.map(i => estM(K[i], m)), t = v.reduce((a, x) => a + x, 0);
     const out = t > 0 ? ix.map((i, j) => [i, v[j] / t]) : []; shareCache.set(k, out); return out; };
   const soDay = new Map();
-  (B.sod || []).forEach(r => {   // [date, prov, dist, eksp, ton, kem]
+  (B.sod || []).forEach(r => {   // [date, prov, dist, eksp, ton, kem, inc]
+    if(r[6] != null && r[6] !== frc) return;   // contract = FRC truk
     const m = r[0].slice(0, 7); if(m < first || !byDist.has(r[2]) || !sak(r[5])) return;
     shares(r[2], m).forEach(([i, f]) => {
       const e = K[i][0], o = cell(e, m), v = r[4] * f; o.so += v;

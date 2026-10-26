@@ -448,19 +448,21 @@ def build(cfg):
         sn, dk0 = str(r.get("SALES_ORDER") or "").strip().split(".")[0], as_date(r.get("TGL_KIRIM"))
         if sn and dk0 and (sn not in so_kirim or dk0 < so_kirim[sn]):
             so_kirim[sn] = dk0
-        if up(r.get("INCOTERM")) != "FRC":   # Real/SO = FRC truk; FRC container/kapal kept apart
+        inc_so = up(r.get("INCOTERM"))   # SO of every incoterm (Rendy: SO total); the incoterm filter picks them on the site
+        if inc_so not in INCOTERMS:
             continue
+        ii = INCOTERMS.index(inc_so)
         dk = as_date(r.get("TGL_KIRIM"))
         if not dk:
             continue
         p, di = prov(up(r.get("PROPINSI"))), dist(up(r.get("NAMA_DISTRIK")))
         dist_prov.setdefault(di, p)
-        sod[(dk.isoformat(), p, di, eksp(up(r.get("EXPEDITUR_KODE"))), kemasan(r.get("KEMASAN")))] += num(r.get("TON_SO"))
+        sod[(dk.isoformat(), p, di, eksp(up(r.get("EXPEDITUR_KODE"))) if inc_so.startswith("FRC") else eksp(up(r.get("DISTRIBUTOR"))),   # non-FRC: ekspeditur = distributor, as the realisasi kemasan(r.get("KEMASAN")), ii)] += num(r.get("TON_SO"))
         dx = distr_by.get(" ".join(nk(r.get("DISTRIBUTOR"))))
         if dx is None:
             so_nodistr += 1
         else:
-            sodd[(dk.isoformat(), p, di, dx, kemasan(r.get("KEMASAN")))] += num(r.get("TON_SO"))
+            sodd[(dk.isoformat(), p, di, dx, kemasan(r.get("KEMASAN")), ii)] += num(r.get("TON_SO"))
     print(f"  SO groups: {len(sod):,} per tgl kirim (SOCC); per distributor {len(sodd):,}, baris SO tanpa distributor yang cocok: {so_nodistr:,}")
 
     # KPI 2 kontrak (Lampiran 12): SPJ tepat waktu = Tgl SPJ - Tgl Kirim SO <= 1 hari (as the Monitoring sheet); SPJ whose SO
@@ -553,9 +555,9 @@ def build(cfg):
         # release per hour by truck exit time (WAKTU_KELUAR), last 62 days: [day index, src, inc, hour, ton, trips, kem]
         "hours": [[day_idx[k[0]], k[1], INCOTERMS.index(k[2]), k[3], round(v[0], 2), v[1], k[4]] for k, v in hours.items() if k[0] in day_idx],   # FRC targets per distributor, same layout as targets (distributor achievement only)
         "so": [[k[0], k[1], k[2], k[3], round(v, 2)] for k, v in so.items() if v],
-        "sod": [[k[0], k[1], k[2], k[3], round(v, 2), k[4]] for k, v in sod.items() if v],
+        "sod": [[k[0], k[1], k[2], k[3], round(v, 2), k[4], k[5]] for k, v in sod.items() if v],   # [date, prov, dist, eksp, ton, kem, incoterm]
         # SO FRC per distributor by delivery day: [date, prov, dist, distributor, ton, kem]
-        "sodd": [[k[0], k[1], k[2], k[3], round(v, 2), k[4]] for k, v in sodd.items() if v],
+        "sodd": [[k[0], k[1], k[2], k[3], round(v, 2), k[4], k[5]] for k, v in sodd.items() if v],
         "prog": {"date": "", "time": "", "fields": [], "rows": []},
         "soh": [],
         "quality": {"checks": sorted(check.items()), "toko": [[k[0], k[1], v[0], v[1]] for k, v in sorted(toko_q.items())]},
