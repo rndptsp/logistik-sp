@@ -824,3 +824,6 @@ table.tree th.lmc{background:#E6EEF5}
 table.tree td.lmc{background:#F1F6FA}
 table.tree tr.lv1 td.lmc{background:#EBF2F8}
 table.tree tr.lv2 td.lmc,table.tree tr.lv3 td.lmc{background:#E6EEF5}
+.tbl th.lmc{background:#E6EEF5}
+.tbl td.lmc{background:#F1F6FA}
+.tbl tr.total td.lmc{background:#E6EEF5}

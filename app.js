@@ -206,7 +206,7 @@ const prevVols = (group, m, sc) => { const out = new Map(); summarize(group, pre
 function vsCol(prev, per, keyOf){
   keyOf = keyOf || (r => r.key);
   const ch = r => { const p = prev.get(keyOf(r)) || 0; return p > 0 ? (r.vol / p - 1) * 100 : null; };
-  return {h: 'vs ' + cmpTag(per), num: true, val: r => { const c = ch(r); return c == null ? (r.vol > 0 ? 1e9 : -1e9) : c; },
+  return {h: 'vs ' + cmpTag(per), num: true, cls: 'lmc', kind: 'lmp', pv: prev, keyOf, tag: cmpTag(per), val: r => { const c = ch(r); return c == null ? (r.vol > 0 ? 1e9 : -1e9) : c; },
     html: r => { const c = ch(r), p = prev.get(keyOf(r)) || 0; return c == null ? (r.vol > 0 ? '<span title="' + cmpTag(per) + ' 0 t">baru</span>' : '–') : '<span title="' + cmpTag(per) + ' ' + fmt(p) + ' t" style="color:' + (c >= 0 ? 'var(--green)' : 'var(--red)') + '">' + (c >= 0 ? '+' : '−') + fmt(Math.abs(c)) + '%</span>'; }};
 }
 /* delta vs the comparison period in the metric's own unit (Rendy): time = jam/hari, ratio = pp, count = unit.
@@ -591,8 +591,24 @@ function modalBody(){
 
 /* ===================== Sortable tables ===================== */
 const TABLES = {};
+/* Column layout (Rendy): tables built from the C.* columns show volumes first (Target FM | Target MTD | Realisasi | Gap | SO,
+   then LM (t) | Gap vs LM (t)), counts, then the % columns (Capaian, Real/SO, vs LM); comparison columns are shaded (lmc).
+   A "vs LM" column (vsCol) brings its LM (t) and Gap vs LM (t) columns along. Other tables are left as they are. */
+function arrangeCols(cols, rows, opt){
+  const vs = cols.find(c => c.kind === 'lmp' && c.pv);
+  if(vs && !cols.some(c => c.kind === 'lmv')){
+    const p = r => vs.pv.get(vs.keyOf(r)) || 0, add = [{h: vs.tag + ' (t)', num: true, cls: 'lmc', kind: 'lmv', val: p, html: r => p(r) ? fmt(p(r)) : '–'},
+      {h: 'Gap vs ' + vs.tag + ' (t)', num: true, cls: 'lmc', kind: 'lmv', val: r => r.vol - p(r), html: r => dCell(r.vol, p(r), '', false, false)}];
+    if(opt.total){ const pt = rows.reduce((a, r) => a + p(r), 0), vt = rows.reduce((a, r) => a + (r.vol || 0), 0); add[0].total = fmt(pt); add[1].total = dCell(vt, pt, '', false, false); }
+    cols = cols.slice(); cols.splice(cols.indexOf(vs), 0, ...add);
+  }
+  if(!cols.some(c => c.kind === 'v')) return cols;
+  const firstNum = cols.findIndex(c => c.num), grp = (c, i) => !c.num ? (i < firstNum || firstNum < 0 ? 0 : 6) : c.kind === 'v' ? 1 : c.kind === 'lmv' ? 2 : c.kind === 'p' ? 4 : c.kind === 'lmp' ? 5 : 3;
+  return cols.map((c, i) => [c, i]).sort((a, b) => grp(a[0], a[1]) - grp(b[0], b[1]) || (a[0].kind === 'v' && b[0].kind === 'v' ? (a[0].vo || 0) - (b[0].vo || 0) : 0) || a[1] - b[1]).map(x => x[0]);
+}
 function table(cols, rows, opt){
   opt = opt || {};
+  { const before = opt.sort != null ? cols[opt.sort] : null; cols = arrangeCols(cols, rows, opt); if(before) opt = Object.assign({}, opt, {sort: cols.indexOf(before)}); }
   const id = 'tb' + Math.random().toString(36).slice(2, 8);
   TABLES[id] = {cols, rows, opt, sort: opt.sort || null, dir: opt.dir || -1};
   return '<div class="tbl-wrap' + (rows.length > 15 ? ' tall' : '') + '" id="' + id + '">' + tableInner(id) + '</div>';   // tall: own scroll area so the header row stays frozen
@@ -608,7 +624,7 @@ function tableInner(id){
   // frozen columns: the first one, plus the next when the first is only a rank number (#)
   const nfz = /\brank\b/.test(T.cols[0] && T.cols[0].cls || '') && T.cols.length > 2 ? 2 : 1;
   const fz = i => i < nfz ? ' fz fz' + i + (i === nfz - 1 ? ' fzl' : '') : '';
-  const head = '<tr>' + T.cols.map((c, i) => '<th class="' + (c.num ? 'num' : '') + fz(i) + '" data-sort="' + id + ':' + i + '">' + c.h + (T.sort === i ? '<span class="arr">' + (T.dir > 0 ? '▲' : '▼') + '</span>' : '') + '</th>').join('') + '</tr>';
+  const head = '<tr>' + T.cols.map((c, i) => '<th class="' + (c.num ? 'num' : '') + (/\blmc\b/.test(c.cls || '') ? ' lmc' : '') + fz(i) + '" data-sort="' + id + ':' + i + '">' + c.h + (T.sort === i ? '<span class="arr">' + (T.dir > 0 ? '▲' : '▼') + '</span>' : '') + '</th>').join('') + '</tr>';
   const body = rows.slice(0, lim).map((r, ri) => {
     const href = T.opt.go ? T.opt.go(r) : null;
     return '<tr' + (href ? ' class="go" data-href="' + href + '"' : '') + '>' + T.cols.map((c, i) => '<td class="' + (c.cls || '') + (c.num ? ' num' : '') + fz(i) + '"' + (c.style ? ' style="' + c.style(r) + '"' : '') + '>' + (c.html ? c.html(r, ri) : esc(c.val(r))) + '</td>').join('') + '</tr>';
@@ -621,11 +637,11 @@ function tableInner(id){
 /* cmp = {group, m, sc}: adds "vs bulan lalu" = realisasi vs the same days of the previous month (prevPer), same incoterm context */
 function capTable(list, h, name, href, so, cmp){
   if(!list.length) return '';
-  const cols = [{h: h, cls:'name', val: name}, C.vol('Real (t)'), Object.assign({}, C.tgt, {h:'Target (t)'}), C.pct].concat(so ? [C.so, Object.assign({}, C.of, {h:'R/SO'})] : []);
+  const cols = [{h: h, cls:'name', val: name}, C.vol('Real (t)'), Object.assign({}, C.fm, {h:'FM (t)'}), Object.assign({}, C.tgt, {h:'MTD (t)'}), C.pct].concat(so ? [C.so, Object.assign({}, C.of, {h:'R/SO'})] : []);
   if(cmp){   // last period volume, gap in ton and change in % (Rendy)
     const pv = prevVols(cmp.group, cmp.m, cmp.sc), tag = cmpTag(cmp.m), p = r => pv.get(r.key) || 0;
-    cols.push({h: tag + ' (t)', num: true, val: p, html: r => p(r) ? fmt(p(r)) : '–'},
-      {h: 'Gap vs ' + tag + ' (t)', num: true, val: r => r.vol - p(r), html: r => dCell(r.vol, p(r), '', false, false)}, vsCol(pv, cmp.m));
+    cols.push({h: tag + ' (t)', num: true, cls: 'lmc', kind: 'lmv', val: p, html: r => p(r) ? fmt(p(r)) : '–'},
+      {h: 'Gap vs ' + tag + ' (t)', num: true, cls: 'lmc', kind: 'lmv', val: r => r.vol - p(r), html: r => dCell(r.vol, p(r), '', false, false)}, vsCol(pv, cmp.m));
   }
   return '<div class="cap-tbl">' + table(cols, list, {go: href, sort: 1}) + '</div>';
 }
@@ -636,13 +652,13 @@ function volTable(list, h, name, href){
 }
 const C = {
   rank: {h:'Rank', cls:'rank', val: r => r.rank, html: r => r.rank ? '#' + r.rank : '–', num:false},
-  vol: (h) => ({h: h || 'Realisasi (t)', num:true, val: r => r.vol, html: r => fmt(r.vol)}),
-  fm: {h:'Target FM (t)', num:true, val: r => r.hasTgt ? r.tgtFull : null, html: r => r.hasTgt ? fmt(r.tgtFull) : '–'},   // full month (whole period)
-  tgt: {h:'Target MTD (t)', num:true, val: r => r.hasTgt ? r.tgt : null, html: r => r.hasTgt ? fmt(r.tgt) : '–'},
-  pct: {h:'Capaian', num:true, cls:'pc', val: r => r.pct, html: r => pctTxt(r.pct), style: r => 'color:' + tierColor(r.pct)},
-  gap: {h:'Gap (t)', num:true, val: r => r.hasTgt ? r.gap : null, html: r => r.hasTgt ? '<span style="color:' + (r.gap < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(r.gap) + '</span>' : '–'},
-  so: {h:'SO (t)', num:true, val: r => r.so || null, html: r => r.so ? fmt(r.so) : '–'},
-  of: {h:'Real/SO', num:true, val: r => r.of, html: r => pctTxt(r.of)},   // neutral: SO is a whole month, realisasi is MTD
+  vol: (h) => ({h: h || 'Realisasi (t)', num:true, kind:'v', vo:2, val: r => r.vol, html: r => '<b>' + fmt(r.vol) + '</b>'}),
+  fm: {h:'Target FM (t)', num:true, kind:'v', vo:0, val: r => r.hasTgt ? r.tgtFull : null, html: r => r.hasTgt ? fmt(r.tgtFull) : '–'},   // full month (whole period)
+  tgt: {h:'Target MTD (t)', num:true, kind:'v', vo:1, val: r => r.hasTgt ? r.tgt : null, html: r => r.hasTgt ? fmt(r.tgt) : '–'},
+  pct: {h:'Capaian', num:true, cls:'pc', kind:'p', val: r => r.pct, html: r => pctTxt(r.pct), style: r => 'color:' + tierColor(r.pct)},
+  gap: {h:'Gap (t)', num:true, kind:'v', vo:3, val: r => r.hasTgt ? r.gap : null, html: r => r.hasTgt ? '<span style="color:' + (r.gap < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(r.gap) + '</span>' : '–'},
+  so: {h:'SO (t)', num:true, kind:'v', vo:4, val: r => r.so || null, html: r => r.so ? fmt(r.so) : '–'},
+  of: {h:'Real/SO', num:true, kind:'p', val: r => r.of, html: r => pctTxt(r.of)},   // neutral: SO is a whole month, realisasi is MTD
   trips: {h:'Trip', num:true, val: r => r.trips, html: r => fmt(r.trips)},
   dwell: {h:'Waktu muat (jam)', num:true, val: r => r.dwell, html: r => r.dwell == null ? '–' : '<span style="color:' + slaColor(r.dwell) + '">' + fmt1(r.dwell) + '</span>'},
   note: {h:'Catatan', cls:'note-c', val: r => reviewText(r.pct), sortVal: r => r.pct}
@@ -1653,9 +1669,9 @@ function incTable(m, sc){
     const T = rows.reduce((a, o) => ({fm: a.fm + o.tgtFull, tgt: a.tgt + o.tgt, vol: a.vol + o.vol, frc: a.frc + (o.hasTgt ? o.frc : 0), so: a.so + o.so, trips: a.trips + o.trips, prev: a.prev + o.prev, dwS: a.dwS + o.dwS, dwN: a.dwN + o.dwN}), {fm: 0, tgt: 0, vol: 0, frc: 0, so: 0, trips: 0, prev: 0, dwS: 0, dwN: 0});
     const cols = [{h:'Incoterm', cls:'name', val: o => o.i, html: o => '<span class="inc-dot" style="background:' + incColor(o.i) + '"></span>' + esc(incLbl(INCS()[o.i]))},
       C.fm, C.tgt, C.vol(), C.pct, C.gap, C.so, C.of, C.trips,
-      {h: tag + ' (t)', num: true, val: o => o.prev, html: o => o.prev ? fmt(o.prev) : '–'},
-      {h: 'Gap vs ' + tag + ' (t)', num: true, val: o => o.vol - o.prev, html: o => dCell(o.vol, o.prev, '', false, false)},
-      {h: 'vs ' + tag, num: true, val: o => o.prev ? o.vol / o.prev : -1, html: o => o.prev ? '<span style="color:' + (o.vol >= o.prev ? 'var(--green)' : 'var(--red)') + '">' + (o.vol >= o.prev ? '+' : '−') + fmt(Math.abs((o.vol / o.prev - 1) * 100)) + '%</span>' : (o.vol ? 'baru' : '–')},
+      {h: tag + ' (t)', num: true, cls: 'lmc', kind: 'lmv', val: o => o.prev, html: o => o.prev ? fmt(o.prev) : '–'},
+      {h: 'Gap vs ' + tag + ' (t)', num: true, cls: 'lmc', kind: 'lmv', val: o => o.vol - o.prev, html: o => dCell(o.vol, o.prev, '', false, false)},
+      {h: 'vs ' + tag, num: true, cls: 'lmc', kind: 'lmp', val: o => o.prev ? o.vol / o.prev : -1, html: o => o.prev ? '<span style="color:' + (o.vol >= o.prev ? 'var(--green)' : 'var(--red)') + '">' + (o.vol >= o.prev ? '+' : '−') + fmt(Math.abs((o.vol / o.prev - 1) * 100)) + '%</span>' : (o.vol ? 'baru' : '–')},
       C.dwell];
     const tp = T.tgt > 0 ? pctOf(T.frc, T.tgt) : null;
     const tot = ['<b>Total</b>', fmt(T.fm), fmt(T.tgt), fmt(T.vol), tp == null ? '–' : pctTxt(tp), T.tgt ? signed(T.frc - T.tgt) : '–', T.so ? fmt(T.so) : '–', '', fmt(T.trips), fmt(T.prev), dCell(T.vol, T.prev, '', false, false), vsTot(T.vol, T.prev), T.dwN ? fmt1(T.dwS / T.dwN) : '–'];
