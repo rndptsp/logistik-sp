@@ -669,7 +669,7 @@ const C = {
   vol: (h) => ({h: h || 'Realisasi (Ton)', num:true, kind:'v', vo:2, slot:1, val: r => r.vol, html: r => '<b>' + fmt(r.vol) + '</b>'}),
   fm: {h:'Target FM (Ton)', num:true, kind:'v', vo:0, slot:0, val: r => r.hasTgt ? r.tgtFull : null, html: r => r.hasTgt ? fmt(r.tgtFull) : '–'},   // full month (whole period)
   tgt: {h:'Target MTD (Ton)', num:true, kind:'v', vo:1, slot:2, val: r => r.hasTgt ? r.tgt : null, html: r => r.hasTgt ? fmt(r.tgt) : '–'},
-  pct: {h:'% Ach.', num:true, cls:'pc', kind:'p', slot:4, val: r => r.pct, html: r => pctTxt(r.pct), style: r => 'color:' + tierColor(r.pct)},
+  pct: {h:'% Ach.', num:true, cls:'pc', kind:'p', slot:4, val: r => r.pct, html: r => '<span title="' + esc(reviewText(r.pct)) + '">' + pctTxt(r.pct) + '</span>', style: r => 'color:' + tierColor(r.pct)},
   gap: {h:'Gap (Ton)', num:true, kind:'v', vo:3, slot:3, val: r => r.hasTgt ? r.gap : null, html: r => r.hasTgt ? '<span style="color:' + (r.gap < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(r.gap) + '</span>' : '–'},
   so: {h:'SO (Ton)', num:true, kind:'v', vo:4, slot:5, val: r => r.so || null, html: r => r.so ? fmt(r.so) : '–'},
   of: {h:'% OF', num:true, kind:'p', slot:7, val: r => r.of, html: r => pctTxt(r.of)},   // neutral: SO is a whole month, realisasi is MTD
@@ -1364,7 +1364,7 @@ function treeHTML(nodes, levels, opt){
       (hasT ? '<th class="num cv">Target FM (Ton)</th>' : '') + '<th class="num cv">Realisasi (Ton)</th>' +
       (hasT ? '<th class="num cv ga">Target MTD (Ton)</th><th class="num cv ga">Gap (Ton)</th><th class="num cp ga">% Ach.</th>' : '') +
       (hasT && soCols ? '<th class="num cv gb">SO (Ton)</th><th class="num cv gb">Gap vs SO (Ton)</th><th class="num cp gb">% OF</th>' : '') +
-      (tag ? '<th class="num lmc cv">' + tag + ' (Ton)</th><th class="num lmc cv">Gap vs ' + tag + ' (Ton)</th><th class="num lmc cp">vs ' + tag + '</th>' : '') + '<th class="num">Trip</th><th></th></tr></thead><tbody>';
+      (tag ? '<th class="num lmc cv">' + tag + ' (Ton)</th><th class="num lmc cv">Gap vs ' + tag + ' (Ton)</th><th class="num lmc cp">vs ' + tag + '</th>' : '') + '<th class="num">Trip</th></tr></thead><tbody>';
   const walk = (list, depth, parent, kp) => list.forEach((n, i) => {
     const kpath = (kp || '') + '/' + n.key;
     const path = parent ? parent + '-' + i : String(i), kids = n.children && n.children.length;
@@ -1372,7 +1372,7 @@ function treeHTML(nodes, levels, opt){
     const href = nodeHref(n);
     const lastT = n.last >= 0 ? 'Kirim terakhir ' + dayLabel(B.days[n.last]) : '', pvv = pv.get(kpath) || 0;
     html += '<tr class="lv' + depth + (depth ? ' tr-hide' : '') + (kids ? ' has-kids' : '') + '" data-path="' + path + '" data-parent="' + (parent || '') + '" title="' + esc(lastT) + '">' +
-      '<td class="name fz fz0 fzl" style="--d:' + depth + '"><span class="caret-t">' + (kids ? '▸' : '') + '</span><span class="t-txt"><span class="t-lbl">' + nodeLabel(n) + '</span>' + (kids ? '<span class="t-cnt">' + n.children.length + ' ' + LV_LBL[levels[depth + 1]].toLowerCase() + '</span>' : n.last >= 0 ? '<span class="t-cnt" title="' + esc(lastT) + '">kirim ' + shortDate(B.days[n.last]) + '</span>' : '') + '</span></td>' +
+      '<td class="name fz fz0 fzl" style="--d:' + depth + '"><span class="caret-t">' + (kids ? '▸' : '') + '</span><span class="t-txt"><span class="t-lbl">' + nodeLabel(n) + '</span>' + (kids ? '<span class="t-cnt">' + n.children.length + ' ' + LV_LBL[levels[depth + 1]].toLowerCase() + '</span>' : n.last >= 0 ? '<span class="t-cnt" title="' + esc(lastT) + '">kirim ' + shortDate(B.days[n.last]) + '</span>' : '') + '</span>' + (href ? '<a class="t-go" href="' + href + '" title="Buka halaman' + (lastT ? ' · ' + esc(lastT.toLowerCase()) : '') + '">&rsaquo;</a>' : '') + '</td>' +
       (hasT ? '<td class="num">' + (t && t.hasTgt && t.tgtFull != null ? fmt(t.tgtFull) : '–') + '</td>' : '') + '<td class="num"><b>' + fmt(n.vol) + '</b></td>' +
       (hasT ? (t && t.hasTgt ? (g => '<td class="num ga">' + fmt(t.tgt) + '</td><td class="num ga"><span style="color:' + (g < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(g) + '</span></td><td class="num pc ga" style="color:' + tierColor(t.pct) + '">' + pctTxt(t.pct) + '</td>')(t.gap != null ? t.gap : (n.az != null ? n.az : n.vol) - t.tgt)
         : '<td class="num ga">–</td><td class="num ga">–</td><td class="num ga">–</td>') : '') +
@@ -1380,7 +1380,7 @@ function treeHTML(nodes, levels, opt){
         : '<td class="num gb">–</td><td class="num gb">–</td><td class="num gb">–</td>') : '') +
       (tag ? '<td class="num lmc">' + (pvv ? fmt(pvv) : '–') + '</td><td class="num lmc">' + dCell(n.vol, pvv, '', false, false) + '</td><td class="num lmc">' + (pvv > 0 ? vsTot(n.vol, pvv) : n.vol > 0 ? 'baru' : '–') + '</td>' : '') +
       '<td class="num">' + fmt(n.trips) + '</td>' +
-      '<td class="num">' + (href ? '<a class="t-go" href="' + href + '" title="Buka halaman' + (lastT ? ' · ' + esc(lastT.toLowerCase()) : '') + '">&rsaquo;</a>' : '') + '</td></tr>';
+      '</tr>';
     if(kids) walk(n.children, depth + 1, path, kpath);
   });
   walk(nodes, 0, '');
@@ -1433,28 +1433,30 @@ function distrTable(m, sc, limit){
   const html = kemGroups(() => { const o = distrTableOne(m, sc, limit); return o.list.length ? o.html : ''; }, () => { const o = distrTableOne(m, sc, limit); return fmt(o.list.length) + ' distributor · ' + fmt(o.tot) + ' t'; });
   return Object.assign(all, {html: html || all.html});
 }
+function distrSOMap(m, sc){   // distributor -> SO FRC (B.sodd), scope prov/dist; every month the period touches, as summarize()
+  const out = new Map(); if(!B.sodd || !soOn()) return out;
+  const per = toPer(m), m0 = per.from.slice(0, 7), m9 = per.to.slice(0, 7);
+  B.sodd.forEach(r => { const mo = r[0].slice(0, 7); if(mo < m0 || mo > m9 || !kemOk(r[5]) || (sc.prov != null && r[1] !== sc.prov) || (sc.dist != null && r[2] !== sc.dist) || (sc.distr != null && r[3] !== sc.distr)) return; out.set(r[3], (out.get(r[3]) || 0) + r[4]); });
+  return out;
+}
 function distrTableOne(m, sc, limit){
-  const rows = shipRows(m, sc), list = distrSummary(rows), tg = distrTargets(m, sc);
+  const rows = shipRows(m, sc), list = distrSummary(rows), tg = distrTargets(m, sc), tf = distrTargets(m, sc, true), som = distrSOMap(m, sc);
   tg.forEach((v, k) => { if(B.dims.distr[k] && !list.some(o => o.key === k)) list.push(blankDistr(k)); });
-  list.forEach(o => { o.tgt = tg.get(o.key); o.pct = o.tgt ? pctOf(o.nfz, o.tgt) : (o.vol > 0 ? 100 : null); });   // no target but shipped = 100%
+  list.forEach(o => { o.tgt = tg.get(o.key) || 0; o.tgtFull = tf.get(o.key) || 0; o.hasTgt = o.tgt > 0; o.pct = o.hasTgt ? pctOf(o.nfz, o.tgt) : (o.vol > 0 ? 100 : null);   // no target but shipped = 100%
+    o.gap = o.nfz - o.tgt; o.so = som.get(o.key) || 0; o.frc0 = o.frc; o.of = o.so > 0 ? pctOf(o.frc, o.so) : null; });
   list.sort((a, b) => b.vol - a.vol || (b.tgt || 0) - (a.tgt || 0));
   list.forEach((o, i) => o.rank = i + 1);
   const tot = list.reduce((a, o) => a + o.vol, 0), unk = rows.filter(r => !(B.dims.toko[r[7]] && B.dims.toko[r[7]][0])).reduce((a, r) => a + r[8], 0);
-  const cols = [{h:'#', cls:'rank', val: o => o.rank, html: o => '#' + o.rank}, {h:'Distributor', cls:'name', val: o => distrLbl(o.key)},
-    {h:'FRC TRUK (Ton)', num:true, val: o => o.frc, html: o => o.frc ? fmt(o.frc) : '–'}].concat(list.some(o => o.fc) ? [
-    {h:'FRC KONTAINER/KAPAL (Ton)', num:true, val: o => o.fc, html: o => o.fc ? fmt(o.fc) : '–'}] : [], [{h:'Ambil sendiri (Ton)', num:true, val: o => o.nf, html: o => o.nf ? fmt(o.nf) : '–'},
-    {h:'Total (Ton)', num:true, val: o => o.vol, html: o => '<b>' + fmt(o.vol) + '</b>'}, {h:'Share', num:true, val: o => o.vol / (tot || 1), html: o => pctTxt(pctOf(o.vol, tot))}].concat(tg.size ? [
-    {h:'Target distributor ' + tgtLbl() + ' (Ton)', num:true, val: o => o.tgt || 0, html: o => o.tgt ? fmt(o.tgt) : '–'},
-    {h:'% Ach.', num:true, val: o => o.pct == null ? -1 : o.pct, html: o => o.pct == null ? '–' : '<b style="color:' + tierColor(o.pct) + '">' + pctTxt(o.pct) + '</b>'}] : [], [
-    {h:'Trip', num:true, val: o => o.trips}, {h:'Provinsi', num:true, val: o => o.prov.size}, {h:'Distrik', num:true, val: o => o.dist.size},
-    {h:'Toko / gudang', num:true, val: o => o.toko.size}, {h:'Kirim terakhir', num:true, val: o => o.last, html: o => o.last >= 0 ? dayLabel(B.days[o.last]) : '–'}], [vsCol(new Map(distrSummary(shipRows(prevPer(toPer(m)), sc)).map(o => [o.key, o.vol])), m)]));
-      const sum = f => list.reduce((a, o) => a + (f(o) || 0), 0), uni = k => { const u = new Set(); list.forEach(o => o[k].forEach(x => u.add(x))); return u.size; };
-      const wt = list.filter(o => o.tgt), tTgt = sum(o => o.tgt), tNfz = wt.reduce((a, o) => a + o.nfz, 0);
-      const T = {'FRC TRUK (Ton)': fmt(sum(o => o.frc)), 'FRC KONTAINER/KAPAL (Ton)': fmt(sum(o => o.fc)), 'Ambil sendiri (Ton)': fmt(sum(o => o.nf)), 'Total (Ton)': '<b>' + fmt(tot) + '</b>', 'Share': '100%',
-        'Trip': fmt(sum(o => o.trips)), 'Provinsi': fmt(uni('prov')), 'Distrik': fmt(uni('dist')), 'Toko / gudang': fmt(uni('toko')), 'Kirim terakhir': list.some(o => o.last >= 0) ? dayLabel(B.days[Math.max(...list.map(o => o.last))]) : '–'};
-      T['Target distributor ' + tgtLbl() + ' (Ton)'] = tTgt ? fmt(tTgt) : '–'; T['% Ach.'] = tTgt ? '<b style="color:' + tierColor(pctOf(tNfz, tTgt)) + '">' + pctTxt(pctOf(tNfz, tTgt)) + '</b>' : '–';
-      cols.forEach(c => { if(T[c.h] != null) c.total = T[c.h]; });
-  return {list, rows, tot, unk, html: list.length ? table(cols, list, {go: o => '#/distributor/' + enc(B.dims.distr[o.key]), limit: limit || 400, total: true}) : '<div class="dp-review">Tidak ada pengiriman untuk filter ini.</div>'};
+  // same layout as every other table (Rendy): FM | Realisasi | [MTD | Gap | % Ach.] | [SO | Gap vs SO | % OF] | [LM | Gap vs LM | vs LM] | Trip, then the incoterm split
+  const cols = [{h:'#', cls:'rank', val: o => o.rank, html: o => '#' + o.rank},
+    {h:'Distributor', cls:'name', val: o => distrLbl(o.key), html: o => esc(distrLbl(o.key) || '(tanpa distributor)') + '<small>' + fmt(o.toko.size) + ' toko / gudang · ' + fmt(o.dist.size) + ' distrik' + (o.last >= 0 ? ' · kirim ' + shortDate(B.days[o.last]) : '') + '</small><small>' + [['FRC truk', o.frc], ['FRC kontainer/kapal', o.fc], ['ambil sendiri', o.nf]].filter(x => x[1] > 0).map(x => x[0] + ' ' + fmt(x[1]) + ' t').join(' · ') + '</small>'},
+    C.fm, C.vol(), C.tgt, C.gap, C.pct, C.so, C.of, vsCol(new Map(distrSummary(shipRows(prevPer(toPer(m)), sc)).map(o => [o.key, o.vol])), m), C.trips].map(c => Object.assign({}, c));   // incoterm split: second line under the name
+  const sum = f => list.reduce((a, o) => a + (f(o) || 0), 0), wt = list.filter(o => o.hasTgt), tTgt = sum(o => o.tgt), tNfz = wt.reduce((a, o) => a + o.nfz, 0), tSo = sum(o => o.so), tFrcSo = list.filter(o => o.so).reduce((a, o) => a + o.frc, 0);
+  const T = {'Target FM (Ton)': tTgt ? fmt(sum(o => o.tgtFull)) : '–', 'Realisasi (Ton)': '<b>' + fmt(tot) + '</b>', 'Target MTD (Ton)': tTgt ? fmt(tTgt) : '–', 'Gap (Ton)': tTgt ? signed(tNfz - tTgt) : '–',
+    '% Ach.': tTgt ? '<b style="color:' + tierColor(pctOf(tNfz, tTgt)) + '">' + pctTxt(pctOf(tNfz, tTgt)) + '</b>' : '–', 'SO (Ton)': tSo ? fmt(tSo) : '–', '% OF': tSo ? pctTxt(pctOf(tFrcSo, tSo)) : '–', 'Trip': fmt(sum(o => o.trips)),
+    'FRC TRUK (Ton)': fmt(sum(o => o.frc)), 'FRC KONTAINER/KAPAL (Ton)': fmt(sum(o => o.fc)), 'Ambil sendiri (Ton)': fmt(sum(o => o.nf)), 'Share': '100%'};
+  cols.forEach(c => { if(T[c.h] != null) c.total = T[c.h]; if(c.kind === 'lmp' && c.pv){ const pt = list.reduce((x, o) => x + (c.pv.get(o.key) || 0), 0); c.total = vsTot(tot, pt); } });
+  return {list, rows, tot, unk, html: list.length ? table(cols, list, {go: o => '#/distributor/' + enc(B.dims.distr[o.key]), limit: limit || 400, total: true, sort: 3}) : '<div class="dp-review">Tidak ada pengiriman untuk filter ini.</div>'};
 }
 function pageDistrList(){
   const m = PER(), D2 = distrTable(m, {}), list = D2.list, tot = D2.tot, unk = D2.unk;
@@ -1708,7 +1710,7 @@ function pageProvList(){
   const rows = ranked(summarize('prov', PER()));
   const t = total(PER());
   const provTbl = () => { const rows = ranked(summarize('prov', PER())), t = total(PER()); if(!rows.some(o => o.vol > 0 || o.tgt > 0)) return '';
-  const pv = prevVols('prov', PER()), cols = [C.rank, {h:'Provinsi', cls:'name', val: r => tc(B.dims.prov[r.key])}, C.fm, C.tgt, C.vol(), C.pct, C.gap, C.so, C.of, C.trips, vsCol(pv, PER()), C.note];
+  const pv = prevVols('prov', PER()), cols = [C.rank, {h:'Provinsi', cls:'name', val: r => tc(B.dims.prov[r.key])}, C.fm, C.tgt, C.vol(), C.pct, C.gap, C.so, C.of, C.trips, vsCol(pv, PER())];
   cols[2].total = fmt(t.tgtFull); cols[3].total = fmt(t.tgt); cols[4].total = fmt(t.vol); cols[5].total = pctTxt(t.pct); cols[6].total = signed(t.gap); cols[7].total = fmt(t.so); cols[8].total = pctTxt(t.of); cols[9].total = fmt(t.trips); cols[10].total = vsTot(t.vol, total(prevPer(PER())).vol);
   return table(cols, rows, {go: r => '#/provinsi/' + enc(B.dims.prov[r.key]), total: true}); };
   page('<div class="wrap">' + crumb([['Wilayah'], ['Semua provinsi']]) +
@@ -1749,7 +1751,7 @@ function pageProv(name){
   const me = all.find(o => o.key === pi) || Object.assign(blank(), {pct:null, of:null, gap:0, dwell:null});
   const dist = ranked(summarize('dist', m, sc));
   const eks = [...summarize('eksp', m, sc).values()].filter(o => (o.vol > 0 || o.tgt > 0) && o.key !== D.eksEmpty).sort((a, b) => b.vol - a.vol);
-  const distCols = [C.rank, {h:'Distrik', cls:'name', val: r => tc(B.dims.dist[r.key])}, C.fm, C.tgt, C.vol(), C.pct, C.gap, C.so, C.of, C.note];
+  const distCols = [C.rank, {h:'Distrik', cls:'name', val: r => tc(B.dims.dist[r.key])}, C.fm, C.tgt, C.vol(), C.pct, C.gap, C.so, C.of];
   const mapS = distMapSection(name, m);   // the map panel carries the KPIs; the KPI row only shows when there is no map
   page('<div class="wrap">' + crumb([['Wilayah', '#/provinsi'], [tc(name)]]) +
     '<div class="dp-head"><div><div class="nm">' + esc(tc(name)) + '</div><div class="sub">Capaian tonase · ' + periodSub() + '</div></div><div class="badges">' + (me.rank ? '<div class="dp-badge">Rank ' + me.rank + ' / ' + all.rankTotal + '</div>' : '') + '<div class="dp-badge ' + tierClass(me.pct) + '">' + pctTxt(me.pct) + ' dari target</div></div></div>' +
@@ -2066,7 +2068,7 @@ function pageEkspList(){
     const cols = [C.rank, {h:'Ekspeditur', cls:'name', val: r => ekspLbl(r.key)}, C.fm, C.tgt, C.vol(), C.pct, C.gap, C.so, C.of, C.trips,
       {h:'Truk', num:true, val: r => tk(r).n, html: r => fmt(tk(r).n)},
       {h:'Trip / truk', num:true, val: r => r.trips / Math.max(1, tk(r).n), html: r => fmt1(r.trips / Math.max(1, tk(r).n))},
-      {h:'Truk 1 trip', num:true, val: r => tk(r).one}, C.dwell, vsCol(prevVols('eksp', m), m), C.note];
+      {h:'Truk 1 trip', num:true, val: r => tk(r).one}, C.dwell, vsCol(prevVols('eksp', m), m)];
     cols[2].total = fmt(t.tgtFull); cols[3].total = fmt(t.tgt); cols[4].total = fmt(t.vol); cols[5].total = pctTxt(t.pct); cols[6].total = signed(t.gap); cols[7].total = fmt(t.so); cols[8].total = pctTxt(t.of); cols[9].total = fmt(t.trips); cols[10].total = fmt(tr.length); cols[11].total = fmt1(t.trips / Math.max(1, tr.length));
     return table(cols, list, {go: r => ekspHref(r.key), total: true});
   };
@@ -2093,7 +2095,7 @@ function pageEksp(code){
   const dist = ranked(summarize('dist', m, sc));
   const trucks = trucksFor(m, sc).sort((a, b) => b.trips - a.trips);
   const one = trucks.filter(t => t.trips === 1).length;
-  const distCols = [C.rank, {h:'Distrik', cls:'name', val: r => tc(B.dims.dist[r.key]), html: r => esc(tc(B.dims.dist[r.key])) + '<small>' + esc(tc(B.dims.prov[B.dims.distProv[r.key]])) + '</small>'}, C.fm, C.tgt, C.vol(), C.pct, C.gap, C.trips, C.note];
+  const distCols = [C.rank, {h:'Distrik', cls:'name', val: r => tc(B.dims.dist[r.key]), html: r => esc(tc(B.dims.dist[r.key])) + '<small>' + esc(tc(B.dims.prov[B.dims.distProv[r.key]])) + '</small>'}, C.fm, C.tgt, C.vol(), C.pct, C.gap, C.trips];
   const truckCols = [{h:'Nopol', cls:'name', val: r => B.dims.truck[r.truck]}, {h:'Trip', num:true, val: r => r.trips}, {h:'Tonase', num:true, val: r => r.ton, html: r => fmt(r.ton)},
     {h:'Hari aktif', num:true, val: r => r.days}, {h:'SLA (jam)', num:true, val: r => r.dwN ? r.dwS / r.dwN : null, html: r => r.dwN ? fmt1(r.dwS / r.dwN) : '–'},
     {h:'Aktif', val: r => r.first, html: r => activeTxt(r)}, {h:'Provinsi utama', val: r => tc(B.dims.prov[r.prov])}];

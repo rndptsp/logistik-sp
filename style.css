@@ -807,7 +807,7 @@ table.tree tr.lv0 td.fz{background:var(--white)}
 .map-hero .map-vol.out{fill:#fff;stroke:rgba(0,0,0,.7);}
 .dmap .map-vol,.mh-page .map-vol{stroke-width:.25em;}
 /* tree: destination on one line (Rendy) */
-table.tree td.name{white-space:nowrap}
+table.tree td.name{white-space:normal;max-width:280px;position:relative;padding-right:44px}
 table.tree td.name .t-cnt{white-space:nowrap}
 @media (max-width:700px){table.tree td.name{white-space:normal;min-width:150px}}
 /* map zoom */
@@ -829,8 +829,8 @@ table.tree tr.lv2 td.lmc,table.tree tr.lv3 td.lmc{background:#E6EEF5}
 .tbl tr.total td.lmc{background:#E6EEF5}
 /* column groups (Rendy): equal width per group, headers wrap instead of widening the column; targets tinted */
 .tbl th.cv,.tbl th.cp{white-space:normal;line-height:1.25}
-.tbl th.cv,.tbl td.cv{width:88px;min-width:88px;max-width:88px;box-sizing:border-box}
-.tbl th.cp,.tbl td.cp{width:68px;min-width:68px;max-width:68px;box-sizing:border-box}
+.tbl th.cv,.tbl td.cv{width:80px;min-width:80px;max-width:80px;box-sizing:border-box}
+.tbl th.cp,.tbl td.cp{width:62px;min-width:62px;max-width:62px;box-sizing:border-box}
 .tbl td.cv,.tbl td.cp{white-space:nowrap}
 .tbl th.ct{background:#F3EBDA}
 .tbl td.ct{background:#FBF7EF}
@@ -854,3 +854,10 @@ table.tree tr.lv2 td.gb,table.tree tr.lv3 td.gb{background:#DDEEE2}
 /* tree label on two lines, both left-aligned: name, then the count / last delivery (Rendy) */
 table.tree .t-txt{display:inline-flex;flex-direction:column;align-items:flex-start;vertical-align:middle;gap:3px}
 table.tree .t-txt .t-cnt{margin-left:0}
+table.tree td.name .t-go{position:absolute;right:10px;top:50%;transform:translateY(-50%)}
+table.tree th.cv,table.tree th.cp{width:80px;min-width:80px;max-width:80px}
+table.tree th.cp{width:62px;min-width:62px;max-width:62px}
+/* tables fit the page (Rendy): tighter cell padding; a panel holding a full capaian table takes the whole row */
+.tbl th,.tbl td{padding-left:9px;padding-right:9px}
+.tbl th.cv,.tbl th.cp,.tbl td.cv,.tbl td.cp{padding-left:6px;padding-right:8px}
+.dp-cols:has(.cap-tbl){grid-template-columns:1fr}
