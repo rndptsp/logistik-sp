@@ -10,6 +10,7 @@ const $ = (s, el) => (el || document).querySelector(s);
 const $$ = (s, el) => [...(el || document).querySelectorAll(s)];
 const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmt = n => (n == null || isNaN(n)) ? '–' : Math.round(n).toLocaleString('id-ID');
+const fmtT = n => n >= 1e4 ? fmt1(n / 1000) + ' rb t' : fmt(n) + ' t';   // compact tonnage for map labels
 const fmt1 = n => (n == null || isNaN(n)) ? '–' : n.toLocaleString('id-ID', {minimumFractionDigits:1, maximumFractionDigits:1});
 const pctOf = (a, b) => b > 0 ? a / b * 100 : null;
 const pctTxt = p => p == null ? '–' : Math.round(p) + '%';
@@ -883,7 +884,8 @@ function mapHTML(provRows, opt){
     shapes += '<path class="map-region live' + (worst && o === worst ? ' is-attn' : '') + '" d="' + g.d + '" fill="' + fill + '" stroke="' + (hero ? '#0F1A21' : '#fff') + '" stroke-width="1.2" filter="url(#softShadow)" data-href="#/provinsi/' + enc(B.dims.prov[o.key]) + '" data-tip="' + esc(tip) + '"/>';
     const out = L[3] === 'out' ? ' out' : '';   // label placed in the sea next to a narrow province
     labels += '<text x="' + lx + '" y="' + (ly - 4) + '" class="map-lbl' + out + '">' + esc(L[0]) + '</text>' +
-      '<text x="' + lx + '" y="' + (ly + 11) + '" class="map-pct' + out + '" style="' + (out ? 'fill:' + tierColor(o.pct) : '') + '">' + (o.pct != null ? pctTxt(o.pct) : fmt(o.vol) + ' t') + '</text>';
+      '<text x="' + lx + '" y="' + (ly + 11) + '" class="map-pct' + out + '" style="' + (out ? 'fill:' + tierColor(o.pct) : '') + '">' + (o.pct != null ? pctTxt(o.pct) : fmt(o.vol) + ' t') + '</text>' +
+      (o.pct != null ? '<text x="' + lx + '" y="' + (ly + 22) + '" class="map-vol' + out + '">' + fmtT(o.vol) + '</text>' : '');
   });
   const pins = PLANTS.map(p => {
     const x = ((p[1] - 95) * 40).toFixed(1), y = ((6.2 - p[2]) * 40).toFixed(1), on = plantOn(p);
@@ -989,7 +991,10 @@ function distMapHTML(pname, m, opt){
     if(Math.min(g.w, g.h) >= Math.max(vw, vh) * 0.09){
       const short = g.n.replace(/^Kota /, 'Kt. ');
       labels += '<text x="' + g.cx + '" y="' + (g.cy - fs * 0.3) + '" class="map-lbl" style="font-size:' + fs.toFixed(1) + 'px">' + esc(short) + '</text>' +
-        '<text x="' + g.cx + '" y="' + (g.cy + fs * 1.05) + '" class="map-pct" style="font-size:' + (fs * 1.15).toFixed(1) + 'px">' + (a.pct != null ? pctTxt(a.pct) : fmt(a.vol) + ' t') + '</text>';
+        '<text x="' + g.cx + '" y="' + (g.cy + fs * 1.05) + '" class="map-pct" style="font-size:' + (fs * 1.15).toFixed(1) + 'px">' + (a.pct != null ? pctTxt(a.pct) : fmt(a.vol) + ' t') + '</text>' +
+        (a.pct != null ? '<text x="' + g.cx + '" y="' + (g.cy + fs * 2.15) + '" class="map-vol" style="font-size:' + (fs * 0.9).toFixed(1) + 'px">' + fmtT(a.vol) + '</text>' : '');
+    } else if(Math.min(g.w, g.h) >= Math.max(vw, vh) * 0.045){   // smaller district: volume only (name and capaian in the tooltip)
+      labels += '<text x="' + g.cx + '" y="' + (g.cy + fs * 0.3) + '" class="map-vol" style="font-size:' + (fs * 0.85).toFixed(1) + 'px">' + fmtT(a.vol) + '</text>';
     }
   });
   const pins = PLANTS.filter(p => mapProv(p[4]) === mapProv(pname)).map(p => {

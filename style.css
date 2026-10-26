@@ -802,3 +802,7 @@ table.tree tr.lv0 td.fz{background:var(--white)}
 .kem-grp:first-child{margin-top:4px}
 .kem-grp small{text-transform:none;letter-spacing:0;color:rgba(255,255,255,.75);font-weight:400;font-size:12px}
 .dp-panel .kem-grp{margin:12px 0 6px;padding:5px 10px;font-size:12px}
+.map-vol{font-size:10px;font-weight:600;fill:rgba(255,255,255,.92);text-anchor:middle;pointer-events:none;paint-order:stroke;stroke:rgba(0,0,0,.35);stroke-width:2px;}
+.map-vol.out{fill:#000;stroke:#fff;stroke-width:3px;}
+.map-hero .map-vol.out{fill:#fff;stroke:rgba(0,0,0,.7);}
+.dmap .map-vol,.mh-page .map-vol{stroke-width:.25em;}
