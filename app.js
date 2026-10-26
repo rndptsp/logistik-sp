@@ -603,8 +603,18 @@ function arrangeCols(cols, rows, opt){
     cols = cols.slice(); cols.splice(cols.indexOf(vs), 0, ...add);
   }
   if(!cols.some(c => c.kind === 'v')) return cols;
-  const firstNum = cols.findIndex(c => c.num), grp = (c, i) => !c.num ? (i < firstNum || firstNum < 0 ? 0 : 6) : c.kind === 'v' ? 1 : c.kind === 'lmv' ? 2 : c.kind === 'p' ? 4 : c.kind === 'lmp' ? 5 : 3;
-  return cols.map((c, i) => [c, i]).sort((a, b) => grp(a[0], a[1]) - grp(b[0], b[1]) || (a[0].kind === 'v' && b[0].kind === 'v' ? (a[0].vo || 0) - (b[0].vo || 0) : 0) || a[1] - b[1]).map(x => x[0]);
+  // SO group gets its own gap: realisasi FRC truk (the % OF basis) - SO
+  const so = cols.find(c => c.slot === 5), of = cols.find(c => c.slot === 7);
+  if(so && of && !cols.some(c => c.slot === 6)){
+    const g = r => r.so ? (r.frc0 != null ? r.frc0 : r.vol) - r.so : null;
+    const gc = {h: 'Gap vs SO (Ton)', num: true, kind: 'v', slot: 6, val: r => g(r) == null ? -1e12 : g(r), html: r => g(r) == null ? '–' : '<span style="color:' + (g(r) < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(g(r)) + '</span>'};
+    if(opt.total){ const sv = rows.reduce((a, r) => a + (r.so || 0), 0), fv = rows.reduce((a, r) => a + (r.so ? (r.frc0 != null ? r.frc0 : r.vol) : 0), 0); gc.total = sv ? signed(fv - sv) : '–'; }
+    cols = cols.slice(); cols.splice(cols.indexOf(so) + 1, 0, gc);
+  }
+  /* order (Rendy): Target FM | Realisasi | Target MTD | Gap | % Ach. | SO | Gap vs SO | % OF | LM | Gap vs LM | vs LM | other numbers | notes */
+  const firstNum = cols.findIndex(c => c.num);
+  const pos = (c, i) => !c.num ? (i < firstNum || firstNum < 0 ? -1 : 13) : c.slot != null ? c.slot : c.kind === 'lmv' ? 8 : c.kind === 'lmp' ? 10 : c.kind === 'v' ? 1.5 : 11;
+  return cols.map((c, i) => [c, i]).sort((a, b) => pos(a[0], a[1]) - pos(b[0], b[1]) || a[1] - b[1]).map(x => x[0]);
 }
 function table(cols, rows, opt){
   opt = opt || {};
@@ -625,7 +635,7 @@ function tableInner(id){
   const nfz = /\brank\b/.test(T.cols[0] && T.cols[0].cls || '') && T.cols.length > 2 ? 2 : 1;
   const fz = i => i < nfz ? ' fz fz' + i + (i === nfz - 1 ? ' fzl' : '') : '';
   // width / colour groups: C.* kinds, otherwise read from the header (".. (t)" = volume, "% .." / "vs .." = percent, Target/Estimasi = target)
-  const kc = c => { if(c.kind) return (c.kind === 'v' || c.kind === 'lmv' ? ' cv' : c.kind === 'p' || c.kind === 'lmp' ? ' cp' : '') + (c.kind === 'v' && c.vo <= 1 ? ' ct' : '');
+  const kc = c => { if(c.kind) return (c.kind === 'v' || c.kind === 'lmv' ? ' cv' : c.kind === 'p' || c.kind === 'lmp' ? ' cp' : '') + (c.slot >= 2 && c.slot <= 4 ? ' ga' : c.slot >= 5 && c.slot <= 7 ? ' gb' : '');
     if(!c.num) return ''; const h = String(c.h || '').replace(/<[^>]*>/g, '');
     return /\((t|ton)\)\s*$/i.test(h) ? ' cv' + (/^(Target|Estimasi)/i.test(h) ? ' ct' : '') : /^(%|vs |Real ?\/|OF )/i.test(h) || /%\s*$/.test(h) ? ' cp' : ''; };
   const head = '<tr>' + T.cols.map((c, i) => '<th class="' + (c.num ? 'num' : '') + (/\blmc\b/.test(c.cls || '') ? ' lmc' : '') + kc(c) + fz(i) + '" data-sort="' + id + ':' + i + '">' + c.h + (T.sort === i ? '<span class="arr">' + (T.dir > 0 ? '▲' : '▼') + '</span>' : '') + '</th>').join('') + '</tr>';
@@ -641,7 +651,7 @@ function tableInner(id){
 /* cmp = {group, m, sc}: adds "vs bulan lalu" = realisasi vs the same days of the previous month (prevPer), same incoterm context */
 function capTable(list, h, name, href, so, cmp){
   if(!list.length) return '';
-  const cols = [{h: h, cls:'name', val: name}, C.vol('Real (Ton)'), Object.assign({}, C.fm, {h:'FM (Ton)'}), Object.assign({}, C.tgt, {h:'MTD (Ton)'}), C.pct].concat(so ? [C.so, Object.assign({}, C.of, {h:'% OF'})] : []);
+  const cols = [{h: h, cls:'name', val: name}, C.vol('Real (Ton)'), Object.assign({}, C.fm, {h:'FM (Ton)'}), Object.assign({}, C.tgt, {h:'MTD (Ton)'}), C.gap, C.pct].concat(so ? [C.so, Object.assign({}, C.of, {h:'% OF'})] : []);
   if(cmp){   // last period volume, gap in ton and change in % (Rendy)
     const pv = prevVols(cmp.group, cmp.m, cmp.sc), tag = cmpTag(cmp.m), p = r => pv.get(r.key) || 0;
     cols.push({h: tag + ' (Ton)', num: true, cls: 'lmc', kind: 'lmv', val: p, html: r => p(r) ? fmt(p(r)) : '–'},
@@ -656,13 +666,13 @@ function volTable(list, h, name, href){
 }
 const C = {
   rank: {h:'Rank', cls:'rank', val: r => r.rank, html: r => r.rank ? '#' + r.rank : '–', num:false},
-  vol: (h) => ({h: h || 'Realisasi (Ton)', num:true, kind:'v', vo:2, val: r => r.vol, html: r => '<b>' + fmt(r.vol) + '</b>'}),
-  fm: {h:'Target FM (Ton)', num:true, kind:'v', vo:0, val: r => r.hasTgt ? r.tgtFull : null, html: r => r.hasTgt ? fmt(r.tgtFull) : '–'},   // full month (whole period)
-  tgt: {h:'Target MTD (Ton)', num:true, kind:'v', vo:1, val: r => r.hasTgt ? r.tgt : null, html: r => r.hasTgt ? fmt(r.tgt) : '–'},
-  pct: {h:'% Ach.', num:true, cls:'pc', kind:'p', val: r => r.pct, html: r => pctTxt(r.pct), style: r => 'color:' + tierColor(r.pct)},
-  gap: {h:'Gap (Ton)', num:true, kind:'v', vo:3, val: r => r.hasTgt ? r.gap : null, html: r => r.hasTgt ? '<span style="color:' + (r.gap < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(r.gap) + '</span>' : '–'},
-  so: {h:'SO (Ton)', num:true, kind:'v', vo:4, val: r => r.so || null, html: r => r.so ? fmt(r.so) : '–'},
-  of: {h:'% OF', num:true, kind:'p', val: r => r.of, html: r => pctTxt(r.of)},   // neutral: SO is a whole month, realisasi is MTD
+  vol: (h) => ({h: h || 'Realisasi (Ton)', num:true, kind:'v', vo:2, slot:1, val: r => r.vol, html: r => '<b>' + fmt(r.vol) + '</b>'}),
+  fm: {h:'Target FM (Ton)', num:true, kind:'v', vo:0, slot:0, val: r => r.hasTgt ? r.tgtFull : null, html: r => r.hasTgt ? fmt(r.tgtFull) : '–'},   // full month (whole period)
+  tgt: {h:'Target MTD (Ton)', num:true, kind:'v', vo:1, slot:2, val: r => r.hasTgt ? r.tgt : null, html: r => r.hasTgt ? fmt(r.tgt) : '–'},
+  pct: {h:'% Ach.', num:true, cls:'pc', kind:'p', slot:4, val: r => r.pct, html: r => pctTxt(r.pct), style: r => 'color:' + tierColor(r.pct)},
+  gap: {h:'Gap (Ton)', num:true, kind:'v', vo:3, slot:3, val: r => r.hasTgt ? r.gap : null, html: r => r.hasTgt ? '<span style="color:' + (r.gap < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(r.gap) + '</span>' : '–'},
+  so: {h:'SO (Ton)', num:true, kind:'v', vo:4, slot:5, val: r => r.so || null, html: r => r.so ? fmt(r.so) : '–'},
+  of: {h:'% OF', num:true, kind:'p', slot:7, val: r => r.of, html: r => pctTxt(r.of)},   // neutral: SO is a whole month, realisasi is MTD
   trips: {h:'Trip', num:true, val: r => r.trips, html: r => fmt(r.trips)},
   dwell: {h:'SLA (jam)', num:true, val: r => r.dwell, html: r => r.dwell == null ? '–' : '<span style="color:' + slaColor(r.dwell) + '">' + fmt1(r.dwell) + '</span>'},
   note: {h:'Catatan', cls:'note-c', val: r => reviewText(r.pct), sortVal: r => r.pct}
@@ -1341,10 +1351,11 @@ function treeHTML(nodes, levels, opt){
   const hasT = !!(opt.tgt || opt.distrTgt), soCols = !opt.distrTgt;   // distributor targets: no SO per distributor
   let html = '<div class="tree-tools"><span>' + levels.map(l => LV_LBL[l]).join(' &rsaquo; ') + '</span><span><a data-tree-all="' + id + ':1">Buka semua</a> · <a data-tree-all="' + id + ':0">Tutup semua</a></span></div>' +
     '<div class="tbl-wrap' + (nodes.length > 15 ? ' tall' : '') + '"><table class="tbl tree" id="' + id + '"><thead><tr><th class="fz fz0 fzl">Tujuan</th>' +
-      // volumes first, then the % columns (Rendy); comparison-period columns shaded
-      (hasT ? '<th class="num cv ct">Target FM (Ton)</th><th class="num cv ct">Target MTD (Ton)</th>' : '') + '<th class="num cv">Realisasi (Ton)</th>' + (hasT && soCols ? '<th class="num cv">SO (Ton)</th>' : '') +
-      (tag ? '<th class="num lmc cv">' + tag + ' (Ton)</th><th class="num lmc cv">Gap vs ' + tag + ' (Ton)</th>' : '') + '<th class="num">Trip</th>' +
-      (hasT ? '<th class="num cp">% Ach.</th>' + (soCols ? '<th class="num cp">% OF</th>' : '') : '') + (tag ? '<th class="num lmc cp">vs ' + tag + '</th>' : '') + '<th></th></tr></thead><tbody>';
+      // order (Rendy): FM | Realisasi | [MTD | Gap | % Ach.] | [SO | Gap vs SO | % OF] | [LM | Gap vs LM | vs LM] | Trip — each bracket one colour
+      (hasT ? '<th class="num cv">Target FM (Ton)</th>' : '') + '<th class="num cv">Realisasi (Ton)</th>' +
+      (hasT ? '<th class="num cv ga">Target MTD (Ton)</th><th class="num cv ga">Gap (Ton)</th><th class="num cp ga">% Ach.</th>' : '') +
+      (hasT && soCols ? '<th class="num cv gb">SO (Ton)</th><th class="num cv gb">Gap vs SO (Ton)</th><th class="num cp gb">% OF</th>' : '') +
+      (tag ? '<th class="num lmc cv">' + tag + ' (Ton)</th><th class="num lmc cv">Gap vs ' + tag + ' (Ton)</th><th class="num lmc cp">vs ' + tag + '</th>' : '') + '<th class="num">Trip</th><th></th></tr></thead><tbody>';
   const walk = (list, depth, parent, kp) => list.forEach((n, i) => {
     const kpath = (kp || '') + '/' + n.key;
     const path = parent ? parent + '-' + i : String(i), kids = n.children && n.children.length;
@@ -1353,12 +1364,13 @@ function treeHTML(nodes, levels, opt){
     const lastT = n.last >= 0 ? 'Kirim terakhir ' + dayLabel(B.days[n.last]) : '', pvv = pv.get(kpath) || 0;
     html += '<tr class="lv' + depth + (depth ? ' tr-hide' : '') + (kids ? ' has-kids' : '') + '" data-path="' + path + '" data-parent="' + (parent || '') + '" title="' + esc(lastT) + '">' +
       '<td class="name fz fz0 fzl" style="--d:' + depth + '"><span class="caret-t">' + (kids ? '▸' : '') + '</span><span class="t-lbl">' + nodeLabel(n) + '</span>' + (kids ? '<span class="t-cnt">' + n.children.length + ' ' + LV_LBL[levels[depth + 1]].toLowerCase() + '</span>' : n.last >= 0 ? '<span class="t-cnt" title="' + esc(lastT) + '">kirim ' + shortDate(B.days[n.last]) + '</span>' : '') + '</td>' +
-      (hasT ? (t && t.hasTgt ? '<td class="num ct">' + (t.tgtFull != null ? fmt(t.tgtFull) : '–') + '</td><td class="num ct">' + fmt(t.tgt) + '</td>' : '<td class="num ct">–</td><td class="num ct">–</td>') : '') +
-      '<td class="num"><b>' + fmt(n.vol) + '</b></td>' + (hasT && soCols ? '<td class="num">' + (t && t.so ? fmt(t.so) : '–') + '</td>' : '') +
-      (tag ? '<td class="num lmc">' + (pvv ? fmt(pvv) : '–') + '</td><td class="num lmc">' + dCell(n.vol, pvv, '', false, false) + '</td>' : '') +
+      (hasT ? '<td class="num">' + (t && t.hasTgt && t.tgtFull != null ? fmt(t.tgtFull) : '–') + '</td>' : '') + '<td class="num"><b>' + fmt(n.vol) + '</b></td>' +
+      (hasT ? (t && t.hasTgt ? (g => '<td class="num ga">' + fmt(t.tgt) + '</td><td class="num ga"><span style="color:' + (g < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(g) + '</span></td><td class="num pc ga" style="color:' + tierColor(t.pct) + '">' + pctTxt(t.pct) + '</td>')(t.gap != null ? t.gap : (n.az != null ? n.az : n.vol) - t.tgt)
+        : '<td class="num ga">–</td><td class="num ga">–</td><td class="num ga">–</td>') : '') +
+      (hasT && soCols ? (t && t.so ? (g => '<td class="num gb">' + fmt(t.so) + '</td><td class="num gb"><span style="color:' + (g < 0 ? 'var(--red)' : 'var(--green)') + '">' + signed(g) + '</span></td><td class="num pc gb">' + pctTxt(t.of) + '</td>')((t.frc0 != null ? t.frc0 : n.vol) - t.so)
+        : '<td class="num gb">–</td><td class="num gb">–</td><td class="num gb">–</td>') : '') +
+      (tag ? '<td class="num lmc">' + (pvv ? fmt(pvv) : '–') + '</td><td class="num lmc">' + dCell(n.vol, pvv, '', false, false) + '</td><td class="num lmc">' + (pvv > 0 ? vsTot(n.vol, pvv) : n.vol > 0 ? 'baru' : '–') + '</td>' : '') +
       '<td class="num">' + fmt(n.trips) + '</td>' +
-      (hasT ? (t && t.hasTgt ? '<td class="num pc" style="color:' + tierColor(t.pct) + '">' + pctTxt(t.pct) + '</td>' : '<td class="num">–</td>') + (soCols ? '<td class="num pc">' + (t && t.so ? pctTxt(t.of) : '–') + '</td>' : '') : '') +
-      (tag ? '<td class="num lmc">' + (pvv > 0 ? vsTot(n.vol, pvv) : n.vol > 0 ? 'baru' : '–') + '</td>' : '') +
       '<td class="num">' + (href ? '<a class="t-go" href="' + href + '" title="Buka halaman' + (lastT ? ' · ' + esc(lastT.toLowerCase()) : '') + '">&rsaquo;</a>' : '') + '</td></tr>';
     if(kids) walk(n.children, depth + 1, path, kpath);
   });

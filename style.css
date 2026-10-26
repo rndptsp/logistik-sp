@@ -842,3 +842,12 @@ table.tree tr.lv2 td.ct,table.tree tr.lv3 td.ct{background:#F3EBDA}
 
 /* all table headers centred both ways (Rendy) */
 .tbl thead th,.tbl thead th.num,.tbl thead th.fz{text-align:center;vertical-align:middle}
+/* column groups (Rendy): target group (MTD, Gap, % Ach.) and SO group (SO, Gap vs SO, % OF); LM group = .lmc */
+.tbl th.ga{background:#F3EBDA}
+.tbl td.ga{background:#FBF7EF}
+.tbl th.gb{background:#DDEEE2}
+.tbl td.gb{background:#F0F7F2}
+table.tree tr.lv1 td.ga{background:#F8F2E6}
+table.tree tr.lv2 td.ga,table.tree tr.lv3 td.ga{background:#F3EBDA}
+table.tree tr.lv1 td.gb{background:#E8F3EB}
+table.tree tr.lv2 td.gb,table.tree tr.lv3 td.gb{background:#DDEEE2}
