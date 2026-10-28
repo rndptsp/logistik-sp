@@ -882,3 +882,11 @@ table.tree td.name .caret-t{vertical-align:middle}
   .modal .tbl thead th{top:0}
 }
 @media (max-width:900px){.tbl-wrap,.tbl-wrap.tall{max-height:calc(100vh - 120px)}}
+/* hero rank list readable over any photo (Rendy): solid dark panel behind the list, white numbers */
+.mh-list{background:rgba(15,26,33,.86);border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:4px 10px 6px}
+.mh-row.mh-head,.mh-row.mh-head span,.mh-lh{color:#C9D3D9}
+.mh-tn{color:#FFFFFF;font-weight:600;font-size:13px}
+.mh-so{color:#FFFFFF}
+.mh-pc{text-shadow:0 1px 2px rgba(0,0,0,.6)}
+.mh-rk{color:#C9D3D9}
+.mh-row.mh-head span{font-size:10px;font-weight:700;letter-spacing:.04em}

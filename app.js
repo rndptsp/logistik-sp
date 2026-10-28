@@ -1074,7 +1074,7 @@ function distMapHTML(pname, m, opt){
     (missing.length ? '<div class="mh-miss">Tidak ada di peta: ' + missing.map(o => esc(tc(B.dims.dist[o.key]))).join(', ') + '</div>' : '');
   return heroPanel({photo: pname, eyebrow: 'Peta capaian per distrik' + (opt.sel != null ? ' · <a href="#/provinsi/' + enc(pname) + '">' + esc(tc(pname)) + ' &rsaquo;</a>' : ''), head: sentP,
     chips: kpiChips(t).concat(heroChip('Distrik terkirim', list.length + ' <small>/ ' + G.d.length + '</small>', 'distrik di peta')),
-    listHead: 'Rank distrik', listCols: ['Realisasi', 'Target', '% OF'], rows: rankRows,
+    listHead: 'Rank distrik', listCols: ['Realisasi', '% Ach.', '% OF'], rows: rankRows,
     key: '<span><i style="background:#2E9E5C"></i>&ge;100%</span><span><i style="background:#C9952E"></i>85–99%</span><span><i style="background:#FF6B74"></i>&lt;85%</span><span><i style="background:#34424B"></i>tanpa kiriman</span><span><i class="pin"></i>plant</span>',
     map: svg, hint: 'Arahkan kursor untuk angka · klik distrik untuk rincian'});
 }
