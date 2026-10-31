@@ -36,13 +36,25 @@ def main():
     inbox = Path(a.inbox); f = {k: inbox / (k + '.xlsx') for k in ('rilis', 'so', 'tactical', 'snop', 'monitoring', 'gudang', 'kapal', 'kontrak')}
     have = {k: p.exists() for k, p in f.items()}
     part = [k for k in ('tactical', 'snop', 'monitoring') if have[k]]
-    if part and len(part) < 3:
-        print('GAGAL: Target butuh tiga file (Tactical, SNOP, Monitoring); yang ada baru:', ', '.join(part)); sys.exit(1)
+    no_tact = have['snop'] and have['monitoring'] and not have['tactical']   # Tactical-less month: SNOP + monitoring only
+    if part and len(part) < 3 and not no_tact:
+        print('GAGAL: Target butuh SNOP dan Monitoring (Tactical opsional); yang ada baru:', ', '.join(part)); sys.exit(1)
     mn = a.month or dt.datetime.now().month
+    mt = mn
+    if no_tact and not a.month:   # the target month is the first month in the SNOP file from this month on (never rewrite an earlier month)
+        import openpyxl
+        NM_ = {'Januari': 1, 'Februari': 2, 'Maret': 3, 'April': 4, 'Mei': 5, 'Juni': 6, 'Juli': 7, 'Agustus': 8, 'September': 9, 'Oktober': 10, 'November': 11, 'Desember': 12}
+        ws = openpyxl.load_workbook(f['snop'], read_only=True, data_only=True)['Rincian']
+        it = ws.iter_rows(values_only=True); h = list(next(it)); pi = h.index('Periode')
+        ms = sorted({NM_.get(r[pi]) for r in it if NM_.get(r[pi])})
+        later = [m for m in ms if m >= mn]
+        if not later:
+            print('GAGAL: SNOP tanpa Tactical tidak memuat bulan', mn, 'atau sesudahnya; bulan di file:', ms); sys.exit(1)
+        mt = later[0]
     fr = ['--force'] if a.force else []
     steps = []
     if part:
-        steps.append(('target', ['update_target.py', 'target', '--month', mn, '--tactical', f['tactical'], '--snop', f['snop'], '--monitoring', f['monitoring']]))
+        steps.append(('target', ['update_target.py', 'target', '--month', mt, '--tactical', f['tactical'] if have['tactical'] else '-', '--snop', f['snop'], '--monitoring', f['monitoring']]))
     steps.append(('target_xlsx', ['update_target.py', 'views']))
     if have['rilis']: steps.append(('rilis', ['update_master.py', 'rilis', '--input', f['rilis']] + fr))
     if have['so']: steps.append(('so', ['update_master.py', 'so', '--input', f['so']] + fr))
@@ -50,7 +62,7 @@ def main():
     if have['gudang']: steps.append(('gudang', ['update_gudang.py', '--input', f['gudang']]))
     if have['kapal']: steps.append(('kapal', ['update_kapal.py', '--input', f['kapal']]))
     if have['kontrak']: steps.append(('kontrak', ['update_kontrak.py', '--input', f['kontrak']]))
-    print('Rencana:', ' -> '.join(n for n, _ in steps), '| bulan target:', mn)
+    print('Rencana:', ' -> '.join(n for n, _ in steps), '| bulan target:', mt, '(tanpa Tactical)' if no_tact else '')
     for n, args in steps:
         if not run(args, env):
             print('\nBERHENTI di langkah', n, '- data store tidak dipublikasikan.'); sys.exit(1)

@@ -102,7 +102,55 @@ def read_snop(path):
     for r in it:
         if r[ix['KEMASAN']] is None: continue
         if str(r[ix['KEMASAN']]).upper()!='ZAK' or str(r[ix['KETERANGAN']]).lower()=='corsales': continue
-        out.append(dict(per=r[ix['Periode']],kd=int(r[ix['KODE DISTRIK']]),term=r[ix['TERM']],kp=str(r[ix['KODE DELIV. PLANT']]),pn=r[ix['DELIV. PLANT']],h=r[ix['HANDLING']],ket=str(r[ix['KETERANGAN']]).lower(),vol=r[ix['Volume']] or 0,prov=r[ix['PROVINSI']]))
+        out.append(dict(per=r[ix['Periode']],kd=int(r[ix['KODE DISTRIK']]),term=r[ix['TERM']],kp=str(r[ix['KODE DELIV. PLANT']]),pn=r[ix['DELIV. PLANT']],h=r[ix['HANDLING']],ket=str(r[ix['KETERANGAN']]).lower(),vol=r[ix['Volume']] or 0,prov=r[ix['PROVINSI']],
+                        distrik=r[ix['SALES DISTRIK']] if 'SALES DISTRIK' in ix else None))
+    return out
+
+def synth_tactical(mn,snop,mon_path,td_old):
+    """No Tactical for the month (Rendy, Nov 2026): build Tactical-like rows from the SNOP retail volume of the month.
+    Distributor split = the latest earlier month's stored distributor targets for that district x syarat (else TANPA_DISTRIBUTOR);
+    daily vector = weekday weights read from the monitoring file's 'Target Ekspeditur' (its month = the month before mn)."""
+    import calendar
+    mname=INV[mn]
+    # weekday weights from the monitoring daily targets
+    ws=openpyxl.load_workbook(mon_path,read_only=True,data_only=True)['Target Ekspeditur']
+    day=[0.0]*31
+    for r in list(ws.iter_rows(values_only=True))[2:]:
+        if not r[1] or not r[3]: continue
+        for i,x in enumerate(r[6:37]):
+            if isinstance(x,(int,float)): day[i]+=x
+    pm=mn-1 or 12;py=2026 if mn>1 else 2025
+    wk=C.defaultdict(list)
+    for i in range(calendar.monthrange(py,pm)[1]): wk[calendar.weekday(py,pm,i+1)].append(day[i])
+    wd={k:(sum(v)/len(v) if v else 0) for k,v in wk.items()}
+    if sum(wd.values())<=0: wd={k:1.0 for k in range(7)}
+    nd=calendar.monthrange(2026,mn)[1];w=[wd.get(calendar.weekday(2026,mn,i+1),0) if i<nd else 0.0 for i in range(31)];T=sum(w);w=[x/T for x in w]
+    # SNOP retail volume per district x syarat
+    def syarat(term,h):
+        if term=='FRC': return {'CONTAINER':'FRC CONTAINER','POLYSLING':'FRC KAPAL'}.get(h,'FRC')
+        if term=='FOT': return 'FOT CONTAINER' if h=='CONTAINER' else 'FOT'
+        return term
+    vol=C.defaultdict(float);meta={}
+    for r in snop:
+        if r['per']!=mname or r['ket']=='corsales' or not r['vol']: continue
+        k=(r['kd'],syarat(r['term'],r['h']));vol[k]+=r['vol'];meta[k]=(r['prov'],r['distrik'] or str(r['kd']))
+    # distributor shares from the latest earlier stored month
+    x={c:i for i,c in enumerate(TDC)}
+    hist=C.defaultdict(lambda:C.defaultdict(lambda:C.defaultdict(float)))
+    for r in td_old:
+        if (r[x['BULAN_NO']] or 0)>=mn or not r[x['TARGET_TON']]: continue
+        hist[(r[x['KODE_DISTRIK']],r[x['TERM_ASAL']])][r[x['BULAN_NO']]][(r[x['KETERANGAN']],r[x['BRAND']],r[x['DISTRIBUTOR']],r[x['SOLD_TO']])]+=r[x['TARGET_TON']]
+    out=[];nod=0
+    for k,v in sorted(vol.items(),key=str):
+        p,dn=meta[k];h=hist.get(k)
+        sh=dict(h[max(h)]) if h else {('RETAIL','', 'TANPA_DISTRIBUTOR',''):1.0}
+        if not h: nod+=1
+        tot=sum(sh.values())
+        for (seg,br,dist,so),y in sh.items():
+            t=v*y/tot
+            out.append({'PROP':p,'BRAND':br,'Segmen':seg,'Sdis':k[0],'Daerah':dn,'Sold to':so,'DISTRIBUTOR':dist,'SYARAT':k[1],'Target':t,'Periode':mname,'D':[t*z for z in w]})
+    log('Tactical sintetis %s: %d baris dari %d distrik x syarat (%.0f t); tanpa riwayat distributor: %d; bobot hari Sen..Min = %s'%(
+        mname,len(out),len(vol),sum(vol.values()),nod,[round(wd.get(i,0),1) for i in range(7)]))
     return out
 def read_monitoring(path,mn):
     ws=openpyxl.load_workbook(path,read_only=True,data_only=True)['Target Ekspeditur']
@@ -314,12 +362,17 @@ def cmd_nonzak(a):
 def cmd_target(a):
     mn=a.month
     if mn<7: raise SystemExit('Skrip ini untuk bulan >= 7 (Juli ke atas).')
-    for f in (a.tactical,a.snop,a.monitoring):
+    no_tact=not a.tactical or a.tactical=='-' or not Path(a.tactical).exists()
+    for f in (a.snop,a.monitoring)+(() if no_tact else (a.tactical,)):
         if not Path(f).exists(): raise SystemExit('File tidak ada: '+f)
     te_old=load(DATA/'target_ekspeditur.csv.gz',TEC);td_old=load(DATA/'target_distributor.csv.gz',TDC)
-    tact=read_tactical(a.tactical,INV[mn]);log('Tactical baris bulan %s: %d'%(INV[mn],len(tact)))
-    if not tact: raise SystemExit('Tidak ada baris Tactical untuk bulan itu (kolom Periode).')
     snop=read_snop(a.snop);log('SNOP baris (ZAK non-corsales):',len(snop))
+    if no_tact:
+        log('Tactical tidak ada: target bulan %s dibangun dari SNOP + porsi distributor bulan lalu + bobot hari monitoring.'%INV[mn])
+        tact=synth_tactical(mn,snop,a.monitoring,td_old)
+    else:
+        tact=read_tactical(a.tactical,INV[mn]);log('Tactical baris bulan %s: %d'%(INV[mn],len(tact)))
+    if not tact: raise SystemExit('Tidak ada baris Tactical (atau SNOP) untuk bulan itu (kolom Periode).')
     mon=read_monitoring(a.monitoring,mn);log('Monitoring: distrik dengan proporsi =',len(mon))
     td,te,stat,tanpa,left,pstat,W=build(mn,tact,snop,mon,te_old,td_old)
     for r in te: r.append('ZAK')
@@ -381,7 +434,7 @@ def cmd_views(a):
 def main():
     ap=argparse.ArgumentParser();sp=ap.add_subparsers(dest='cmd',required=True)
     s=sp.add_parser('init');s.add_argument('--force',action='store_true')
-    s=sp.add_parser('target');s.add_argument('--month',type=int,required=True);s.add_argument('--tactical',required=True);s.add_argument('--snop',required=True);s.add_argument('--monitoring',required=True);s.add_argument('--dry-run',action='store_true');s.add_argument('--force',action='store_true')
+    s=sp.add_parser('target');s.add_argument('--month',type=int,required=True);s.add_argument('--tactical',default='-');s.add_argument('--snop',required=True);s.add_argument('--monitoring',required=True);s.add_argument('--dry-run',action='store_true');s.add_argument('--force',action='store_true')
     s=sp.add_parser('nonzak');s.add_argument('--months',required=True);s.add_argument('--snop',required=True);s.add_argument('--dry-run',action='store_true');s.add_argument('--force',action='store_true')
     sp.add_parser('views')
     a=ap.parse_args()
