@@ -92,5 +92,9 @@
  "so_keterangan": "AP1",
  "so_buang_tersimpan_provinsi": [
   "SUMATERA SELATAN"
- ]
+ ],
+ "target_internal_pct": {
+  "default": 115,
+  "2026-11": 120
+ }
 }

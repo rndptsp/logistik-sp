@@ -511,9 +511,11 @@ def build(cfg):
     # Provinsi non-kinerja (config MASTER BARU/settings.json): target 0 per kombinasi yang punya realisasi -> tampil 100%
     try:
         with open(os.path.join(base, "config", "settings.json"), encoding="utf-8") as f:
-            nonkin = [prov(p) for p in json.load(f).get("provinsi_non_kinerja", [])]
+            _cfg = json.load(f)
+            nonkin = [prov(p) for p in _cfg.get("provinsi_non_kinerja", [])]
+            tgt_int = _cfg.get("target_internal_pct", {})   # Internal target = SNOP x pct/100, per month (default key "default")
     except OSError:
-        nonkin = []
+        nonkin, tgt_int = [], {}
     zero = set()
     tgt_kem = {t[9] for t in targets} or {kem_d("ZAK")}   # only kemasan that have targets elsewhere
     for (day, inc_, s_, p_, di_, e_, k_) in facts:
@@ -552,7 +554,7 @@ def build(cfg):
         "asOf": days[-1] if days else None,
         "lastDay": last_day,
         "dims": {"inc": INCOTERMS, "prov": prov.items, "dist": dist.items, "eksp": eksp.items, "src": src.items,
-                 "distr": distr.items, "truck": truck.items, "nonKin": nonkin, "kem": kem_d.items, "kapal": kapal_d.items, "kapalInfo": [kapal_info.get(n) for n in kapal_d.items], "ekspNama": [EKSP_NAMA_TETAP.get(n) or kamus.get(n, "") for n in eksp.items],
+                 "distr": distr.items, "truck": truck.items, "nonKin": nonkin, "tgtInt": tgt_int, "kem": kem_d.items, "kapal": kapal_d.items, "kapalInfo": [kapal_info.get(n) for n in kapal_d.items], "ekspNama": [EKSP_NAMA_TETAP.get(n) or kamus.get(n, "") for n in eksp.items],
                  # ship-to: [code, name, address, kecamatan index or -1, lat, lon] (lat/lon null when unknown)
                  "toko": [toko_row(i) for i in range(len(toko.items))],
                  "kec": kec.items,

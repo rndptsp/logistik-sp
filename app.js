@@ -108,12 +108,15 @@ function prepare(){
 }
 const srcOk = i => i === D.srcEmpty || !F.srcOff.has(B.dims.src[i]);
 const srcOkS = (i, sc) => sc && sc.src != null ? i === sc.src : srcOk(i);   // a plant page (sc.src) ignores the plant filter
-/* Target basis: master holds SNOP only; Internal = 115% of SNOP. Applied wherever a target is summed. */
-const TGT_INTERNAL = 1.15;
+/* Target basis: master holds SNOP only; Internal = SNOP x tgtIntPct (per month). Applied wherever a target is summed. */
+/* Internal target = SNOP x pct per month (settings target_internal_pct, e.g. Nov 2026 = 120%); default 115%. */
+const tgtIntPct = m => { const t = (B && B.dims && B.dims.tgtInt) || {}; return +(t[m] || t.default || 115); };
+const tgtIntNow = () => tgtIntPct((PER().month) || (PER().to || B.asOf).slice(0, 7));
+const TGT_INT = () => tgtIntNow() / 100;
 /* SLA (truck in -> out of the plant): target 4 hours, the same for every truck. */
 const SLA_TARGET = 4;
 const slaColor = v => v == null ? 'var(--sub)' : Math.round(v * 10) / 10 <= SLA_TARGET ? 'var(--green)' : 'var(--red)';   // judged on the shown (1-decimal) value
-const tgtK = () => F.tgt === 'INTERNAL' ? TGT_INTERNAL : 1;
+const tgtK = () => F.tgt === 'INTERNAL' ? TGT_INT() : 1;
 const tgtLbl = () => F.tgt === 'INTERNAL' ? 'Internal' : 'SNOP';
 /* Incoterm codes: B.dims.inc (FRC, FOT, FOB, FAS); older builds have no list and only 0 = FRC, 1 = FOT. */
 const INCS = () => B.dims.inc || ['FRC', 'FOT'];
@@ -775,7 +778,7 @@ function renderFilterPanel(){
   const moda = ['DARAT', 'LAUT', 'ALL'].map(x => '<span data-moda="' + x + '" class="' + (draft.moda === x ? 'on' : '') + '">' + MODA_LBL[x].toUpperCase() + '</span>').join('');
   const inc = modaIncs(draft.moda).map(x => [x, incLbl(x)]).concat([['ALL', draft.moda === 'ALL' ? 'Semua' : 'Semua ' + MODA_LBL[draft.moda].toLowerCase()]]).map(x => '<span data-inc="' + x[0] + '" class="' + (draft.inc === x[0] ? 'on' : '') + '">' + x[1] + '</span>').join('');
   const kem = kemOpts().map(x => '<span data-kem="' + x[0] + '" class="' + (draft.kem === x[0] ? 'on' : '') + '">' + x[1] + '</span>').join('');
-  const tgt = [['SNOP','SNOP'],['INTERNAL','Internal (115% SNOP)']].map(x => '<span data-tgt="' + x[0] + '" class="' + (draft.tgt === x[0] ? 'on' : '') + '">' + x[1] + '</span>').join('');
+  const tgt = [['SNOP','SNOP'],['INTERNAL','Internal (' + tgtIntNow() + '% SNOP)']].map(x => '<span data-tgt="' + x[0] + '" class="' + (draft.tgt === x[0] ? 'on' : '') + '">' + x[1] + '</span>').join('');
   const src = D.sources.map(s2 => '<label class="fp-check"><input type="checkbox" data-src="' + esc(s2) + '"' + (draft.srcOff.has(s2) ? '' : ' checked') + '> ' + esc(s2.toUpperCase()) + '' + '</label>').join('');
   const tip = (t, r) => '<span class="fp-info' + (r ? ' r' : '') + '" tabindex="0" data-info="' + esc(t) + '">i</span>';
   const AREA_OPT = [['AP1', 'AP1'], ['NON', 'Non AP1'], ['ALL', 'Semua']];
@@ -788,7 +791,7 @@ function renderFilterPanel(){
     '<div class="fp-row"><div class="fp-group"><label class="fl">Periode</label><div class="fp-chips" style="margin-bottom:10px">' + mode + '</div>' + body + '</div>' +
     '<div class="fp-group"><label class="fl">Moda &amp; incoterm' + tip(incTip, true) + '</label><div class="fp-chips" style="margin-bottom:8px">' + moda + '</div><div class="fp-chips">' + inc + '</div></div></div>' +
     '<div class="fp-row">' + (kem ? '<div class="fp-group"><label class="fl">Kemasan' + tip(kemTip) + '</label><div class="fp-chips">' + kem + '</div></div>' : '<div class="fp-group"></div>') +
-    '<div class="fp-group"><label class="fl">Target' + tip('SNOP = target resmi. Internal = 115% dari SNOP.', true) + '</label><div class="fp-chips">' + tgt + '</div></div></div>' +
+    '<div class="fp-group"><label class="fl">Target' + tip('SNOP = target resmi. Internal = ' + tgtIntNow() + '% dari SNOP pada bulan terpilih.', true) + '</label><div class="fp-chips">' + tgt + '</div></div></div>' +
     (area ? '<div class="fp-row"><div class="fp-group"><label class="fl">Area' + tip(areaTip) + '</label><div class="fp-chips">' + area + '</div></div><div class="fp-group"></div></div>' : '') +
     '<div class="fp-group" style="margin-bottom:18px"><label class="fl">Source plant' + tip(srcTip) + '<span class="fp-all"><a data-srcall="1">Centang semua</a><a data-srcall="0">Hapus semua</a></span></label><div class="fp-cols">' + src + '</div></div>' +
     '<div class="fp-foot"><div class="fp-reset" data-act="reset">Reset filter</div><div class="fp-reset" data-act="laporan">Tampilan laporan harian</div><div class="fp-apply" data-act="apply">Terapkan</div></div>';
@@ -800,7 +803,7 @@ function filterStrip(){
     '<span class="tag qk" data-qk="inc" title="Ganti incoterm"><b>' + incName() + '</b> &#9662;</span>' +
     '<span class="tag qk" data-qk="kem" title="Ganti kemasan"><b>' + (F.kem === 'ALL' ? 'RETAIL + CURAH' : esc(MKT[F.kem].toUpperCase())) + '</b> &#9662;</span>' +
     (areaOn() ? '<span class="tag qk" data-qk="area" title="Ganti area"><b>' + areaName() + '</b> &#9662;</span>' : '') +
-    '<span class="tag">target <b>' + (F.tgt === 'INTERNAL' ? 'Internal 115%' : 'SNOP') + '</b></span>' +
+    '<span class="tag">target <b>' + (F.tgt === 'INTERNAL' ? 'Internal ' + tgtIntNow() + '%' : 'SNOP') + '</b></span>' +
     '<span class="tag">' + srcTxt() + '</span>' +
     '<span class="edit qrep' + (isReportView() ? ' on' : '') + '" data-act="laporan" title="' + (isReportView() ? 'Kembali ke tampilan lengkap (semua moda, incoterm, plant & area)' : 'Sama dengan laporan Realisasi harian: AP1 · FRC TRUK · ZAK · CP Indarung · SNOP · bulan berjalan') + '">' + (isReportView() ? '&#10003; Laporan harian' : 'Laporan harian') + '</span>' +
     '<span class="edit" data-act="openfilter">Ubah filter &#9662;</span>';
@@ -1866,7 +1869,7 @@ function plantReview(si, per, all){
   B.targets.forEach(t => {
     if(t[4] !== si || !inSet.has(tInc(t)) || !kemOk(tKem(t)) || !areaProvOk(t[1])) return;
     const o = I.get(tInc(t));
-    o.tgt += targetBetween(t, per.from, per.tgtTo) / tgtK();   // SNOP basis; Internal = x TGT_INTERNAL
+    o.tgt += targetBetween(t, per.from, per.tgtTo) / tgtK();   // SNOP basis; Internal = x TGT_INT()
     o.tgtFull += targetBetween(t, per.from, chartTo) / tgtK();
     const n = dim(t[0]);
     for(let d = 1; d <= n; d++){
@@ -1980,7 +1983,7 @@ function pagePlant(name){
   const R = plantReview(si, m, plantAllInc);
   const sum = f => R.I.reduce((a, o) => a + f(o), 0);
   const vol = sum(o => o.vol), az = sum(o => o.tgt ? o.az : 0), tgt = sum(o => o.tgt), prev = sum(o => o.prev), trips = sum(o => o.trips);
-  const dwS = sum(o => o.dwS), dwN = sum(o => o.dwN), tI = tgt * TGT_INTERNAL;
+  const dwS = sum(o => o.dwS), dwN = sum(o => o.dwN), tI = tgt * TGT_INT();
   const pS = tgt ? pctOf(az, tgt) : null, pI = tgt ? pctOf(az, tI) : null, chg = prev ? (vol / prev - 1) * 100 : null;
   const dayKeys = R.keys.filter(k => R.Bk.get(k).tot > 0), lastK = dayKeys[dayKeys.length - 1];
   const avg = dayKeys.length ? vol / dayKeys.length : 0;
@@ -1992,15 +1995,15 @@ function pagePlant(name){
   const chips = [
     heroChip('Realisasi', fmt(vol) + ' <small>t</small>', fmt(trips) + ' trip'),
     heroChip('Target SNOP', tgt ? fmt(tgt) + ' <small>t</small>' : '–', tgt ? 'capaian <b style="color:' + heroTier(pctOf(az, tgt)) + '">' + pctTxt(pctOf(az, tgt)) + '</b> · ' + signed(az - tgt) + ' t' : 'tidak ada target'),
-    heroChip('Target Internal', tgt ? fmt(tI) + ' <small>t</small>' : '–', tgt ? 'capaian <b style="color:' + heroTier(pI) + '">' + pctTxt(pI) + '</b> · ' + signed(az - tI) + ' t' : '115% SNOP'),
+    heroChip('Target Internal', tgt ? fmt(tI) + ' <small>t</small>' : '–', tgt ? 'capaian <b style="color:' + heroTier(pI) + '">' + pctTxt(pI) + '</b> · ' + signed(az - tI) + ' t' : tgtIntNow() + '% SNOP'),
     heroChip(R.monthly ? 'Rata-rata / bulan' : 'Rata-rata / hari', fmt(R.monthly ? vol / Math.max(1, dayKeys.length) : avg) + ' <small>t</small>', lastK ? (R.monthly ? monthShort(lastK) : shortDate(lastK)) + ': ' + fmt(R.Bk.get(lastK).tot) + ' t' : ''),
     heroChip('vs ' + cmpTag(m), chg == null ? '–' : (chg >= 0 ? '▲ ' : '▼ ') + fmt1(Math.abs(chg)) + '%', prev ? fmt(prev) + ' t · ' + shortDate(R.pp.from) + '–' + shortDate(R.pp.to) : '', chg == null ? null : chg >= 0 ? '#5FD08F' : '#FF6B74'),
     heroChip('SLA rata-rata', dwN ? fmt1(dwS / dwN) + ' <small>jam</small>' : '–', 'target ' + SLA_TARGET + ' jam · masuk → keluar', dwN ? (dwS / dwN <= SLA_TARGET ? '#5FD08F' : '#FF6B74') : null)];
   const cards = R.I.map(o => {
-    const n = INCS()[o.i], ps = o.tgt ? pctOf(o.az, o.tgt) : null, pi = o.tgt ? pctOf(o.az, o.tgt * TGT_INTERNAL) : null;
+    const n = INCS()[o.i], ps = o.tgt ? pctOf(o.az, o.tgt) : null, pi = o.tgt ? pctOf(o.az, o.tgt * TGT_INT()) : null;
     return '<div class="ph-card" style="--c:' + incColor(o.i) + '"><div class="ph-n">' + esc(incLbl(n)) + '</div><div class="ph-v">' + fmt(o.vol) + ' <small>t</small></div>' +
       '<div class="ph-k"><span>SNOP</span><b style="color:' + heroTier(ps) + '">' + (o.tgt ? pctTxt(ps) : '–') + '</b><small>' + (o.tgt ? 'T ' + fmt(o.tgt) : 'tanpa target') + '</small></div>' +
-      '<div class="ph-k"><span>Internal</span><b style="color:' + heroTier(pi) + '">' + (o.tgt ? pctTxt(pi) : '–') + '</b><small>' + (o.tgt ? 'T ' + fmt(o.tgt * TGT_INTERNAL) : '') + '</small></div></div>';
+      '<div class="ph-k"><span>Internal</span><b style="color:' + heroTier(pi) + '">' + (o.tgt ? pctTxt(pi) : '–') + '</b><small>' + (o.tgt ? 'T ' + fmt(o.tgt * TGT_INT()) : '') + '</small></div></div>';
   }).join('') || '<div class="mh-miss">Tidak ada incoterm dengan rilis atau target.</div>';
   const bg = (window.BG || {})[plantBg(name)];
   const hero = '<section class="map-hero mh-page plant-hero"><div class="mh-bg"' + (bg ? ' style="background-image:linear-gradient(90deg,rgba(15,26,33,.95) 0%,rgba(15,26,33,.82) 48%,rgba(15,26,33,.5) 100%),url(&quot;assets/bg/' + bg.f + '&quot;)"' : '') + '></div><div class="mh-inner">' +
@@ -2015,7 +2018,7 @@ function pagePlant(name){
     (sla ? '<div class="dp-panel pc-panel" style="margin-top:14px"><div class="pt">SLA per ' + (R.monthly ? 'bulan' : 'hari') + ' (jam, masuk → keluar pabrik)<span class="pt-sub">rata-rata <b style="color:' + slaColor(slaAvg) + '">' + fmt1(slaAvg) + ' jam</b> · target ' + SLA_TARGET + ' jam</span></div>' + sla +
       '<div class="trend-legend"><span><i style="background:var(--green)"></i>&le;' + SLA_TARGET + ' jam (memenuhi target)</span><span><i style="background:var(--red)"></i>&gt;' + SLA_TARGET + ' jam</span><span><i class="dash"></i>target ' + SLA_TARGET + ' jam</span></div></div>' : '');
   // comparison table per incoterm
-  const rows = R.I.map(o => ({n: o.i, vol: o.vol, tgt: o.tgt, ps: o.tgt ? pctOf(o.az, o.tgt) : null, pi: o.tgt ? pctOf(o.az, o.tgt * TGT_INTERNAL) : null, gap: o.az - o.tgt, prev: o.prev, chg: o.prev ? (o.vol / o.prev - 1) * 100 : null, trips: o.trips, sla: o.dwN ? o.dwS / o.dwN : null}));
+  const rows = R.I.map(o => ({n: o.i, vol: o.vol, tgt: o.tgt, ps: o.tgt ? pctOf(o.az, o.tgt) : null, pi: o.tgt ? pctOf(o.az, o.tgt * TGT_INT()) : null, gap: o.az - o.tgt, prev: o.prev, chg: o.prev ? (o.vol / o.prev - 1) * 100 : null, trips: o.trips, sla: o.dwN ? o.dwS / o.dwN : null}));
   const pc = p => p == null ? '–' : '<b style="color:' + tierColor(p) + '">' + pctTxt(p) + '</b>';
   const cols = [{h:'Incoterm', cls:'name', val: r => incLbl(INCS()[r.n]), html: r => '<span class="inc-dot" style="background:' + incColor(r.n) + '"></span>' + esc(incLbl(INCS()[r.n]))},
     {h:'Realisasi (Ton)', num:true, val: r => r.vol, html: r => fmt(r.vol)},
