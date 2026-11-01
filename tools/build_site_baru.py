@@ -252,6 +252,12 @@ def build(cfg):
     kem_d("ZAK"); kem_d("CURAH"); kem_d("JUMBO BAG")
     KEM_ALIAS = {"SAK": "ZAK", "JUMBO": "JUMBO BAG", "JUMBO 1 TON": "JUMBO BAG", "JUMBOBAG": "JUMBO BAG"}
     kemasan = lambda v: kem_d(KEM_ALIAS.get(up(v), up(v)) or "ZAK")
+    # Rendy: DuPro+ belongs to the curah market even in bags -> "ZAK KHUSUS" (any kemasan other than ZAK counts as curah)
+    def kem_of(r):
+        k = KEM_ALIAS.get(up(r.get("KEMASAN")), up(r.get("KEMASAN"))) or "ZAK"
+        if k == "ZAK" and "DUPRO" in re.sub(r"[^A-Z0-9]", "", up(r.get("PRODUK"))):
+            k = "ZAK KHUSUS"
+        return kem_d(k)
     toko_meta = {}
     kec = Dict()                                         # kecamatan names (NAMA_KEC_SUBDISTRIK), for the district map
     toko_kec = defaultdict(lambda: defaultdict(float))   # ship-to -> kecamatan -> ton; the main one places its map pin
@@ -362,7 +368,7 @@ def build(cfg):
         s = src(up(r.get("SOURCE_PLANT")))
         dwell = r.get("DWELL_TIME_JAM")
         ok_dwell = dwell not in (None, "") and not r.get("DWELL_WAITING_FLAG") and 0 < num(dwell) <= 48   # 0 jam = jam masuk/keluar tidak tercatat (DC), bukan muat instan
-        kem = kemasan(r.get("KEMASAN"))
+        kem = kem_of(r)
         f = facts[(d.isoformat(), inc, s, p, di, e, kem)]
         f[0] += ton; f[1] += 1
         if ok_dwell:
@@ -485,14 +491,15 @@ def build(cfg):
         p, di = prov(up(r.get("PROPINSI"))), dist(up(r.get("NAMA_DISTRIK")))
         dist_prov.setdefault(di, p)
         e_so = eksp(up(r.get("EXPEDITUR_KODE"))) if inc_so.startswith("FRC") else eksp(up(r.get("DISTRIBUTOR")))   # non-FRC: ekspeditur = distributor, as the realisasi
-        sod[(dk.isoformat(), p, di, e_so, kemasan(r.get("KEMASAN")), ii)] += num(r.get("TON_SO"))
+        kso = kem_of(r)
+        sod[(dk.isoformat(), p, di, e_so, kso, ii)] += num(r.get("TON_SO"))
         dx = distr_by.get(" ".join(nk(r.get("DISTRIBUTOR"))))
-        so_lines.append((sn, dk, as_date(r.get("TGL_SO")) or dk, p, di, e_so, -1 if dx is None else dx, kemasan(r.get("KEMASAN")), ii, num(r.get("TON_SO")),
+        so_lines.append((sn, dk, as_date(r.get("TGL_SO")) or dk, p, di, e_so, -1 if dx is None else dx, kso, ii, num(r.get("TON_SO")),
                          up(r.get("REJECTION")) == "YES" or up(r.get("BLOCKING")) == "YES"))
         if dx is None:
             so_nodistr += 1
         else:
-            sodd[(dk.isoformat(), p, di, dx, kemasan(r.get("KEMASAN")), ii)] += num(r.get("TON_SO"))
+            sodd[(dk.isoformat(), p, di, dx, kso, ii)] += num(r.get("TON_SO"))
     print(f"  SO groups: {len(sod):,} per tgl kirim (SOCC); per distributor {len(sodd):,}, baris SO tanpa distributor yang cocok: {so_nodistr:,}")
 
     # % OF per SO (Rendy, option 1): SO due (Tgl Kirim) in the period vs realisasi on those same SO numbers (Rilis NO_SO), capped at the SO;

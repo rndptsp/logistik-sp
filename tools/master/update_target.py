@@ -102,6 +102,7 @@ def read_snop(path):
     for r in it:
         if r[ix['KEMASAN']] is None: continue
         if str(r[ix['KEMASAN']]).upper()!='ZAK' or str(r[ix['KETERANGAN']]).lower()=='corsales': continue
+        if 'DUPRO' in re.sub('[^A-Z0-9]','',str(r[ix.get('DETAIL MATERIAL',ix['KEMASAN'])] or '').upper()): continue   # DuPro+ bags = curah market
         out.append(dict(per=r[ix['Periode']],kd=int(r[ix['KODE DISTRIK']]),term=r[ix['TERM']],kp=str(r[ix['KODE DELIV. PLANT']]),pn=r[ix['DELIV. PLANT']],h=r[ix['HANDLING']],ket=str(r[ix['KETERANGAN']]).lower(),vol=r[ix['Volume']] or 0,prov=r[ix['PROVINSI']],
                         distrik=r[ix['SALES DISTRIK']] if 'SALES DISTRIK' in ix else None))
     return out
@@ -315,6 +316,7 @@ def read_snop_nonzak(path):
     for r in it:
         if r[ix['KEMASAN']] is None: continue
         k=KEM_SNOP.get(str(r[ix['KEMASAN']]).upper(),str(r[ix['KEMASAN']]).upper())
+        if k=='ZAK' and 'DUPRO' in re.sub('[^A-Z0-9]','',str(r[ix.get('DETAIL MATERIAL',ix['KEMASAN'])] or '').upper()): k='ZAK KHUSUS'   # DuPro+ bags = curah market (Rendy)
         if k=='ZAK' or not (r[ix['Volume']] or 0): continue
         out.append(dict(per=r[ix['Periode']],kd=int(r[ix['KODE DISTRIK']]),distrik=r[ix['SALES DISTRIK']],term=r[ix['TERM']],kp=str(r[ix['KODE DELIV. PLANT']]),pn=r[ix['DELIV. PLANT']],h=r[ix['HANDLING']],vol=r[ix['Volume']],prov=NM.get(r[ix['PROVINSI']],r[ix['PROVINSI']]),kem=k))
     return out
