@@ -911,3 +911,7 @@ a.t10-row:hover .t10-nm{color:var(--red)}
 /* tables (Rendy): counts like Trip shrink to their content; the spare width goes to the name column */
 .tbl th.num:not(.cv):not(.cp),.tbl td.num:not(.cv):not(.cp){width:1%}
 .tbl td.name{width:100%}
+
+.t10-bw{margin-left:auto;display:inline-flex;border:1px solid var(--line);border-radius:12px;overflow:hidden;flex:none}
+.t10-bw button{border:0;background:#fff;padding:3px 10px;font-size:11px;font-weight:800;color:var(--sub);cursor:pointer}
+.t10-bw button[data-t10d="b"].on{background:var(--green);color:#fff}.t10-bw button[data-t10d="w"].on{background:var(--red);color:#fff}

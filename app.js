@@ -1684,28 +1684,42 @@ function pageHome(){
 }
 
 /* ===================== Home: Top 10 (Rendy) =====================
-   Per dimension one card, each with modes: Volume | % Ach. | Gap minus (furthest behind target) | Growth (vs LM).
+   Per dimension one card, Best / Worst x Volume | % Ach. | Gap | Growth (vs LM).
    % Ach. ranks only rows with a meaningful target (>= 0.5% of the dimension's total target, min 50 t). */
-const T10_MODES = [['vol', 'Volume'], ['ach', '% Ach.'], ['gap', 'Gap minus'], ['up', 'Growth']];
+const T10_MODES = [['vol', 'Volume'], ['ach', '% Ach.'], ['gap', 'Gap'], ['up', 'Growth']];
+/* Best / Worst per mode (Rendy): Volume = largest / smallest (worst only among rows with a target, else with volume);
+   % Ach. = highest / lowest (meaningful targets only); Gap = furthest above / below target MTD; Growth = biggest rise / fall vs LM
+   (worst includes rows that shipped last month and nothing now). */
 function top10Card(id, title, sub, list, nameOf, hrefOf, opt){
   opt = opt || {}; const tag = cmpTag(PER());
   list = list.filter(o => o.vol > 0 || o.tgt > 0);
   const tT = list.reduce((a, o) => a + (o.tgt || 0), 0), minT = Math.max(50, tT * 0.005);
   const modes = T10_MODES.filter(([k]) => k === 'vol' || (k === 'up' ? opt.prev : tT > 0));
-  const pane = k => {
-    let L, val, main, sub2, col;
-    if(k === 'vol'){ L = list.slice().sort((a, b) => b.vol - a.vol); val = o => o.vol; main = o => fmt(o.vol) + ' t'; sub2 = o => (o.hasTgt ? pctTxt(o.pct) + ' ach.' : '') ; col = o => o.hasTgt ? tierColor(o.pct) : 'var(--black)'; }
-    else if(k === 'ach'){ L = list.filter(o => o.hasTgt && o.tgt >= minT && o.pct != null).sort((a, b) => b.pct - a.pct || b.vol - a.vol); val = o => Math.min(o.pct, 200); main = o => pctTxt(o.pct); sub2 = o => fmt(o.vol) + ' / ' + fmt(o.tgt) + ' t'; col = o => tierColor(o.pct); }
-    else if(k === 'gap'){ L = list.filter(o => o.hasTgt && o.gap < -0.5).sort((a, b) => a.gap - b.gap); val = o => -o.gap; main = o => signed(o.gap) + ' t'; sub2 = o => pctTxt(o.pct) + ' ach.'; col = () => 'var(--red)'; }
-    else { const pv = o => opt.prev.get(o.key) || 0; L = list.filter(o => o.vol - pv(o) > 0.5).sort((a, b) => (b.vol - pv(b)) - (a.vol - pv(a))); val = o => o.vol - pv(o); main = o => '+' + fmt(o.vol - pv(o)) + ' t'; sub2 = o => pv(o) > 0 ? '+' + fmt((o.vol / pv(o) - 1) * 100) + '%' : 'baru'; col = () => 'var(--green)'; }
+  const pv = o => opt.prev ? opt.prev.get(o.key) || 0 : 0;
+  let gone = [];
+  if(opt.prev){ const have = new Set(list.map(o => o.key)); opt.prev.forEach((v, k) => { if(!have.has(k) && v > 0.5 && nameOf(k)) gone.push({key: k, vol: 0, tgt: 0, hasTgt: false}); }); }
+  const pane = (k, d) => {
+    const best = d === 'b'; let L, val, main, sub2, col;
+    if(k === 'vol'){ const base = best ? list : (list.some(o => o.hasTgt) ? list.filter(o => o.hasTgt) : list.filter(o => o.vol > 0));
+      L = base.slice().sort((a, b) => best ? b.vol - a.vol : a.vol - b.vol); val = o => o.vol; main = o => fmt(o.vol) + ' t';
+      sub2 = o => o.hasTgt ? pctTxt(o.pct) + ' ach.' : ''; col = o => o.hasTgt ? tierColor(o.pct) : 'var(--black)'; }
+    else if(k === 'ach'){ L = list.filter(o => o.hasTgt && o.tgt >= minT && o.pct != null).sort((a, b) => best ? b.pct - a.pct || b.vol - a.vol : a.pct - b.pct || b.tgt - a.tgt);
+      val = o => Math.min(o.pct, 200); main = o => pctTxt(o.pct); sub2 = o => fmt(o.vol) + ' / ' + fmt(o.tgt) + ' t'; col = o => tierColor(o.pct); }
+    else if(k === 'gap'){ L = list.filter(o => o.hasTgt && (best ? o.gap > 0.5 : o.gap < -0.5)).sort((a, b) => best ? b.gap - a.gap : a.gap - b.gap);
+      val = o => Math.abs(o.gap); main = o => signed(o.gap) + ' t'; sub2 = o => pctTxt(o.pct) + ' ach.'; col = () => best ? 'var(--green)' : 'var(--red)'; }
+    else { const g = o => o.vol - pv(o); L = (best ? list : list.concat(gone)).filter(o => best ? g(o) > 0.5 : g(o) < -0.5).sort((a, b) => best ? g(b) - g(a) : g(a) - g(b));
+      val = o => Math.abs(g(o)); main = o => signed(g(o)) + ' t'; sub2 = o => pv(o) > 0 ? (g(o) >= 0 ? '+' : '−') + fmt(Math.abs(g(o) / pv(o) * 100)) + '% · ' + tag + ' ' + fmt(pv(o)) + ' t' : 'baru'; col = () => best ? 'var(--green)' : 'var(--red)'; }
     L = L.slice(0, 10); const mx = Math.max(1e-9, ...L.map(val));
     const rows = L.map((o, i) => { const h = hrefOf(o.key), tg = h ? 'a' : 'div';
       return '<' + tg + ' class="t10-row"' + (h ? ' href="' + h + '"' : '') + '><span class="t10-rk">' + (i + 1) + '</span><span class="t10-nm">' + esc(nameOf(o.key)) + '<i style="width:' + (val(o) / mx * 100).toFixed(1) + '%;background:' + col(o) + '"></i></span><span class="t10-v">' + main(o) + '<small>' + sub2(o) + '</small></span></' + tg + '>'; }).join('');
-    return '<div class="t10-pane' + (k === 'vol' ? ' on' : '') + '" data-t10p="' + k + '">' + (rows || '<div class="t10-empty">' + (k === 'gap' ? 'Semua sudah di atas target MTD.' : 'Tidak ada data.') + '</div>') + (k === 'ach' && rows ? '<div class="t10-foot">hanya target MTD &ge; ' + fmt(minT) + ' t</div>' : '') + '</div>';
+    const empty = k === 'gap' ? (best ? 'Belum ada yang di atas target MTD.' : 'Semua sudah di atas target MTD.') : k === 'up' ? (best ? 'Tidak ada yang naik.' : 'Tidak ada yang turun.') : 'Tidak ada data.';
+    const foot = k === 'ach' ? 'hanya target MTD &ge; ' + fmt(minT) + ' t' : k === 'vol' && !best ? (list.some(o => o.hasTgt) ? 'hanya yang punya target' : '') : '';
+    return '<div class="t10-pane' + (k === 'vol' && best ? ' on' : '') + '" data-t10p="' + k + d + '">' + (rows || '<div class="t10-empty">' + empty + '</div>') + (rows && foot ? '<div class="t10-foot">' + foot + '</div>' : '') + '</div>';
   };
-  return '<div class="t10-card" id="t10-' + id + '"><div class="t10-h"><b>' + esc(title) + '</b><small>' + esc(sub) + '</small></div>' +
+  return '<div class="t10-card" id="t10-' + id + '" data-m="vol" data-d="b"><div class="t10-h"><b>' + esc(title) + '</b><small>' + esc(sub) + '</small>' +
+    '<span class="t10-bw"><button type="button" data-t10d="b" class="on">Best</button><button type="button" data-t10d="w">Worst</button></span></div>' +
     '<div class="t10-tabs">' + modes.map(([k, l]) => '<button type="button" data-t10="' + k + '"' + (k === 'vol' ? ' class="on"' : '') + '>' + (k === 'up' ? '<span title="vs ' + tag + '">' + l + '</span>' : l) + '</button>').join('') + '</div>' +
-    modes.map(([k]) => pane(k)).join('') + '</div>';
+    modes.map(([k]) => pane(k, 'b') + pane(k, 'w')).join('') + '</div>';
 }
 function homeTop10(m){
   const pv = g => prevVols(g, m);
@@ -1716,9 +1730,9 @@ function homeTop10(m){
   const dPrev = new Map(distrSummary(shipRows(prevPer(toPer(m)), {})).map(o => [o.key, o.vol]));
   const cards = [
     top10Card('dist', 'Distrik', 'tujuan kirim', dist, k => tc(B.dims.dist[k] || ''), k => B.dims.dist[k] ? '#/distrik/' + enc(B.dims.dist[k]) : null, {prev: pv('dist')}),
-    top10Card('eksp', 'Ekspeditur', 'franco (FRC)', eksp, k => ekspLbl(k), k => ekspHref(k), {prev: pv('eksp')}),
+    top10Card('eksp', 'Ekspeditur', 'franco (FRC)', eksp, k => ekspLbl(k), k => ekspHref(k), {prev: new Map([...pv('eksp')].filter(([k]) => D.frcEksp.has(k)))}),
     top10Card('distr', 'Distributor', 'semua incoterm terpilih', dt, k => distrLbl(k), k => '#/distributor/' + enc(B.dims.distr[k]), {prev: dPrev}),
-    top10Card('plant', 'Plant', 'asal muat', src, k => tc(B.dims.src[k]), k => plantHref(B.dims.src[k]), {prev: pv('src')})];
+    top10Card('plant', 'Plant', 'asal muat', src, k => tc(B.dims.src[k]), k => plantHref(B.dims.src[k]), {prev: new Map([...pv('src')].filter(([k]) => B.dims.src[k]))})];
   if(B.brand){
     const rows = brandRows(m), prevB = prevAgg({}, r => r[6]), prevS = prevAgg({}, r => r[7]);
     cards.push(top10Card('brand', 'Brand', 'dari nama material', brandAttach(brandAgg(rows, r => r[6]), brandTgt(m, {}, TB_KEY.brand)), k => brandName(k), k => '#/brand/' + enc((B.dims.brand || [])[k]), {prev: prevB}));
@@ -3232,8 +3246,10 @@ function route(){
 /* ===================== Events (delegated) ===================== */
 function bindEvents(){
   document.addEventListener('click', e => {
-    const t10 = e.target.closest('[data-t10]');
-    if(t10){ const card = t10.closest('.t10-card'); $$('[data-t10]', card).forEach(x => x.classList.toggle('on', x === t10)); $$('[data-t10p]', card).forEach(x => x.classList.toggle('on', x.dataset.t10p === t10.dataset.t10)); return; }
+    const t10 = e.target.closest('[data-t10],[data-t10d]');
+    if(t10){ const card = t10.closest('.t10-card'); if(t10.dataset.t10) card.dataset.m = t10.dataset.t10; else card.dataset.d = t10.dataset.t10d;
+      $$('[data-t10]', card).forEach(x => x.classList.toggle('on', x.dataset.t10 === card.dataset.m)); $$('[data-t10d]', card).forEach(x => x.classList.toggle('on', x.dataset.t10d === card.dataset.d));
+      $$('[data-t10p]', card).forEach(x => x.classList.toggle('on', x.dataset.t10p === card.dataset.m + card.dataset.d)); return; }
     const qk = e.target.closest('[data-qk]');
     if(qk){ e.stopPropagation(); const was = $('#qkPop') && $('#qkPop').dataset.k === qk.dataset.qk; closeQuick(); closeNav(); closeFilter(); if(!was){ quickMenu(qk.dataset.qk, qk); $('#qkPop').dataset.k = qk.dataset.qk; } return; }
     if(!e.target.closest('#qkPop')) closeQuick();
