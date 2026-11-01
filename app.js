@@ -2709,9 +2709,10 @@ function pageKontrak(){
 
 /* ===================== Brand (Rendy) =====================
    B.brand: [day, inc, src, prov, dist, distr, brand, sku, kem, ton, trips]; brand read from the Rilis material name
-   (SP = Semen Padang, MDK, SMBR = Semen Baturaja, DYX = Dynamix, AND = Andalas). Filters: period, incoterm, plant, kemasan, area. */
+   (SP Semen Padang, MDK Semen Merdeka, SMBR Semen Baturaja, DYX Dynamix, AND Semen Andalas, SG, ST; curah UltraPro, EzPro, SprintPro, PowerPro). Filters: period, incoterm, plant, kemasan, area. */
 const brandRows = (per, sc) => { sc = sc || {}; return (B.brand || []).filter(r => inPer(r[0], per) && incOk(r[1]) && srcOkS(r[2], sc) && kemOk(r[8]) && (sc.prov != null || areaProvOk(r[3])) && (sc.brand == null || r[6] === sc.brand)); };
-const brandName = i => { const n = (B.dims.brand || [])[i] || ''; return n.length <= 4 ? n : tc(n); };   // MDK stays MDK
+const BRAND_LBL = {'SEMEN MERDEKA': 'Semen Merdeka (eco brand SIG)', ULTRAPRO: 'UltraPro', EZPRO: 'EzPro', SPRINTPRO: 'SprintPro', POWERPRO: 'PowerPro'};
+const brandName = i => { const n = (B.dims.brand || [])[i] || ''; return BRAND_LBL[n] || tc(n); };
 const brandIdx = n => (B.dims.brand || []).findIndex(x => x.toUpperCase() === String(n).toUpperCase());
 function brandAgg(rows, keyOf){ const m = new Map(); rows.forEach(r => { const k = keyOf(r); let o = m.get(k); if(!o){ o = {key: k, vol: 0, trips: 0, prov: new Set(), distr: new Set(), sku: new Set()}; m.set(k, o); }
   o.vol += r[9]; o.trips += r[10]; o.prov.add(r[3]); o.distr.add(r[5]); o.sku.add(r[7]); }); return [...m.values()].sort((a, b) => b.vol - a.vol); }

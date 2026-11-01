@@ -282,12 +282,21 @@ def build(cfg):
     ship = defaultdict(lambda: [0.0, 0])
     brand_d, sku_d = Dict(), Dict()
     brand_rows = defaultdict(lambda: [0.0, 0])   # (day, inc, src, prov, dist, distr, brand, sku, kem) -> [ton, trips]
-    BRAND_CODE = [("DYX", "DYNAMIX"), ("SMBR", "SEMEN BATURAJA"), ("AND", "ANDALAS"), ("MDK", "MDK"), ("SP", "SEMEN PADANG")]
-    def brand_of(prod):   # brand from the material name (Rilis PRODUK), e.g. "SMN PCC MDK SP 50 KG BBSTD 1P" -> MDK
+    # brand code in the material name (Rilis PRODUK), first match wins: "SMN PCC MDK SP 50 KG" = Semen Merdeka made by SP
+    BRAND_CODE = [("MDK", "SEMEN MERDEKA"), ("DYX", "DYNAMIX"), ("AND", "SEMEN ANDALAS"), ("SMBR", "SEMEN BATURAJA"),
+                  ("SG", "SEMEN GRESIK"), ("ST", "SEMEN TONASA"), ("SP", "SEMEN PADANG")]
+    CURAH_BRAND = [("ULTRAPRO", "ULTRAPRO"), ("EZPRO", "EZPRO"), ("SPRINTPRO", "SPRINTPRO"), ("PWRPRO", "POWERPRO"), ("POWERPRO", "POWERPRO")]
+    def brand_of(prod):
+        flat = re.sub(r"[^A-Z0-9]", "", prod)
+        for code, name in CURAH_BRAND:   # bulk brands (UltraPro, EzPro, SprintPro, PowerPro)
+            if code in flat:
+                return name
         toks = set(re.split(r"[^A-Z0-9]+", prod))
         for code, name in BRAND_CODE:
             if code in toks:
                 return name
+        if "CURAH" in toks or "JB" in toks or "JUMBO" in toks:
+            return "CURAH LAINNYA"
         return "LAINNYA" if prod else "TANPA PRODUK"
     trucks = defaultdict(lambda: [0, 0.0, 0.0, 0, 0.0, 0])   # trips, ton, dwellSum, dwellN, waitSum, waitN
     hours = defaultdict(lambda: [0.0, 0])   # (exit date, src, inc, hour, kem) -> [ton, trips]: release per hour, last 62 days
