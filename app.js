@@ -1693,7 +1693,7 @@ const T10_MODES = [['vol', 'Volume'], ['ach', '% Ach.'], ['gap', 'Gap'], ['up', 
 function top10Card(id, title, sub, list, nameOf, hrefOf, opt){
   opt = opt || {}; const tag = cmpTag(PER());
   list = list.filter(o => o.vol > 0.5);   // volume 0 is not counted in any list (Rendy)
-  const N = list.length <= 20 ? 5 : 10;   // few subjects (plant, brand): top 5 (Rendy)
+  const N = opt.n || 5;   // top 5 everywhere, top 10 for districts only (Rendy)
   const tT = list.reduce((a, o) => a + (o.tgt || 0), 0), minT = Math.max(50, tT * 0.005);
   const modes = T10_MODES.filter(([k]) => k === 'vol' || (k === 'up' ? opt.prev : tT > 0));
   const pv = o => opt.prev ? opt.prev.get(o.key) || 0 : 0;
@@ -1728,7 +1728,7 @@ function homeTop10(m){
   const dt = distrTableOne(m, {}).list.filter(o => B.dims.distr[o.key]);
   const dPrev = new Map(distrSummary(shipRows(prevPer(toPer(m)), {})).map(o => [o.key, o.vol]));
   const cards = [
-    top10Card('dist', 'Distrik', 'tujuan kirim', dist, k => tc(B.dims.dist[k] || ''), k => B.dims.dist[k] ? '#/distrik/' + enc(B.dims.dist[k]) : null, {prev: pv('dist')}),
+    top10Card('dist', 'Distrik', 'tujuan kirim', dist, k => tc(B.dims.dist[k] || ''), k => B.dims.dist[k] ? '#/distrik/' + enc(B.dims.dist[k]) : null, {prev: pv('dist'), n: 10}),
     top10Card('eksp', 'Ekspeditur', 'franco (FRC)', eksp, k => ekspLbl(k), k => ekspHref(k), {prev: new Map([...pv('eksp')].filter(([k]) => D.frcEksp.has(k)))}),
     top10Card('distr', 'Distributor', 'semua incoterm terpilih', dt, k => distrLbl(k), k => '#/distributor/' + enc(B.dims.distr[k]), {prev: dPrev}),
     top10Card('plant', 'Plant', 'asal muat', src, k => tc(B.dims.src[k]), k => plantHref(B.dims.src[k]), {prev: new Map([...pv('src')].filter(([k]) => B.dims.src[k]))})];
@@ -1737,7 +1737,7 @@ function homeTop10(m){
     cards.push(top10Card('brand', 'Brand', 'dari nama material', brandAttach(brandAgg(rows, r => r[6]), brandTgt(m, {}, TB_KEY.brand)), k => brandName(k), k => '#/brand/' + enc((B.dims.brand || [])[k]), {prev: prevB}));
     cards.push(top10Card('sku', 'Kemasan (SKU)', 'material', brandAgg(rows, r => r[7]), k => { const i = skuInfo(k); return i.lbl ? brandName((rows.find(r => r[7] === k) || [])[6]) + ' · ' + i.lbl : i.n; }, () => null, {prev: prevS}));
   }
-  return '<div class="section-head"><div class="section-title">Top 10 / Top 5</div><div class="section-sub">' + esc(incName()) + ' · ' + esc(kemName()) + ' · ' + periodSub() + '</div></div><div class="t10-grid">' + cards.join('') + '</div>';
+  return '<div class="section-head"><div class="section-title">Top 10 distrik · Top 5 lainnya</div><div class="section-sub">' + esc(incName()) + ' · ' + esc(kemName()) + ' · ' + periodSub() + '</div></div><div class="t10-grid">' + cards.join('') + '</div>';
 }
 
 /* Home hero: the interactive Sumatra map is the centerpiece, headline + ranking beside it. */
