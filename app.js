@@ -77,7 +77,7 @@ const soTip = o => o.so > 0 ? '|SO ' + fmt(o.so) + ' t · % OF ' + pctTxt(o.of) 
 /* ===================== State ===================== */
 let B = null;            // decrypted bundle
 let D = null;            // derived indexes
-const F = { per: null, inc: 'ALL', moda: 'ALL', area: 'ALL', srcOff: new Set(), tgt: 'SNOP', kem: 'ALL' };   // per: {kind:'month',month} | {kind:'ytd'} | {kind:'range',from,to}
+const F = { per: null, inc: 'ALL', moda: 'ALL', area: 'ALL', srcOff: new Set(), tgt: 'SNOP', kem: 'ZAK' };   // per: {kind:'month',month} | {kind:'ytd'} | {kind:'range',from,to}
 const DEFAULT_SRC = 'CP INDARUNG';   // the main plant (labels only); default view = every plant, moda & incoterm, kemasan ZAK, SNOP, area Semua
 let DEFAULT_SRC_OFF = [];
 
@@ -812,7 +812,7 @@ function filterStrip(){
 }
 /* "Laporan harian" quick view = the daily Realisasi report: AP1, FRC truk, ZAK, CP Indarung, SNOP, current month. */
 const REPORT_VIEW = () => ({per: {kind: 'month', month: D.months[D.months.length - 1]}, inc: 'FRC', moda: 'DARAT', kem: 'ZAK', area: 'AP1', srcOff: new Set(D.sources.filter(x => x !== DEFAULT_SRC)), tgt: 'SNOP'});
-const DEFAULT_VIEW = () => ({per: {kind: 'month', month: D.months[D.months.length - 1]}, inc: 'ALL', moda: 'ALL', kem: 'ALL', area: 'ALL', srcOff: new Set(DEFAULT_SRC_OFF), tgt: 'SNOP'});
+const DEFAULT_VIEW = () => ({per: {kind: 'month', month: D.months[D.months.length - 1]}, inc: 'ALL', moda: 'ALL', kem: 'ZAK', area: 'ALL', srcOff: new Set(DEFAULT_SRC_OFF), tgt: 'SNOP'});
 function isReportView(){
   const r = REPORT_VIEW(), p = F.per || {kind: 'month', month: D.months[D.months.length - 1]};
   return F.inc === r.inc && F.kem === r.kem && F.area === r.area && F.tgt === r.tgt && p.kind === 'month' && p.month === r.per.month &&
@@ -1684,9 +1684,9 @@ function pageHome(){
 }
 
 /* ===================== Home: Top 10 (Rendy) =====================
-   Per dimension one card, each with modes: Volume | % Ach. | Gap minus (furthest behind target) | Naik vs LM.
+   Per dimension one card, each with modes: Volume | % Ach. | Gap minus (furthest behind target) | Growth (vs LM).
    % Ach. ranks only rows with a meaningful target (>= 0.5% of the dimension's total target, min 50 t). */
-const T10_MODES = [['vol', 'Volume'], ['ach', '% Ach.'], ['gap', 'Gap minus'], ['up', 'Naik vs ' ]];
+const T10_MODES = [['vol', 'Volume'], ['ach', '% Ach.'], ['gap', 'Gap minus'], ['up', 'Growth']];
 function top10Card(id, title, sub, list, nameOf, hrefOf, opt){
   opt = opt || {}; const tag = cmpTag(PER());
   list = list.filter(o => o.vol > 0 || o.tgt > 0);
@@ -1704,7 +1704,7 @@ function top10Card(id, title, sub, list, nameOf, hrefOf, opt){
     return '<div class="t10-pane' + (k === 'vol' ? ' on' : '') + '" data-t10p="' + k + '">' + (rows || '<div class="t10-empty">' + (k === 'gap' ? 'Semua sudah di atas target MTD.' : 'Tidak ada data.') + '</div>') + (k === 'ach' && rows ? '<div class="t10-foot">hanya target MTD &ge; ' + fmt(minT) + ' t</div>' : '') + '</div>';
   };
   return '<div class="t10-card" id="t10-' + id + '"><div class="t10-h"><b>' + esc(title) + '</b><small>' + esc(sub) + '</small></div>' +
-    '<div class="t10-tabs">' + modes.map(([k, l]) => '<button type="button" data-t10="' + k + '"' + (k === 'vol' ? ' class="on"' : '') + '>' + (k === 'up' ? l + tag : l) + '</button>').join('') + '</div>' +
+    '<div class="t10-tabs">' + modes.map(([k, l]) => '<button type="button" data-t10="' + k + '"' + (k === 'vol' ? ' class="on"' : '') + '>' + (k === 'up' ? '<span title="vs ' + tag + '">' + l + '</span>' : l) + '</button>').join('') + '</div>' +
     modes.map(([k]) => pane(k)).join('') + '</div>';
 }
 function homeTop10(m){
