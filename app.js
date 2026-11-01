@@ -1689,17 +1689,15 @@ function pageHome(){
 const T10_MODES = [['vol', 'Volume'], ['ach', '% Ach.'], ['gap', 'Gap'], ['up', 'Growth']];
 /* Best / Worst per mode (Rendy): Volume = largest / smallest (worst only among rows with a target, else with volume);
    % Ach. = highest / lowest (meaningful targets only); Gap = furthest above / below target MTD; Growth = biggest rise / fall vs LM
-   (worst includes rows that shipped last month and nothing now). */
+   (rows with volume 0 are left out everywhere). */
 function top10Card(id, title, sub, list, nameOf, hrefOf, opt){
   opt = opt || {}; const tag = cmpTag(PER());
-  list = list.filter(o => o.vol > 0 || o.tgt > 0);
+  list = list.filter(o => o.vol > 0.5);   // volume 0 is not counted in any list (Rendy)
   const N = list.length <= 20 ? 5 : 10;   // few subjects (plant, brand): top 5 (Rendy)
   const tT = list.reduce((a, o) => a + (o.tgt || 0), 0), minT = Math.max(50, tT * 0.005);
   const modes = T10_MODES.filter(([k]) => k === 'vol' || (k === 'up' ? opt.prev : tT > 0));
   const pv = o => opt.prev ? opt.prev.get(o.key) || 0 : 0;
-  let gone = [];
-  if(opt.prev){ const have = new Set(list.map(o => o.key)); opt.prev.forEach((v, k) => { if(!have.has(k) && v > 0.5 && nameOf(k)) gone.push({key: k, vol: 0, tgt: 0, hasTgt: false}); }); }
-  const pane = (k, d) => {
+    const pane = (k, d) => {
     const best = d === 'b'; let L, val, main, sub2, col;
     if(k === 'vol'){ const base = best ? list : (list.some(o => o.hasTgt) ? list.filter(o => o.hasTgt) : list.filter(o => o.vol > 0));
       L = base.slice().sort((a, b) => best ? b.vol - a.vol : a.vol - b.vol); val = o => o.vol; main = o => fmt(o.vol) + ' t';
@@ -1708,7 +1706,7 @@ function top10Card(id, title, sub, list, nameOf, hrefOf, opt){
       val = o => Math.min(o.pct, 200); main = o => pctTxt(o.pct); sub2 = o => fmt(o.vol) + ' / ' + fmt(o.tgt) + ' t'; col = o => tierColor(o.pct); }
     else if(k === 'gap'){ L = list.filter(o => o.hasTgt && (best ? o.gap > 0.5 : o.gap < -0.5)).sort((a, b) => best ? b.gap - a.gap : a.gap - b.gap);
       val = o => Math.abs(o.gap); main = o => signed(o.gap) + ' t'; sub2 = o => pctTxt(o.pct) + ' ach.'; col = () => best ? 'var(--green)' : 'var(--red)'; }
-    else { const g = o => o.vol - pv(o); L = (best ? list : list.concat(gone)).filter(o => best ? g(o) > 0.5 : g(o) < -0.5).sort((a, b) => best ? g(b) - g(a) : g(a) - g(b));
+    else { const g = o => o.vol - pv(o); L = list.filter(o => best ? g(o) > 0.5 : g(o) < -0.5).sort((a, b) => best ? g(b) - g(a) : g(a) - g(b));
       val = o => Math.abs(g(o)); main = o => signed(g(o)) + ' t'; sub2 = o => pv(o) > 0 ? (g(o) >= 0 ? '+' : '−') + fmt(Math.abs(g(o) / pv(o) * 100)) + '% · ' + tag + ' ' + fmt(pv(o)) + ' t' : 'baru'; col = () => best ? 'var(--green)' : 'var(--red)'; }
     L = L.slice(0, N); const mx = Math.max(1e-9, ...L.map(val));
     const rows = L.map((o, i) => { const h = hrefOf(o.key), tg = h ? 'a' : 'div';
