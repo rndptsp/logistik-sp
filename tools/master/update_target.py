@@ -366,6 +366,55 @@ def cmd_nonzak(a):
     if a.dry_run: log('DRY-RUN.');return
     p=DATA/'target_ekspeditur.csv.gz';backup(p);allr=keep+new;allr.sort(key=lambda r:(r[ti['BULAN_NO']],))
     save(p,TEC,allr);log('target_ekspeditur ditulis:',len(allr),'baris (non-zak baru: %d)'%len(new))
+    write_brand_target(a.snop,keep)
+
+# ---------------------------------------------------------------- target per brand (Rendy, Nov 2026)
+TBC=['TAHUN','BULAN_NO','PROVINSI','KODE_DISTRIK','DISTRIK','PLANT_SNOP','SOURCE_PLANT','INCOTERM','KEMASAN','BRAND','TARGET_TON']
+BRAND_CODE=[('MDK','SEMEN MERDEKA'),('DYX','DYNAMIX'),('AND','SEMEN ANDALAS'),('SMBR','SEMEN BATURAJA'),('SG','SEMEN GRESIK'),('ST','SEMEN TONASA'),('SP','SEMEN PADANG')]
+CURAH_BRAND=[('ULTRAPRO','ULTRAPRO'),('EZPRO','EZPRO'),('SPRINTPRO','SPRINTPRO'),('PWRPRO','POWERPRO'),('POWERPRO','POWERPRO'),('DUPRO','DUPRO+'),('SUPERTERMO','SUPERTERMO')]
+def brand_of(prod):
+    """Same rule as the dashboard builder (material name in Rilis): curah brand codes first, then the brand token."""
+    prod=str(prod or '').upper();flat=re.sub('[^A-Z0-9]','',prod)
+    for c,n in CURAH_BRAND:
+        if c in flat: return n
+    toks=set(re.split('[^A-Z0-9]+',prod))
+    for c,n in BRAND_CODE:
+        if c in toks: return n
+    if toks&{'CURAH','JB','JUMBO'}: return 'CURAH LAINNYA'
+    return 'LAINNYA' if prod else 'TANPA PRODUK'
+def write_brand_target(path,te_ref):
+    """SNOP volume per month x district x plant x incoterm x kemasan x brand (brand from DETAIL MATERIAL). Same scope as the
+    official target: ZAK without corsales; DuPro+ bags = ZAK KHUSUS (curah market); curah/jumbo all rows. Months in the file
+    replace the stored months; other months are kept."""
+    ws=openpyxl.load_workbook(path,read_only=True,data_only=True)['Rincian']
+    it=ws.iter_rows(values_only=True);h=list(next(it));ix={k:i for i,k in enumerate(h)}
+    if 'DETAIL MATERIAL' not in ix: log('Target brand: kolom DETAIL MATERIAL tidak ada di SNOP - dilewati.');return
+    ti={c:i for i,c in enumerate(TEC)};spell={}
+    for r in te_ref: spell.setdefault(nz(r[ti['DISTRIK']]),r[ti['DISTRIK']])
+    agg=C.defaultdict(float);months=set()
+    for r in it:
+        if r[ix['KEMASAN']] is None or r[ix['Periode']] not in MN: continue
+        v=r[ix['Volume']] or 0
+        k=KEM_SNOP.get(str(r[ix['KEMASAN']]).upper(),str(r[ix['KEMASAN']]).upper());mat=r[ix['DETAIL MATERIAL']];br=brand_of(mat)
+        if k=='ZAK' and br=='DUPRO+': k='ZAK KHUSUS'
+        if k=='ZAK' and str(r[ix['KETERANGAN']]).lower()=='corsales': continue
+        mn=MN[r[ix['Periode']]];months.add(mn)
+        if not v: continue
+        dn=str(r[ix['SALES DISTRIK']] or '');d=spell.get(nz(dn),re.sub(r'^(KAB|KOTA)\.(?=\S)',r'\1. ',dn.strip()))
+        pn=r[ix['DELIV. PLANT']]
+        agg[(int(r[ix['Tahun']] or 2026) if 'Tahun' in ix else 2026,mn,NM.get(r[ix['PROVINSI']],r[ix['PROVINSI']]),int(r[ix['KODE DISTRIK']]),d,pn,PD.get(pn,pn),snop_inc(r[ix['TERM']],r[ix['HANDLING']]),k,br)]+=v
+    p=DATA/'target_brand.csv.gz'
+    old=[]
+    if p.exists():
+        with gzip.open(p,'rt',newline='',encoding='utf-8') as f:
+            rd=csv.reader(f);hh=next(rd)
+            if hh==TBC: old=[r for r in rd if int(float(r[1])) not in months]
+    new=[[str(c) for c in k]+[repr(round(v,3))] for k,v in sorted(agg.items(),key=str)]
+    with gzip.open(p,'wt',newline='',encoding='utf-8') as f:
+        w=csv.writer(f);w.writerow(TBC);w.writerows(sorted(old+new,key=lambda r:(int(float(r[1])),)))
+    tot=C.defaultdict(float)
+    for k,v in agg.items(): tot[k[1]]+=v
+    log('Target brand ditulis: bulan',sorted(months),'| baris baru',len(new),'| brand',len({k[9] for k in agg}),'| total per bulan (t):',{m:round(v) for m,v in sorted(tot.items())})
 
 def cmd_target(a):
     mn=a.month
@@ -409,6 +458,7 @@ def cmd_target(a):
         keep=[r for r in old if r[idx]!=mn];allr=keep+new
         allr.sort(key=lambda r:(r[idx],))
         save(p,cols,allr);log(fn,'ditulis:',len(allr),'baris (bulan %d: %d baris)'%(mn,len(new)))
+    write_brand_target(a.snop,te_old+te)
     log('Selanjutnya: python3 update_target.py views')
 
 def cmd_views(a):
@@ -445,6 +495,7 @@ def main():
     s=sp.add_parser('target');s.add_argument('--month',type=int,required=True);s.add_argument('--tactical',default='-');s.add_argument('--snop',required=True);s.add_argument('--monitoring',required=True);s.add_argument('--dry-run',action='store_true');s.add_argument('--force',action='store_true')
     s=sp.add_parser('nonzak');s.add_argument('--months',required=True);s.add_argument('--snop',required=True);s.add_argument('--dry-run',action='store_true');s.add_argument('--force',action='store_true')
     sp.add_parser('views')
+    s=sp.add_parser('brand');s.add_argument('--snop',required=True)
     a=ap.parse_args()
-    {'init':cmd_init,'target':cmd_target,'views':cmd_views,'nonzak':cmd_nonzak}[a.cmd](a)
+    {'init':cmd_init,'target':cmd_target,'views':cmd_views,'nonzak':cmd_nonzak,'brand':lambda a:write_brand_target(a.snop,load(DATA/'target_ekspeditur.csv.gz',TEC))}[a.cmd](a)
 if __name__=='__main__': main()

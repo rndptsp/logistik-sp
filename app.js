@@ -2710,73 +2710,143 @@ function pageKontrak(){
 /* ===================== Brand (Rendy) =====================
    B.brand: [day, inc, src, prov, dist, distr, brand, sku, kem, ton, trips]; brand read from the Rilis material name
    (SP Semen Padang, MDK Semen Merdeka, SMBR Semen Baturaja, DYX Dynamix, AND Semen Andalas, SG, ST; curah UltraPro, EzPro, SprintPro, PowerPro; khusus DuPro+, SuperTermo). Filters: period, incoterm, plant, kemasan, area. */
-const brandRows = (per, sc) => { sc = sc || {}; return (B.brand || []).filter(r => inPer(r[0], per) && incOk(r[1]) && srcOkS(r[2], sc) && kemOk(r[8]) && (sc.prov != null || areaProvOk(r[3])) && (sc.brand == null || r[6] === sc.brand)); };
+const brandRows = (per, sc) => { sc = sc || {}; return (B.brand || []).filter(r => inPer(r[0], per) && incOk(r[1]) && srcOkS(r[2], sc) && (sc.anyKem || kemOk(r[8])) && (sc.prov != null || areaProvOk(r[3])) && (sc.brand == null || r[6] === sc.brand)); };
 const BRAND_LBL = {'SEMEN MERDEKA': 'Semen Merdeka (eco brand SIG)', ULTRAPRO: 'UltraPro', EZPRO: 'EzPro', SPRINTPRO: 'SprintPro', POWERPRO: 'PowerPro', 'DUPRO+': 'DuPro+', SUPERTERMO: 'SuperTermo'};
 const brandName = i => { const n = (B.dims.brand || [])[i] || ''; return BRAND_LBL[n] || tc(n); };
 const brandIdx = n => (B.dims.brand || []).findIndex(x => x.toUpperCase() === String(n).toUpperCase());
+const rilisAll = per => brandRows(per, {anyKem: true}).reduce((a, r) => a + r[9], 0);   // total rilis of both markets under the other filters
+/* Target per brand (B.tbrand: [month, inc, src, prov, dist, brand, kem, ton] = SNOP volume per material, update_target).
+   No daily split in SNOP: the month is spread over the days like the official targets of that market (weekday pattern);
+   Internal = SNOP x the same per-segment % as everywhere (zak darat / zak laut / curah). */
+let TB_W = null;
+function tbWeights(m, grp){
+  if(!TB_W || TB_W.b !== B){ TB_W = {b: B, w: new Map()};
+    B.targets.forEach(t => { if(!t[6]) return; const k = t[0] + '|' + kemGrp(KEMS()[tKem(t)]); let w = TB_W.w.get(k); if(!w) TB_W.w.set(k, w = new Array(31).fill(0)); t[6].forEach((v, i) => w[i] += v || 0); }); }
+  return TB_W.w.get(m + '|' + grp);
+}
+function tbBetween(t, from, to){
+  const m = t[0], n = dim(m), a = m + '-01', b = m + '-' + pad2(n);
+  if(b < from || a > to) return 0;
+  const d0 = from > a ? +from.slice(8) : 1, d1 = to < b ? +to.slice(8) : n, w = tbWeights(m, kemGrp(KEMS()[t[6]]));
+  let f = (d1 - d0 + 1) / n;
+  if(w){ const all = w.slice(0, n).reduce((x, y) => x + y, 0); if(all > 0) f = w.slice(d0 - 1, d1).reduce((x, y) => x + y, 0) / all; }
+  return t[7] * f * (F.tgt === 'INTERNAL' ? rowIntK([m, 0, 0, 0, 0, 0, 0, t[1], 0, t[6]]) : 1);
+}
+const tbOn = () => !!(B.tbrand && B.tbrand.length);
+/* brand targets of the period: Map key -> {tgt (to the last data day), tgtFull (whole month)}; sc: brand / prov / anyKem */
+function brandTgt(per, sc, keyOf){
+  const out = new Map(); if(!tbOn()) return out;
+  per = toPer(per); sc = sc || {}; const fullTo = per.kind === 'month' ? per.month + '-' + pad2(dim(per.month)) : per.to, m0 = per.from.slice(0, 7), m1 = fullTo.slice(0, 7);
+  B.tbrand.forEach(t => {
+    if(t[0] < m0 || t[0] > m1 || !incOk(t[1]) || !srcOkS(t[2], sc) || !(sc.anyKem || kemOk(t[6])) || !(sc.prov != null || areaProvOk(t[3])) || (sc.brand != null && t[5] !== sc.brand)) return;
+    const k = keyOf(t); let o = out.get(k); if(!o) out.set(k, o = {tgt: 0, tgtFull: 0});
+    o.tgt += tbBetween(t, per.from, per.tgtTo); o.tgtFull += tbBetween(t, per.from, fullTo);
+  });
+  return out;
+}
+const TB_KEY = {brand: t => t[5], prov: t => t[3], dist: t => t[4], src: t => t[2], inc: t => t[1]};
 function brandAgg(rows, keyOf){ const m = new Map(); rows.forEach(r => { const k = keyOf(r); let o = m.get(k); if(!o){ o = {key: k, vol: 0, trips: 0, prov: new Set(), distr: new Set(), sku: new Set()}; m.set(k, o); }
   o.vol += r[9]; o.trips += r[10]; o.prov.add(r[3]); o.distr.add(r[5]); o.sku.add(r[7]); }); return [...m.values()].sort((a, b) => b.vol - a.vol); }
+/* attach targets (tg: Map from brandTgt) to the aggregated list; brands with a target but no rilis yet are added */
+function brandAttach(list, tg){
+  if(!tg || !tg.size) return list;
+  const have = new Set(list.map(o => o.key));
+  tg.forEach((v, k) => { if(!have.has(k) && v.tgtFull > 0.5) list.push({key: k, vol: 0, trips: 0, prov: new Set(), distr: new Set(), sku: new Set()}); });
+  list.forEach(o => { const t = tg.get(o.key); o.hasTgt = !!(t && t.tgtFull > 0.5); o.tgt = o.hasTgt ? t.tgt : 0; o.tgtFull = o.hasTgt ? t.tgtFull : 0; o.gap = o.vol - o.tgt; o.pct = o.hasTgt && o.tgt > 0 ? pctOf(o.vol, o.tgt) : null; });
+  return list;
+}
 const skuInfo = i => { const n = (B.dims.sku || [])[i] || ''; const kg = (n.match(/(\d+)\s*KG/) || [])[1];
   const bag = /KRAFT/.test(n) ? 'kraft' : /BBPRM/.test(n) ? 'BB premium' : /BBSTD/.test(n) ? 'BB standar' : /CURAH/.test(n) ? 'curah' : /JUMBO/.test(n) ? 'jumbo bag' : '';
   const col = /\bMRH\b/.test(n) ? 'merah' : /\bHTM\b/.test(n) ? 'hitam' : ''; const type = (n.match(/\b(PCC|OPC|SPK|PPC)\b/) || [])[1] || '';
   return {n, kg, bag, col, type, lbl: [type, kg ? kg + ' kg' : '', bag, col].filter(Boolean).join(' · ')}; };
-function brandTable(list, tot, nameCol, href, prevMap, extra){
-  const cols = [nameCol, C.vol(), {h: 'Porsi', num: true, kind: 'p', slot: 1.5, val: o => o.vol / (tot || 1), html: o => pctTxt(pctOf(o.vol, tot))}]
-    .concat(prevMap ? [vsCol(prevMap, PER())] : [], [C.trips], extra || []);
-  cols[1] = Object.assign({}, cols[1], {total: '<b>' + fmt(tot) + '</b>'}); cols[0] = Object.assign({}, nameCol, {total: '<b>Total</b>'});
+/* tot = total of the rows shown (market under kemGroups) -> "% Market"; all = total rilis of both markets -> "% Total rilis" */
+function brandTable(list, tot, nameCol, href, prevMap, extra, opt){
+  opt = opt || {}; const all = opt.all, hasT = list.some(o => o.hasTgt);
+  const share = (h, base, slot) => ({h, num: true, kind: 'p', slot, val: o => o.vol / (base || 1), html: o => pctTxt(pctOf(o.vol, base)), total: pctTxt(pctOf(list.reduce((a, o) => a + o.vol, 0), base))});
+  const cols = [nameCol, C.vol()].concat(hasT ? [C.fm, C.tgt, C.gap, C.pct] : [], [share(opt.shareLbl || '% Market', tot, 4.5)], all != null ? [share('% Total rilis', all, 4.6)] : [],
+    prevMap ? [vsCol(prevMap, PER())] : [], [C.trips], extra || []);
+  const sum = f => list.reduce((a, o) => a + (f(o) || 0), 0);
+  cols[0] = Object.assign({}, nameCol, {total: '<b>Total</b>'}); cols[1] = Object.assign({}, cols[1], {total: '<b>' + fmt(sum(o => o.vol)) + '</b>'});
+  if(hasT){ const tf = sum(o => o.tgtFull), tm = sum(o => o.tgt), v = sum(o => o.hasTgt ? o.vol : 0);
+    cols[2] = Object.assign({}, C.fm, {total: fmt(tf)}); cols[3] = Object.assign({}, C.tgt, {total: fmt(tm)});
+    cols[4] = Object.assign({}, C.gap, {total: signed(v - tm)}); cols[5] = Object.assign({}, C.pct, {total: pctTxt(pctOf(v, tm))}); }
+  const tr = cols.find(c => c === C.trips); if(tr) cols[cols.indexOf(tr)] = Object.assign({}, C.trips, {total: fmt(sum(o => o.trips))});
   return table(cols, list, {go: href, total: list.length > 1, sort: 1});
 }
 const prevAgg = (sc, keyOf) => new Map(brandAgg(brandRows(prevPer(PER()), sc), keyOf).map(o => [o.key, o.vol]));
+const tbNote = () => tbOn() ? 'Target per brand = SNOP per material (DETAIL MATERIAL)' + (F.tgt === 'INTERNAL' ? ' × ' + tgtIntNow() : '') + '; target MTD mengikuti pola harian target market itu.' : 'Target per brand belum ada di build ini.';
 function pageBrandList(){
   if(!B.brand) { page('<div class="wrap">' + crumb([['Brand']]) + '<div class="dp-review">Data brand belum ada di build ini; muncul setelah build berikutnya.</div></div>', 'brand'); return; }
-  const m = PER(), rows = brandRows(m), tot = rows.reduce((a, r) => a + r[9], 0);
-  const brands = brandAgg(rows, r => r[6]), top = brands[0];
-  const nameB = {h: 'Brand', cls: 'name', val: o => brandName(o.key), html: o => esc(brandName(o.key)) + '<small>' + fmt(o.sku.size) + ' SKU · ' + fmt(o.prov.size) + ' provinsi · ' + fmt(o.distr.size) + ' distributor</small>'};
-  // brand x provinsi / plant matrix
-  const matrix = (keyOf, lbl, nameOf, href) => { const bs = brands.map(o => o.key), M = new Map();
+  const m = PER(), all = rilisAll(m), rowsAll = brandRows(m), tot = rowsAll.reduce((a, r) => a + r[9], 0);
+  // per-market totals (other filters kept): share of total rilis
+  const mk = {ZAK: {vol: 0, tgt: 0, tf: 0, v: 0}, CURAH: {vol: 0, tgt: 0, tf: 0, v: 0}};
+  brandRows(m, {anyKem: true}).forEach(r => { mk[kemGrp(KEMS()[r[8]])].vol += r[9]; });
+  if(tbOn()) brandTgt(m, {anyKem: true}, t => kemGrp(KEMS()[t[6]])).forEach((o, k) => { mk[k].tgt = o.tgt; mk[k].tf = o.tgtFull; });
+  const mkShow = F.kem === 'ALL' ? ['ZAK', 'CURAH'] : [F.kem];
+  const mkSub = () => fmt(mk[F.kem].vol) + ' t · ' + pctTxt(pctOf(mk[F.kem].vol, all)) + ' dari total rilis';
+  const nameB = {h: 'Brand', cls: 'name', val: o => brandName(o.key), html: o => esc(brandName(o.key)) + '<small>' + (o.vol ? fmt(o.sku.size) + ' SKU · ' + fmt(o.prov.size) + ' provinsi · ' + fmt(o.distr.size) + ' distributor' : 'belum ada rilis') + '</small>'};
+  const ring = () => { const rows = brandRows(m), t = rows.reduce((a, r) => a + r[9], 0); if(!t && !mk[F.kem].tf) return '';
+    return brandTable(brandAttach(brandAgg(rows, r => r[6]), brandTgt(m, {}, TB_KEY.brand)), t, nameB, o => '#/brand/' + enc((B.dims.brand || [])[o.key]), prevAgg({}, r => r[6]), null, {all}); };
+  // brand x provinsi / plant matrix (per market: each market has its own brands)
+  const matrix = (keyOf, lbl, nameOf, href) => () => { const rows = brandRows(m), t = rows.reduce((a, r) => a + r[9], 0); if(!t) return '';
+    const bs = brandAgg(rows, r => r[6]).map(o => o.key), M = new Map();
     rows.forEach(r => { const k = keyOf(r); let o = M.get(k); if(!o){ o = {key: k, vol: 0, by: new Map()}; M.set(k, o); } o.vol += r[9]; o.by.set(r[6], (o.by.get(r[6]) || 0) + r[9]); });
     const list = [...M.values()].sort((a, b) => b.vol - a.vol);
-    const cols = [{h: lbl, cls: 'name', val: o => nameOf(o.key), total: '<b>Total</b>'}, Object.assign(C.vol('Total (Ton)'), {total: '<b>' + fmt(tot) + '</b>'})]
+    const cols = [{h: lbl, cls: 'name', val: o => nameOf(o.key), total: '<b>Total</b>'}, Object.assign(C.vol('Total (Ton)'), {total: '<b>' + fmt(t) + '</b>'}),
+      {h: '% Total rilis', num: true, kind: 'p', slot: 4.6, val: o => o.vol / (all || 1), html: o => pctTxt(pctOf(o.vol, all)), total: pctTxt(pctOf(t, all))}]
       .concat(bs.map(b => ({h: esc(brandName(b)) + ' (Ton)', num: true, val: o => o.by.get(b) || 0, html: o => { const v = o.by.get(b) || 0; return v ? fmt(v) + '<small>' + pctTxt(pctOf(v, o.vol)) + '</small>' : '–'; }, total: fmt(rows.filter(r => r[6] === b).reduce((a, r) => a + r[9], 0))})));
     return table(cols, list, {go: href, total: true, sort: 1}); };
-  const skus = brandAgg(rows, r => r[7]);
-  const skuCols = [{h: 'Material (SKU)', cls: 'name', val: o => skuInfo(o.key).n, html: o => { const i = skuInfo(o.key); return esc(i.n) + '<small>' + esc(i.lbl) + '</small>'; }},
-    {h: 'Brand', val: o => { const r = rows.find(x => x[7] === o.key); return r ? brandName(r[6]) : ''; }}];
-  const skuTbl = (() => { const tot_ = tot; const cols = [skuCols[0], C.vol(), {h: 'Porsi', num: true, kind: 'p', slot: 1.5, val: o => o.vol / (tot_ || 1), html: o => pctTxt(pctOf(o.vol, tot_))}, vsCol(prevAgg({}, r => r[7]), PER()), C.trips, skuCols[1]];
-    cols[0] = Object.assign({}, cols[0], {total: '<b>Total</b>'}); cols[1] = Object.assign({}, cols[1], {total: '<b>' + fmt(tot_) + '</b>'});
-    return table(cols, skus, {total: true, sort: 1}); })();
+  const skuTbl = () => { const rows = brandRows(m), t = rows.reduce((a, r) => a + r[9], 0); if(!t) return '';
+    const name = {h: 'Material (SKU)', cls: 'name', val: o => skuInfo(o.key).n, html: o => { const i = skuInfo(o.key); return esc(i.n) + '<small>' + esc(i.lbl) + '</small>'; }};
+    const br = {h: 'Brand', val: o => { const r = rows.find(x => x[7] === o.key); return r ? brandName(r[6]) : ''; }};
+    return brandTable(brandAgg(rows, r => r[7]), t, name, null, prevAgg({}, r => r[7]), [br], {all}); };
   // monthly trend per brand (year to date, same filters)
-  const yr = (B.asOf || '').slice(0, 4), ytd = brandRows(makePer('range', yr + '-01-01', B.asOf));
-  const months = [...new Set(ytd.map(r => B.days[r[0]].slice(0, 7)))].sort();
-  const tm = brands.map(o => ({key: o.key, per: months.map(mo => ytd.filter(r => r[6] === o.key && B.days[r[0]].slice(0, 7) === mo).reduce((a, r) => a + r[9], 0))}));
-  const trendCols = [{h: 'Brand', cls: 'name', val: o => brandName(o.key)}].concat(months.map((mo, i) => ({h: monthShort(mo) + ' (Ton)', num: true, val: o => o.per[i], html: o => o.per[i] ? fmt(o.per[i]) : '–'})));
+  const yr = (B.asOf || '').slice(0, 4);
+  const trend = () => { const ytd = brandRows(makePer('range', yr + '-01-01', B.asOf)); if(!ytd.length) return '';
+    const months = [...new Set(ytd.map(r => B.days[r[0]].slice(0, 7)))].sort(), bs = brandAgg(ytd, r => r[6]);
+    const tm = bs.map(o => ({key: o.key, per: months.map(mo => ytd.filter(r => r[6] === o.key && B.days[r[0]].slice(0, 7) === mo).reduce((a, r) => a + r[9], 0))}));
+    const cols = [{h: 'Brand', cls: 'name', val: o => brandName(o.key)}].concat(months.map((mo, i) => ({h: monthShort(mo) + ' (Ton)', num: true, val: o => o.per[i], html: o => o.per[i] ? fmt(o.per[i]) : '–'})));
+    return table(cols, tm, {sort: months.length}); };
+  const skuN = new Set(rowsAll.map(r => r[7])).size, brN = new Set(rowsAll.map(r => r[6])).size;
+  const tT = mkShow.reduce((a, k) => a + mk[k].tgt, 0), tF = mkShow.reduce((a, k) => a + mk[k].tf, 0), pT = pctOf(tot, tT);
+  const mkKpi = k => kpi(k === 'ZAK' ? 'box' : 'pin', 'var(--black)', MKT[k] + ' (' + MKT_SUB[k] + ')', fmt(mk[k].vol) + ' <small>t</small>',
+    {hint: '<b>' + pctTxt(pctOf(mk[k].vol, all)) + '</b> dari total rilis' + (mk[k].tgt ? ' · capaian <b style="color:' + tierColor(pctOf(mk[k].vol, mk[k].tgt)) + '">' + pctTxt(pctOf(mk[k].vol, mk[k].tgt)) + '</b>' : '')});
   page('<div class="wrap">' + crumb([['Brand']]) +
     '<div class="dp-head"><div><div class="nm">Brand</div><div class="sub">Volume per brand dari nama material di Rilis · ' + esc(incName()) + ' · ' + esc(kemName()) + ' · ' + periodSub() + '</div></div></div>' +
-    '<div class="dp-grid4">' + kpi('box', 'var(--black)', 'Realisasi', fmt(tot) + ' <small>t</small>', {hint: fmt(brands.length) + ' brand · ' + fmt(skus.length) + ' SKU'}) +
-      kpi('target', 'var(--black)', 'Brand terbesar', top ? esc(brandName(top.key)) : '–', {hint: top ? pctTxt(pctOf(top.vol, tot)) + ' dari volume' : ''}) +
-      kpi('pin', 'var(--black)', 'Brand kedua', brands[1] ? esc(brandName(brands[1].key)) : '–', {hint: brands[1] ? pctTxt(pctOf(brands[1].vol, tot)) + ' · ' + fmt(brands[1].vol) + ' t' : ''}) +
-      kpi('clock', 'var(--black)', 'SKU', fmt(skus.length), {hint: 'material berbeda (berat, kantong, warna)'}) + '</div>' +
+    '<div class="dp-grid4">' + kpi('box', 'var(--black)', 'Total rilis', fmt(all) + ' <small>t</small>', {hint: fmt(brN) + ' brand · ' + fmt(skuN) + ' SKU · retail + curah'}) +
+      mkKpi('ZAK') + mkKpi('CURAH') +
+      kpi('target', 'var(--black)', 'Target brand ' + tgtLbl() + ' MTD', tT ? fmt(tT) + ' <small>t</small>' : '–', {hint: tT ? 'capaian <b style="color:' + tierColor(pT) + '">' + pctTxt(pT) + '</b> · bulan penuh ' + fmt(tF) + ' t' : 'belum ada target brand untuk periode ini'}) + '</div>' +
+    '<div class="tab-note" style="margin:0 0 10px">' + esc(tbNote()) + ' % Market = porsi brand di market-nya (retail atau curah); % Total rilis = porsi terhadap seluruh rilis (retail + curah) dengan filter periode, incoterm, plant dan area yang sama.</div>' +
     tabsHTML('brand', [
-      {k: 'ring', label: 'Ringkasan', html: brandTable(brands, tot, nameB, o => '#/brand/' + enc((B.dims.brand || [])[o.key]), prevAgg({}, r => r[6]))},
-      {k: 'prov', label: 'Per provinsi', html: '<div class="tab-note">ton per brand · persen kecil = porsi brand di provinsi itu</div>' + matrix(r => r[3], 'Provinsi', k => tc(B.dims.prov[k]), o => '#/provinsi/' + enc(B.dims.prov[o.key]))},
-      {k: 'plant', label: 'Per plant', html: matrix(r => r[2], 'Plant', k => tc(B.dims.src[k] || '(tanpa plant)'), o => B.dims.src[o.key] ? plantHref(B.dims.src[o.key]) : null)},
-      {k: 'sku', label: 'Kemasan (SKU)', html: '<div class="tab-note">per material: tipe semen · berat kantong · jenis kantong · warna</div>' + skuTbl},
-      {k: 'tren', label: 'Tren bulanan', html: '<div class="tab-note">' + yr + ' s.d. ' + shortDate(B.asOf) + ' · filter incoterm, plant, kemasan dan area berlaku</div>' + table(trendCols, tm, {sort: months.length})}]) +
+      {k: 'ring', label: 'Ringkasan', html: kemGroups(ring, mkSub)},
+      {k: 'prov', label: 'Per provinsi', html: '<div class="tab-note">ton per brand · persen kecil = porsi brand di provinsi itu</div>' + kemGroups(matrix(r => r[3], 'Provinsi', k => tc(B.dims.prov[k]), o => '#/provinsi/' + enc(B.dims.prov[o.key])), mkSub)},
+      {k: 'plant', label: 'Per plant', html: kemGroups(matrix(r => r[2], 'Plant', k => tc(B.dims.src[k] || '(tanpa plant)'), o => B.dims.src[o.key] ? plantHref(B.dims.src[o.key]) : null), mkSub)},
+      {k: 'sku', label: 'Kemasan (SKU)', html: '<div class="tab-note">per material: tipe semen · berat kantong · jenis kantong · warna</div>' + kemGroups(skuTbl, mkSub)},
+      {k: 'tren', label: 'Tren bulanan', html: '<div class="tab-note">' + yr + ' s.d. ' + shortDate(B.asOf) + ' · filter incoterm, plant dan area berlaku</div>' + kemGroups(trend)}]) +
     '</div>', 'brand');
 }
 function pageBrand(name){
   const bi = brandIdx(name); if(bi < 0) return notFound('Brand ' + name);
-  const m = PER(), sc = {brand: bi}, rows = brandRows(m, sc), tot = rows.reduce((a, r) => a + r[9], 0), all = brandRows(m).reduce((a, r) => a + r[9], 0);
-  const sec = (keyOf, lbl, nameOf, href, extra) => brandTable(brandAgg(rows, keyOf), tot, {h: lbl, cls: 'name', val: o => nameOf(o.key)}, href, prevAgg(sc, keyOf), extra);
+  const m = PER(), sc = {brand: bi, anyKem: true}, rows = brandRows(m, sc), tot = rows.reduce((a, r) => a + r[9], 0), all = rilisAll(m);
+  const mg = rows.length ? kemGrp(KEMS()[rows[0][8]]) : ((B.tbrand || []).find(t => t[5] === bi) ? kemGrp(KEMS()[(B.tbrand.find(t => t[5] === bi))[6]]) : 'ZAK');
+  const mTot = brandRows(m, {anyKem: true}).filter(r => kemGrp(KEMS()[r[8]]) === mg).reduce((a, r) => a + r[9], 0);
+  const tAll = brandTgt(m, sc, () => 0).get(0);
+  const sec = (keyOf, lbl, nameOf, href, tk, extra) => brandTable(brandAttach(brandAgg(rows, keyOf), tk ? brandTgt(m, sc, tk) : null), tot, {h: lbl, cls: 'name', val: o => nameOf(o.key)}, href, prevAgg(sc, keyOf), extra, {shareLbl: 'Porsi', all});
+  const pT = tAll && tAll.tgt ? pctOf(tot, tAll.tgt) : null;
   page('<div class="wrap">' + crumb([['Brand', '#/brand'], [brandName(bi)]]) +
-    '<div class="dp-head"><div><div class="nm">' + esc(brandName(bi)) + '</div><div class="sub">Brand · ' + esc(incName()) + ' · ' + esc(kemName()) + ' · ' + periodSub() + '</div></div><div class="badges"><div class="dp-badge">' + pctTxt(pctOf(tot, all)) + ' dari volume</div></div></div>' +
+    '<div class="dp-head"><div><div class="nm">' + esc(brandName(bi)) + '</div><div class="sub">Brand ' + MKT[mg].toLowerCase() + ' · ' + esc(incName()) + ' · ' + periodSub() + '</div></div><div class="badges"><div class="dp-badge">' + pctTxt(pctOf(tot, mTot)) + ' dari market ' + MKT[mg].toLowerCase() + '</div><div class="dp-badge">' + pctTxt(pctOf(tot, all)) + ' dari total rilis</div></div></div>' +
+    '<div class="dp-grid4">' + kpi('box', 'var(--black)', 'Realisasi', fmt(tot) + ' <small>t</small>', {hint: pctTxt(pctOf(tot, all)) + ' dari total rilis ' + fmt(all) + ' t'}) +
+      kpi('target', 'var(--black)', 'Target ' + tgtLbl() + ' MTD', tAll ? fmt(tAll.tgt) + ' <small>t</small>' : '–', {hint: tAll ? 'bulan penuh ' + fmt(tAll.tgtFull) + ' t' : 'belum ada target brand'}) +
+      kpi('pin', 'var(--black)', '% Ach.', pT != null ? '<span style="color:' + tierColor(pT) + '">' + pctTxt(pT) + '</span>' : '–', {hint: tAll ? 'gap ' + signed(tot - tAll.tgt) + ' t' : ''}) +
+      kpi('clock', 'var(--black)', 'Market ' + MKT[mg].toLowerCase(), pctTxt(pctOf(tot, mTot)), {hint: 'dari ' + fmt(mTot) + ' t ' + MKT_SUB[mg]}) + '</div>' +
+    '<div class="tab-note" style="margin:0 0 10px">' + esc(tbNote()) + ' Porsi = porsi baris di brand ini; % Total rilis = porsi terhadap seluruh rilis (retail + curah).</div>' +
     tabsHTML('brandd', [
-      {k: 'prov', label: 'Provinsi', html: sec(r => r[3], 'Provinsi', k => tc(B.dims.prov[k]), o => '#/provinsi/' + enc(B.dims.prov[o.key]))},
-      {k: 'dist', label: 'Distrik', html: sec(r => r[4], 'Distrik', k => tc(B.dims.dist[k]), o => '#/distrik/' + enc(B.dims.dist[o.key]))},
+      {k: 'prov', label: 'Provinsi', html: sec(r => r[3], 'Provinsi', k => tc(B.dims.prov[k]), o => '#/provinsi/' + enc(B.dims.prov[o.key]), TB_KEY.prov)},
+      {k: 'dist', label: 'Distrik', html: sec(r => r[4], 'Distrik', k => tc(B.dims.dist[k]), o => '#/distrik/' + enc(B.dims.dist[o.key]), TB_KEY.dist)},
       {k: 'distr', label: 'Distributor', html: sec(r => r[5], 'Distributor', k => distrLbl(k) || '(tanpa distributor)', o => B.dims.distr[o.key] ? '#/distributor/' + enc(B.dims.distr[o.key]) : null)},
-      {k: 'plant', label: 'Plant', html: sec(r => r[2], 'Plant', k => tc(B.dims.src[k] || '(tanpa plant)'), o => B.dims.src[o.key] ? plantHref(B.dims.src[o.key]) : null)},
+      {k: 'plant', label: 'Plant', html: sec(r => r[2], 'Plant', k => tc(B.dims.src[k] || '(tanpa plant)'), o => B.dims.src[o.key] ? plantHref(B.dims.src[o.key]) : null, TB_KEY.src)},
       {k: 'sku', label: 'Kemasan (SKU)', html: sec(r => r[7], 'Material (SKU)', k => skuInfo(k).n + ' — ' + skuInfo(k).lbl)},
-      {k: 'inc', label: 'Incoterm', html: sec(r => r[1], 'Incoterm', k => incLbl(INCS()[k]))}]) +
+      {k: 'inc', label: 'Incoterm', html: sec(r => r[1], 'Incoterm', k => incLbl(INCS()[k]), null, TB_KEY.inc)}]) +
     '</div>', 'brand');
 }
 function kontrakDetail(e){

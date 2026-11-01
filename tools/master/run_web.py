@@ -37,7 +37,8 @@ def main():
     have = {k: p.exists() for k, p in f.items()}
     part = [k for k in ('tactical', 'snop', 'monitoring') if have[k]]
     no_tact = have['snop'] and have['monitoring'] and not have['tactical']   # Tactical-less month: SNOP + monitoring only
-    if part and len(part) < 3 and not no_tact:
+    snop_only = part == ['snop']   # SNOP alone: refresh only the per-brand target (target_brand.csv.gz)
+    if part and len(part) < 3 and not no_tact and not snop_only:
         print('GAGAL: Target butuh SNOP dan Monitoring (Tactical opsional); yang ada baru:', ', '.join(part)); sys.exit(1)
     mn = a.month or dt.datetime.now().month
     mt = mn
@@ -53,7 +54,9 @@ def main():
         mt = later[0]
     fr = ['--force'] if a.force else []
     steps = []
-    if part:
+    if snop_only:
+        steps.append(('target_brand', ['update_target.py', 'brand', '--snop', f['snop']]))
+    elif part:
         steps.append(('target', ['update_target.py', 'target', '--month', mt, '--tactical', f['tactical'] if have['tactical'] else '-', '--snop', f['snop'], '--monitoring', f['monitoring']]))
     steps.append(('target_xlsx', ['update_target.py', 'views']))
     if have['rilis']: steps.append(('rilis', ['update_master.py', 'rilis', '--input', f['rilis']] + fr))

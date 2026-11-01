@@ -469,6 +469,21 @@ def build(cfg):
                            INCOTERMS.index(inc), distr(up(r.get("DISTRIBUTOR"))), kem_d("ZAK")])
     print(f"  target FRC per distributor: {len(tdistr):,} baris")
 
+    # Target per brand (data/target_brand.csv.gz, update_target: SNOP x DETAIL MATERIAL): [month, inc, src, prov, dist, brand, kem, ton]
+    tbrand = []
+    tb_path = os.path.join(base, "data", "target_brand.csv.gz")
+    if os.path.exists(tb_path):
+        for r in read_store(tb_path):
+            inc = up(r.get("INCOTERM"))
+            if inc not in INCOTERMS:
+                check[f"target brand incoterm {inc or '(kosong)'} tidak dikenal (dilewati)"] += 1
+                continue
+            p, di = prov(up(r.get("PROVINSI"))), dist(up(r.get("DISTRIK")))
+            dist_prov.setdefault(di, p)
+            tbrand.append([f"{int(num(r.get('TAHUN')))}-{int(num(r.get('BULAN_NO'))):02d}", INCOTERMS.index(inc), src(up(r.get("SOURCE_PLANT"))), p, di,
+                           brand_d(up(r.get("BRAND"))), kemasan(r.get("KEMASAN")), round(num(r.get("TARGET_TON")), 3)])
+    print(f"  target per brand: {len(tbrand):,} baris ({', '.join(sorted({t[0] for t in tbrand}))})")
+
     # ---------------- Sales Order (03_SO.xlsx / data/so.csv.gz): FRC truk only, SOCC by delivery day ----------------
     so, sod = defaultdict(float), defaultdict(float)
     sodd = defaultdict(float)   # SO FRC per distributor (Rendy: SO and % OF per distributor)
@@ -594,6 +609,7 @@ def build(cfg):
         # one row per day x incoterm x source x province x district x distributor x ekspeditur x ship-to
         # [day, inc, src, prov, dist, distr, eksp, toko, ton, trips, kem, kapal (-1 = none)]
         # brand from the material name, per day: [day, inc, src, prov, dist, distr, brand, sku (material name), kem, ton, trips]
+        "tbrand": tbrand,
         "brand": [[day_idx[k[0]], INCOTERMS.index(k[1]), k[2], k[3], k[4], k[5], k[6], k[7], k[8], round(v[0], 2), v[1]]
                   for k, v in brand_rows.items() if k[0] in day_idx],
         "ship": [[day_idx[k[0]], INCOTERMS.index(k[1]), k[2], k[3], k[4], k[5], k[6], k[7], round(v[0], 2), v[1], k[8], k[9]]
