@@ -890,3 +890,24 @@ table.tree td.name .caret-t{vertical-align:middle}
 .mh-pc{text-shadow:0 1px 2px rgba(0,0,0,.6)}
 .mh-rk{color:#C9D3D9}
 .mh-row.mh-head span{font-size:10px;font-weight:700;letter-spacing:.04em}
+
+/* Home Top 10 (Rendy) */
+.t10-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:26px}
+.t10-card{background:#fff;border:1px solid var(--line);border-radius:3px;padding:12px 14px;min-width:0}
+.t10-h{display:flex;align-items:baseline;gap:8px;margin-bottom:8px}.t10-h b{font-size:14px;text-transform:uppercase;letter-spacing:.03em}.t10-h small{color:var(--sub);font-size:11px}
+.t10-tabs{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px}
+.t10-tabs button{border:1px solid var(--line);background:#fff;border-radius:12px;padding:3px 9px;font-size:11px;font-weight:700;color:var(--sub);cursor:pointer}
+.t10-tabs button.on{background:var(--black);border-color:var(--black);color:#fff}
+.t10-pane{display:none}.t10-pane.on{display:block}
+.t10-row{display:grid;grid-template-columns:20px minmax(0,1fr) auto;gap:8px;align-items:center;padding:5px 0;border-top:1px solid var(--line);color:inherit;text-decoration:none}
+a.t10-row:hover .t10-nm{color:var(--red)}
+.t10-rk{font-weight:800;color:var(--sub);font-size:11px;text-align:right}
+.t10-nm{position:relative;font-size:12.5px;font-weight:600;padding-bottom:5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.t10-nm i{position:absolute;left:0;bottom:0;height:3px;border-radius:2px;opacity:.85}
+.t10-v{text-align:right;font-weight:800;font-size:12.5px;white-space:nowrap}.t10-v small{display:block;font-weight:400;color:var(--sub);font-size:10.5px}
+.t10-empty,.t10-foot{color:var(--sub);font-size:11.5px;padding:8px 0}.t10-foot{padding:6px 0 0;font-size:10.5px}
+@media (max-width:1100px){.t10-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:640px){.t10-grid{grid-template-columns:1fr}}
+/* tables (Rendy): counts like Trip shrink to their content; the spare width goes to the name column */
+.tbl th.num:not(.cv):not(.cp),.tbl td.num:not(.cv):not(.cp){width:1%}
+.tbl td.name{width:100%}

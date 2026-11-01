@@ -1670,7 +1670,7 @@ function pageHome(){
   page(
     mapHero(provRows, t, head, chg, isLatest) +
     '<div class="wrap"><div class="data-asof">Data realisasi s.d. ' + dayLabel(B.asOf) + (prog.date ? ' · snapshot Prognosa ' + dayLabel(prog.date) + ' ' + esc(prog.time) : '') + ' · ' + esc(B.build || '') + '</div>' +
-    attn + incPerf(m, {}) +
+    attn + homeTop10(m) + incPerf(m, {}) +
     '<div class="section-head"><div class="section-title">Capaian ' + esc(m.label) + '</div></div>' +
     '<div class="main-chart">' + trendPanel({}, 'harian', 'Realisasi vs target ' + tgtLbl(), {grans: ['harian', 'mingguan', 'bulanan'], noCmp: true}) + '</div>' +
     '<div class="section-head"><div class="section-title">Ringkasan operasional</div><a class="section-link" href="#/armada">Armada &rsaquo;</a></div>' +
@@ -1681,6 +1681,50 @@ function pageHome(){
       kpi('check', tierColor(t.of), '% OF', pctTxt(t.of), {href:'#/ekspeditur', hint: t.so ? 'SO ' + fmt(t.so) + ' t' + ' (bulan penuh yang tercakup)' : 'SO tidak tersedia'}) +
     '</div>' +
     '</div>', 'home');
+}
+
+/* ===================== Home: Top 10 (Rendy) =====================
+   Per dimension one card, each with modes: Volume | % Ach. | Gap minus (furthest behind target) | Naik vs LM.
+   % Ach. ranks only rows with a meaningful target (>= 0.5% of the dimension's total target, min 50 t). */
+const T10_MODES = [['vol', 'Volume'], ['ach', '% Ach.'], ['gap', 'Gap minus'], ['up', 'Naik vs ' ]];
+function top10Card(id, title, sub, list, nameOf, hrefOf, opt){
+  opt = opt || {}; const tag = cmpTag(PER());
+  list = list.filter(o => o.vol > 0 || o.tgt > 0);
+  const tT = list.reduce((a, o) => a + (o.tgt || 0), 0), minT = Math.max(50, tT * 0.005);
+  const modes = T10_MODES.filter(([k]) => k === 'vol' || (k === 'up' ? opt.prev : tT > 0));
+  const pane = k => {
+    let L, val, main, sub2, col;
+    if(k === 'vol'){ L = list.slice().sort((a, b) => b.vol - a.vol); val = o => o.vol; main = o => fmt(o.vol) + ' t'; sub2 = o => (o.hasTgt ? pctTxt(o.pct) + ' ach.' : '') ; col = o => o.hasTgt ? tierColor(o.pct) : 'var(--black)'; }
+    else if(k === 'ach'){ L = list.filter(o => o.hasTgt && o.tgt >= minT && o.pct != null).sort((a, b) => b.pct - a.pct || b.vol - a.vol); val = o => Math.min(o.pct, 200); main = o => pctTxt(o.pct); sub2 = o => fmt(o.vol) + ' / ' + fmt(o.tgt) + ' t'; col = o => tierColor(o.pct); }
+    else if(k === 'gap'){ L = list.filter(o => o.hasTgt && o.gap < -0.5).sort((a, b) => a.gap - b.gap); val = o => -o.gap; main = o => signed(o.gap) + ' t'; sub2 = o => pctTxt(o.pct) + ' ach.'; col = () => 'var(--red)'; }
+    else { const pv = o => opt.prev.get(o.key) || 0; L = list.filter(o => o.vol - pv(o) > 0.5).sort((a, b) => (b.vol - pv(b)) - (a.vol - pv(a))); val = o => o.vol - pv(o); main = o => '+' + fmt(o.vol - pv(o)) + ' t'; sub2 = o => pv(o) > 0 ? '+' + fmt((o.vol / pv(o) - 1) * 100) + '%' : 'baru'; col = () => 'var(--green)'; }
+    L = L.slice(0, 10); const mx = Math.max(1e-9, ...L.map(val));
+    const rows = L.map((o, i) => { const h = hrefOf(o.key), tg = h ? 'a' : 'div';
+      return '<' + tg + ' class="t10-row"' + (h ? ' href="' + h + '"' : '') + '><span class="t10-rk">' + (i + 1) + '</span><span class="t10-nm">' + esc(nameOf(o.key)) + '<i style="width:' + (val(o) / mx * 100).toFixed(1) + '%;background:' + col(o) + '"></i></span><span class="t10-v">' + main(o) + '<small>' + sub2(o) + '</small></span></' + tg + '>'; }).join('');
+    return '<div class="t10-pane' + (k === 'vol' ? ' on' : '') + '" data-t10p="' + k + '">' + (rows || '<div class="t10-empty">' + (k === 'gap' ? 'Semua sudah di atas target MTD.' : 'Tidak ada data.') + '</div>') + (k === 'ach' && rows ? '<div class="t10-foot">hanya target MTD &ge; ' + fmt(minT) + ' t</div>' : '') + '</div>';
+  };
+  return '<div class="t10-card" id="t10-' + id + '"><div class="t10-h"><b>' + esc(title) + '</b><small>' + esc(sub) + '</small></div>' +
+    '<div class="t10-tabs">' + modes.map(([k, l]) => '<button type="button" data-t10="' + k + '"' + (k === 'vol' ? ' class="on"' : '') + '>' + (k === 'up' ? l + tag : l) + '</button>').join('') + '</div>' +
+    modes.map(([k]) => pane(k)).join('') + '</div>';
+}
+function homeTop10(m){
+  const pv = g => prevVols(g, m);
+  const dist = [...summarize('dist', m).values()];
+  const eksp = [...summarize('eksp', m).values()].filter(o => D.frcEksp.has(o.key));
+  const src = [...summarize('src', m).values()].filter(o => B.dims.src[o.key]);
+  const dt = distrTableOne(m, {}).list.filter(o => B.dims.distr[o.key]);
+  const dPrev = new Map(distrSummary(shipRows(prevPer(toPer(m)), {})).map(o => [o.key, o.vol]));
+  const cards = [
+    top10Card('dist', 'Distrik', 'tujuan kirim', dist, k => tc(B.dims.dist[k] || ''), k => B.dims.dist[k] ? '#/distrik/' + enc(B.dims.dist[k]) : null, {prev: pv('dist')}),
+    top10Card('eksp', 'Ekspeditur', 'franco (FRC)', eksp, k => ekspLbl(k), k => ekspHref(k), {prev: pv('eksp')}),
+    top10Card('distr', 'Distributor', 'semua incoterm terpilih', dt, k => distrLbl(k), k => '#/distributor/' + enc(B.dims.distr[k]), {prev: dPrev}),
+    top10Card('plant', 'Plant', 'asal muat', src, k => tc(B.dims.src[k]), k => plantHref(B.dims.src[k]), {prev: pv('src')})];
+  if(B.brand){
+    const rows = brandRows(m), prevB = prevAgg({}, r => r[6]), prevS = prevAgg({}, r => r[7]);
+    cards.push(top10Card('brand', 'Brand', 'dari nama material', brandAttach(brandAgg(rows, r => r[6]), brandTgt(m, {}, TB_KEY.brand)), k => brandName(k), k => '#/brand/' + enc((B.dims.brand || [])[k]), {prev: prevB}));
+    cards.push(top10Card('sku', 'Kemasan (SKU)', 'material', brandAgg(rows, r => r[7]), k => { const i = skuInfo(k); return i.lbl ? brandName((rows.find(r => r[7] === k) || [])[6]) + ' · ' + i.lbl : i.n; }, () => null, {prev: prevS}));
+  }
+  return '<div class="section-head"><div class="section-title">Top 10</div><div class="section-sub">' + esc(incName()) + ' · ' + esc(kemName()) + ' · ' + periodSub() + '</div></div><div class="t10-grid">' + cards.join('') + '</div>';
 }
 
 /* Home hero: the interactive Sumatra map is the centerpiece, headline + ranking beside it. */
@@ -3188,6 +3232,8 @@ function route(){
 /* ===================== Events (delegated) ===================== */
 function bindEvents(){
   document.addEventListener('click', e => {
+    const t10 = e.target.closest('[data-t10]');
+    if(t10){ const card = t10.closest('.t10-card'); $$('[data-t10]', card).forEach(x => x.classList.toggle('on', x === t10)); $$('[data-t10p]', card).forEach(x => x.classList.toggle('on', x.dataset.t10p === t10.dataset.t10)); return; }
     const qk = e.target.closest('[data-qk]');
     if(qk){ e.stopPropagation(); const was = $('#qkPop') && $('#qkPop').dataset.k === qk.dataset.qk; closeQuick(); closeNav(); closeFilter(); if(!was){ quickMenu(qk.dataset.qk, qk); $('#qkPop').dataset.k = qk.dataset.qk; } return; }
     if(!e.target.closest('#qkPop')) closeQuick();
