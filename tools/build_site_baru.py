@@ -280,6 +280,15 @@ def build(cfg):
     # ---------------- Realisasi (data/rilis.csv.gz) ----------------
     facts = defaultdict(lambda: [0.0, 0, 0.0, 0])
     ship = defaultdict(lambda: [0.0, 0])
+    brand_d, sku_d = Dict(), Dict()
+    brand_rows = defaultdict(lambda: [0.0, 0])   # (day, inc, src, prov, dist, distr, brand, sku, kem) -> [ton, trips]
+    BRAND_CODE = [("DYX", "DYNAMIX"), ("SMBR", "SEMEN BATURAJA"), ("AND", "ANDALAS"), ("MDK", "MDK"), ("SP", "SEMEN PADANG")]
+    def brand_of(prod):   # brand from the material name (Rilis PRODUK), e.g. "SMN PCC MDK SP 50 KG BBSTD 1P" -> MDK
+        toks = set(re.split(r"[^A-Z0-9]+", prod))
+        for code, name in BRAND_CODE:
+            if code in toks:
+                return name
+        return "LAINNYA" if prod else "TANPA PRODUK"
     trucks = defaultdict(lambda: [0, 0.0, 0.0, 0, 0.0, 0])   # trips, ton, dwellSum, dwellN, waitSum, waitN
     hours = defaultdict(lambda: [0.0, 0])   # (exit date, src, inc, hour, kem) -> [ton, trips]: release per hour, last 62 days
     hour_from = (datetime.date.today() - datetime.timedelta(days=62)).isoformat()
@@ -361,6 +370,9 @@ def build(cfg):
         if kt and kc:
             toko_kec[ti][kec(kc)] += ton
         g = ship[(d.isoformat(), inc, s, p, di, distr(up(r.get("DISTRIBUTOR"))), e, ti, kem, kapal_d(kapal) if kapal else -1)]
+        prod_ = re.sub(r"\s+", " ", up(r.get("PRODUK")))
+        bg = brand_rows[(d.isoformat(), inc, s, p, di, distr(up(r.get("DISTRIBUTOR"))), brand_d(brand_of(prod_)), sku_d(prod_ or "-"), kem)]
+        bg[0] += ton; bg[1] += 1
         g[0] += ton; g[1] += 1
         m_out = re.match(r"(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):", str(r.get("WAKTU_KELUAR") or ""))   # truck out of the plant
         if m_out and hour_from <= m_out.group(1) < today.isoformat():
@@ -554,7 +566,7 @@ def build(cfg):
         "asOf": days[-1] if days else None,
         "lastDay": last_day,
         "dims": {"inc": INCOTERMS, "prov": prov.items, "dist": dist.items, "eksp": eksp.items, "src": src.items,
-                 "distr": distr.items, "truck": truck.items, "nonKin": nonkin, "tgtInt": tgt_int, "kem": kem_d.items, "kapal": kapal_d.items, "kapalInfo": [kapal_info.get(n) for n in kapal_d.items], "ekspNama": [EKSP_NAMA_TETAP.get(n) or kamus.get(n, "") for n in eksp.items],
+                 "distr": distr.items, "truck": truck.items, "brand": brand_d.items, "sku": sku_d.items, "nonKin": nonkin, "tgtInt": tgt_int, "kem": kem_d.items, "kapal": kapal_d.items, "kapalInfo": [kapal_info.get(n) for n in kapal_d.items], "ekspNama": [EKSP_NAMA_TETAP.get(n) or kamus.get(n, "") for n in eksp.items],
                  # ship-to: [code, name, address, kecamatan index or -1, lat, lon] (lat/lon null when unknown)
                  "toko": [toko_row(i) for i in range(len(toko.items))],
                  "kec": kec.items,
@@ -564,6 +576,9 @@ def build(cfg):
                    round(v[0], 2), v[1], round(v[2], 2), v[3], k[6]] for k, v in facts.items()],
         # one row per day x incoterm x source x province x district x distributor x ekspeditur x ship-to
         # [day, inc, src, prov, dist, distr, eksp, toko, ton, trips, kem, kapal (-1 = none)]
+        # brand from the material name, per day: [day, inc, src, prov, dist, distr, brand, sku (material name), kem, ton, trips]
+        "brand": [[day_idx[k[0]], INCOTERMS.index(k[1]), k[2], k[3], k[4], k[5], k[6], k[7], k[8], round(v[0], 2), v[1]]
+                  for k, v in brand_rows.items() if k[0] in day_idx],
         "ship": [[day_idx[k[0]], INCOTERMS.index(k[1]), k[2], k[3], k[4], k[5], k[6], k[7], round(v[0], 2), v[1], k[8], k[9]]
                  for k, v in ship.items()],
         # per day, so any date range can be cut exactly:
