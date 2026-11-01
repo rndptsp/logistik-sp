@@ -285,7 +285,8 @@ def build(cfg):
     # brand code in the material name (Rilis PRODUK), first match wins: "SMN PCC MDK SP 50 KG" = Semen Merdeka made by SP
     BRAND_CODE = [("MDK", "SEMEN MERDEKA"), ("DYX", "DYNAMIX"), ("AND", "SEMEN ANDALAS"), ("SMBR", "SEMEN BATURAJA"),
                   ("SG", "SEMEN GRESIK"), ("ST", "SEMEN TONASA"), ("SP", "SEMEN PADANG")]
-    CURAH_BRAND = [("ULTRAPRO", "ULTRAPRO"), ("EZPRO", "EZPRO"), ("SPRINTPRO", "SPRINTPRO"), ("PWRPRO", "POWERPRO"), ("POWERPRO", "POWERPRO")]
+    CURAH_BRAND = [("ULTRAPRO", "ULTRAPRO"), ("EZPRO", "EZPRO"), ("SPRINTPRO", "SPRINTPRO"), ("PWRPRO", "POWERPRO"), ("POWERPRO", "POWERPRO"),
+                   ("DUPRO", "DUPRO+"), ("SUPERTERMO", "SUPERTERMO")]   # DuPro+ (tahan sulfat, zak & JB), SuperTermo (semen sumur minyak)
     def brand_of(prod):
         flat = re.sub(r"[^A-Z0-9]", "", prod)
         for code, name in CURAH_BRAND:   # bulk brands (UltraPro, EzPro, SprintPro, PowerPro)
