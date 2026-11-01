@@ -1693,6 +1693,7 @@ const T10_MODES = [['vol', 'Volume'], ['ach', '% Ach.'], ['gap', 'Gap'], ['up', 
 function top10Card(id, title, sub, list, nameOf, hrefOf, opt){
   opt = opt || {}; const tag = cmpTag(PER());
   list = list.filter(o => o.vol > 0 || o.tgt > 0);
+  const N = list.length <= 20 ? 5 : 10;   // few subjects (plant, brand): top 5 (Rendy)
   const tT = list.reduce((a, o) => a + (o.tgt || 0), 0), minT = Math.max(50, tT * 0.005);
   const modes = T10_MODES.filter(([k]) => k === 'vol' || (k === 'up' ? opt.prev : tT > 0));
   const pv = o => opt.prev ? opt.prev.get(o.key) || 0 : 0;
@@ -1709,14 +1710,14 @@ function top10Card(id, title, sub, list, nameOf, hrefOf, opt){
       val = o => Math.abs(o.gap); main = o => signed(o.gap) + ' t'; sub2 = o => pctTxt(o.pct) + ' ach.'; col = () => best ? 'var(--green)' : 'var(--red)'; }
     else { const g = o => o.vol - pv(o); L = (best ? list : list.concat(gone)).filter(o => best ? g(o) > 0.5 : g(o) < -0.5).sort((a, b) => best ? g(b) - g(a) : g(a) - g(b));
       val = o => Math.abs(g(o)); main = o => signed(g(o)) + ' t'; sub2 = o => pv(o) > 0 ? (g(o) >= 0 ? '+' : '−') + fmt(Math.abs(g(o) / pv(o) * 100)) + '% · ' + tag + ' ' + fmt(pv(o)) + ' t' : 'baru'; col = () => best ? 'var(--green)' : 'var(--red)'; }
-    L = L.slice(0, 10); const mx = Math.max(1e-9, ...L.map(val));
+    L = L.slice(0, N); const mx = Math.max(1e-9, ...L.map(val));
     const rows = L.map((o, i) => { const h = hrefOf(o.key), tg = h ? 'a' : 'div';
       return '<' + tg + ' class="t10-row"' + (h ? ' href="' + h + '"' : '') + '><span class="t10-rk">' + (i + 1) + '</span><span class="t10-nm">' + esc(nameOf(o.key)) + '<i style="width:' + (val(o) / mx * 100).toFixed(1) + '%;background:' + col(o) + '"></i></span><span class="t10-v">' + main(o) + '<small>' + sub2(o) + '</small></span></' + tg + '>'; }).join('');
     const empty = k === 'gap' ? (best ? 'Belum ada yang di atas target MTD.' : 'Semua sudah di atas target MTD.') : k === 'up' ? (best ? 'Tidak ada yang naik.' : 'Tidak ada yang turun.') : 'Tidak ada data.';
     const foot = k === 'ach' ? 'hanya target MTD &ge; ' + fmt(minT) + ' t' : k === 'vol' && !best ? (list.some(o => o.hasTgt) ? 'hanya yang punya target' : '') : '';
     return '<div class="t10-pane' + (k === 'vol' && best ? ' on' : '') + '" data-t10p="' + k + d + '">' + (rows || '<div class="t10-empty">' + empty + '</div>') + (rows && foot ? '<div class="t10-foot">' + foot + '</div>' : '') + '</div>';
   };
-  return '<div class="t10-card" id="t10-' + id + '" data-m="vol" data-d="b"><div class="t10-h"><b>' + esc(title) + '</b><small>' + esc(sub) + '</small>' +
+  return '<div class="t10-card" id="t10-' + id + '" data-m="vol" data-d="b"><div class="t10-h"><b>' + esc(title) + '</b><small>top ' + N + ' · ' + esc(sub) + '</small>' +
     '<span class="t10-bw"><button type="button" data-t10d="b" class="on">Best</button><button type="button" data-t10d="w">Worst</button></span></div>' +
     '<div class="t10-tabs">' + modes.map(([k, l]) => '<button type="button" data-t10="' + k + '"' + (k === 'vol' ? ' class="on"' : '') + '>' + (k === 'up' ? '<span title="vs ' + tag + '">' + l + '</span>' : l) + '</button>').join('') + '</div>' +
     modes.map(([k]) => pane(k, 'b') + pane(k, 'w')).join('') + '</div>';
@@ -1738,7 +1739,7 @@ function homeTop10(m){
     cards.push(top10Card('brand', 'Brand', 'dari nama material', brandAttach(brandAgg(rows, r => r[6]), brandTgt(m, {}, TB_KEY.brand)), k => brandName(k), k => '#/brand/' + enc((B.dims.brand || [])[k]), {prev: prevB}));
     cards.push(top10Card('sku', 'Kemasan (SKU)', 'material', brandAgg(rows, r => r[7]), k => { const i = skuInfo(k); return i.lbl ? brandName((rows.find(r => r[7] === k) || [])[6]) + ' · ' + i.lbl : i.n; }, () => null, {prev: prevS}));
   }
-  return '<div class="section-head"><div class="section-title">Top 10</div><div class="section-sub">' + esc(incName()) + ' · ' + esc(kemName()) + ' · ' + periodSub() + '</div></div><div class="t10-grid">' + cards.join('') + '</div>';
+  return '<div class="section-head"><div class="section-title">Top 10 / Top 5</div><div class="section-sub">' + esc(incName()) + ' · ' + esc(kemName()) + ' · ' + periodSub() + '</div></div><div class="t10-grid">' + cards.join('') + '</div>';
 }
 
 /* Home hero: the interactive Sumatra map is the centerpiece, headline + ranking beside it. */
