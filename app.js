@@ -109,14 +109,16 @@ function prepare(){
 const srcOk = i => i === D.srcEmpty || !F.srcOff.has(B.dims.src[i]);
 const srcOkS = (i, sc) => sc && sc.src != null ? i === sc.src : srcOk(i);   // a plant page (sc.src) ignores the plant filter
 /* Target basis: master holds SNOP only; Internal = SNOP x tgtIntPct (per month). Applied wherever a target is summed. */
-/* Internal target = SNOP x pct per month (settings target_internal_pct, e.g. Nov 2026 = 120%); default 115%. */
-const tgtIntPct = m => { const t = (B && B.dims && B.dims.tgtInt) || {}; return +(t[m] || t.default || 115); };
-const tgtIntNow = () => tgtIntPct((PER().month) || (PER().to || B.asOf).slice(0, 7));
-const TGT_INT = () => tgtIntNow() / 100;
+/* Internal target = SNOP x pct by segment (settings target_internal_pct, as the marketing recap): zak darat (FRC/FOT),
+   zak laut (FOB/FAS/kontainer/kapal), curah & jumbo; a 'YYYY-MM' key overrides the default for that month. */
+const tgtIntCfg = m => { const t = (B && B.dims && B.dims.tgtInt) || {}; const c = Object.assign({darat: 115, laut: 100, curah: 105}, typeof t.default === 'object' ? t.default : {}, typeof t[m] === 'object' ? t[m] : {}); return c; };
+const rowIntK = t => { const c = tgtIntCfg(t[0]), kem = KEMS()[tKem(t)] || 'ZAK', inc = INCS()[tInc(t)]; return (kem !== 'ZAK' ? c.curah : modaOf(inc) === 'LAUT' ? c.laut : c.darat) / 100; };
+const tgtRowK = t => F.tgt === 'INTERNAL' ? rowIntK(t) : 1;
+const tgtIntNow = () => { const c = tgtIntCfg(PER().month || (PER().to || B.asOf).slice(0, 7)); return 'zak darat ' + c.darat + '% · zak laut ' + c.laut + '% · curah ' + c.curah + '%'; };
 /* SLA (truck in -> out of the plant): target 4 hours, the same for every truck. */
 const SLA_TARGET = 4;
 const slaColor = v => v == null ? 'var(--sub)' : Math.round(v * 10) / 10 <= SLA_TARGET ? 'var(--green)' : 'var(--red)';   // judged on the shown (1-decimal) value
-const tgtK = () => F.tgt === 'INTERNAL' ? TGT_INT() : 1;
+const tgtK = () => 1;   // kept for callers without a target row; Internal is applied per row (tgtRowK)
 const tgtLbl = () => F.tgt === 'INTERNAL' ? 'Internal' : 'SNOP';
 /* Incoterm codes: B.dims.inc (FRC, FOT, FOB, FAS); older builds have no list and only 0 = FRC, 1 = FOT. */
 const INCS = () => B.dims.inc || ['FRC', 'FOT'];
@@ -257,8 +259,8 @@ function targetBetween(t, from, to){
   const m = t[0], n = dim(m), a = m + '-01', b = m + '-' + pad2(n);
   if(b < from || a > to) return 0;
   const d0 = from > a ? +from.slice(8) : 1, d1 = to < b ? +to.slice(8) : n;
-  if(t[6]){ let s = 0; for(let d = d0; d <= d1; d++) s += t[6][d - 1] || 0; return s * tgtK(); }
-  return t[5] * (d1 - d0 + 1) / n * tgtK();
+  if(t[6]){ let s = 0; for(let d = d0; d <= d1; d++) s += t[6][d - 1] || 0; return s * tgtRowK(t); }
+  return t[5] * (d1 - d0 + 1) / n * tgtRowK(t);
 }
 function blank(){ return {vol:0, frc:0, frc0:0, trips:0, dwS:0, dwN:0, tgt:0, tgtFull:0, so:0, soShip:0, soOpen:null, hasTgt:false}; }
 /* % OF per SO (Rendy, option 1; builds with B.sof): SO due (Tgl Kirim) inside the period up to the last data day vs the realisasi on
@@ -371,7 +373,7 @@ function rangeGroup(fromISO, toISO, sc, group){
         if(dt < from || dt > to) continue;
         add += t[6] ? (t[6][d - 1] || 0) : t[5] / n; any = true;
       }
-      if(any){ const o = get(TK[group](t)); o.tgt += add * tgtK(); o.hasTgt = true; }
+      if(any){ const o = get(TK[group](t)); o.tgt += add * tgtRowK(t); o.hasTgt = true; }
     });
   }
   out.forEach(o => { o.pct = o.hasTgt ? (o.tgt > 0 ? pctOf(o.frc, o.tgt) : 100) : (o.vol > 0 || o.frc > 0 ? 100 : null); o.gap = o.frc - o.tgt; });
@@ -778,7 +780,7 @@ function renderFilterPanel(){
   const moda = ['DARAT', 'LAUT', 'ALL'].map(x => '<span data-moda="' + x + '" class="' + (draft.moda === x ? 'on' : '') + '">' + MODA_LBL[x].toUpperCase() + '</span>').join('');
   const inc = modaIncs(draft.moda).map(x => [x, incLbl(x)]).concat([['ALL', draft.moda === 'ALL' ? 'Semua' : 'Semua ' + MODA_LBL[draft.moda].toLowerCase()]]).map(x => '<span data-inc="' + x[0] + '" class="' + (draft.inc === x[0] ? 'on' : '') + '">' + x[1] + '</span>').join('');
   const kem = kemOpts().map(x => '<span data-kem="' + x[0] + '" class="' + (draft.kem === x[0] ? 'on' : '') + '">' + x[1] + '</span>').join('');
-  const tgt = [['SNOP','SNOP'],['INTERNAL','Internal (' + tgtIntNow() + '% SNOP)']].map(x => '<span data-tgt="' + x[0] + '" class="' + (draft.tgt === x[0] ? 'on' : '') + '">' + x[1] + '</span>').join('');
+  const tgt = [['SNOP','SNOP'],['INTERNAL','Internal']].map(x => '<span data-tgt="' + x[0] + '" class="' + (draft.tgt === x[0] ? 'on' : '') + '">' + x[1] + '</span>').join('');
   const src = D.sources.map(s2 => '<label class="fp-check"><input type="checkbox" data-src="' + esc(s2) + '"' + (draft.srcOff.has(s2) ? '' : ' checked') + '> ' + esc(s2.toUpperCase()) + '' + '</label>').join('');
   const tip = (t, r) => '<span class="fp-info' + (r ? ' r' : '') + '" tabindex="0" data-info="' + esc(t) + '">i</span>';
   const AREA_OPT = [['AP1', 'AP1'], ['NON', 'Non AP1'], ['ALL', 'Semua']];
@@ -791,7 +793,7 @@ function renderFilterPanel(){
     '<div class="fp-row"><div class="fp-group"><label class="fl">Periode</label><div class="fp-chips" style="margin-bottom:10px">' + mode + '</div>' + body + '</div>' +
     '<div class="fp-group"><label class="fl">Moda &amp; incoterm' + tip(incTip, true) + '</label><div class="fp-chips" style="margin-bottom:8px">' + moda + '</div><div class="fp-chips">' + inc + '</div></div></div>' +
     '<div class="fp-row">' + (kem ? '<div class="fp-group"><label class="fl">Kemasan' + tip(kemTip) + '</label><div class="fp-chips">' + kem + '</div></div>' : '<div class="fp-group"></div>') +
-    '<div class="fp-group"><label class="fl">Target' + tip('SNOP = target resmi. Internal = ' + tgtIntNow() + '% dari SNOP pada bulan terpilih.', true) + '</label><div class="fp-chips">' + tgt + '</div></div></div>' +
+    '<div class="fp-group"><label class="fl">Target' + tip('SNOP = target resmi. Internal (sesuai rekap marketing) = SNOP × ' + tgtIntNow() + '.', true) + '</label><div class="fp-chips">' + tgt + '</div></div></div>' +
     (area ? '<div class="fp-row"><div class="fp-group"><label class="fl">Area' + tip(areaTip) + '</label><div class="fp-chips">' + area + '</div></div><div class="fp-group"></div></div>' : '') +
     '<div class="fp-group" style="margin-bottom:18px"><label class="fl">Source plant' + tip(srcTip) + '<span class="fp-all"><a data-srcall="1">Centang semua</a><a data-srcall="0">Hapus semua</a></span></label><div class="fp-cols">' + src + '</div></div>' +
     '<div class="fp-foot"><div class="fp-reset" data-act="reset">Reset filter</div><div class="fp-reset" data-act="laporan">Tampilan laporan harian</div><div class="fp-apply" data-act="apply">Terapkan</div></div>';
@@ -803,7 +805,7 @@ function filterStrip(){
     '<span class="tag qk" data-qk="inc" title="Ganti incoterm"><b>' + incName() + '</b> &#9662;</span>' +
     '<span class="tag qk" data-qk="kem" title="Ganti kemasan"><b>' + (F.kem === 'ALL' ? 'RETAIL + CURAH' : esc(MKT[F.kem].toUpperCase())) + '</b> &#9662;</span>' +
     (areaOn() ? '<span class="tag qk" data-qk="area" title="Ganti area"><b>' + areaName() + '</b> &#9662;</span>' : '') +
-    '<span class="tag">target <b>' + (F.tgt === 'INTERNAL' ? 'Internal ' + tgtIntNow() + '%' : 'SNOP') + '</b></span>' +
+    '<span class="tag">target <b>' + (F.tgt === 'INTERNAL' ? 'Internal' : 'SNOP') + '</b></span>' +
     '<span class="tag">' + srcTxt() + '</span>' +
     '<span class="edit qrep' + (isReportView() ? ' on' : '') + '" data-act="laporan" title="' + (isReportView() ? 'Kembali ke tampilan lengkap (semua moda, incoterm, plant & area)' : 'Sama dengan laporan Realisasi harian: AP1 · FRC TRUK · ZAK · CP Indarung · SNOP · bulan berjalan') + '">' + (isReportView() ? '&#10003; Laporan harian' : 'Laporan harian') + '</span>' +
     '<span class="edit" data-act="openfilter">Ubah filter &#9662;</span>';
@@ -1869,12 +1871,12 @@ function plantReview(si, per, all){
   B.targets.forEach(t => {
     if(t[4] !== si || !inSet.has(tInc(t)) || !kemOk(tKem(t)) || !areaProvOk(t[1])) return;
     const o = I.get(tInc(t));
-    o.tgt += targetBetween(t, per.from, per.tgtTo) / tgtK();   // SNOP basis; Internal = x TGT_INT()
-    o.tgtFull += targetBetween(t, per.from, chartTo) / tgtK();
+    const k_ = tgtRowK(t), ki = rowIntK(t), a_ = targetBetween(t, per.from, per.tgtTo) / k_;   // SNOP basis; Internal per row
+    o.tgt += a_; o.tgtI = (o.tgtI || 0) + a_ * ki; o.tgtFull += targetBetween(t, per.from, chartTo) / k_;
     const n = dim(t[0]);
     for(let d = 1; d <= n; d++){
       const ds = t[0] + '-' + pad2(d); if(ds < per.from || ds > chartTo) continue;
-      const b = Bk.get(bk(ds)); if(b) b.tgt += t[6] ? (t[6][d - 1] || 0) : t[5] / n;
+      const b = Bk.get(bk(ds)); if(b){ const v_ = t[6] ? (t[6][d - 1] || 0) : t[5] / n; b.tgt += v_; b.tgtI = (b.tgtI || 0) + v_ * ki; }
     }
   });
   const list = [...I.values()].filter(o => o.vol > 0 || o.tgt > 0 || o.prev > 0);
@@ -1885,7 +1887,7 @@ function plantChart(R){
   const W = 1100, H = 330, L = 52, Rm = 12, T = 26, Bm = 28, n = R.keys.length;
   const bs = R.keys.map(k => R.Bk.get(k)), withData = bs.filter(b => b.tot > 0);
   let avg = withData.length ? withData.reduce((a, b) => a + b.tot, 0) / withData.length : 0;
-  const max = Math.max(1, ...bs.map(b => Math.max(b.tot, b.tgt * tgtK(), b.prev || 0))) * 1.1;
+  const max = Math.max(1, ...bs.map(b => Math.max(b.tot, (F.tgt === 'INTERNAL' ? (b.tgtI || 0) : b.tgt), b.prev || 0))) * 1.1;
   const step = (W - L - Rm) / n, bw = Math.min(30, step * 0.68), y = v => T + (H - T - Bm) * (1 - v / max);
   const nice = v => { const p = Math.pow(10, Math.floor(Math.log10(v))); return [1, 2, 2.5, 5, 10].map(x => x * p).find(x => v / x <= 5); };
   const gs = nice(max), grid = [];
@@ -1907,12 +1909,12 @@ function plantChart(R){
     xl += '<text x="' + cx.toFixed(1) + '" y="' + (H - 10) + '" class="pc-ax" text-anchor="middle">' + lab + '</text>';
     const tip = (R.title ? R.title(k) : R.monthly ? monthLabel(k) : dayLabel(k)) + '|' + (b.tot ? 'Rilis ' + fmt(b.tot) + ' t · ' + fmt(b.trips) + ' trip' + (R.hourly ? '' : ' · ' + b.trucks.size + ' truk') : 'Belum ada rilis') +
       segs.slice().reverse().map(ii => '|' + incLbl(INCS()[ii]) + ': ' + fmt(b.inc.get(ii)) + ' t').join('') +
-      (b.tgt ? '|Target ' + tgtLbl() + ' ' + fmt(b.tgt * tgtK()) + ' t' + (b.tot ? ' · capaian ' + pctTxt(pctOf(b.tot, b.tgt * tgtK())) : '') : '') + (b.prev != null ? '|' + (R.prevLbl || 'Bulan lalu (tgl sama)') + ' ' + fmt(b.prev) + ' t' : '') + (b.dwN ? '|SLA ' + fmt1(b.dwS / b.dwN) + ' jam' : '');
+      (b.tgt ? '|Target ' + tgtLbl() + ' ' + fmt((F.tgt === 'INTERNAL' ? (b.tgtI || 0) : b.tgt)) + ' t' + (b.tot ? ' · capaian ' + pctTxt(pctOf(b.tot, (F.tgt === 'INTERNAL' ? (b.tgtI || 0) : b.tgt))) : '') : '') + (b.prev != null ? '|' + (R.prevLbl || 'Bulan lalu (tgl sama)') + ' ' + fmt(b.prev) + ' t' : '') + (b.dwN ? '|SLA ' + fmt1(b.dwS / b.dwN) + ' jam' : '');
     hits += '<rect x="' + (cx - step / 2).toFixed(1) + '" y="' + T + '" width="' + step.toFixed(1) + '" height="' + (H - T - Bm) + '" class="pc-hit" data-tip="' + esc(tip) + '"/>';
   });
   const pts = (f) => bs.map((b, i) => f(b) == null ? null : [L + step * (i + 0.5), y(f(b))]);
   const path = ps => { let d = '', pen = false; ps.forEach(p => { if(!p){ pen = false; return; } d += (pen ? 'L' : 'M') + p[0].toFixed(1) + ',' + p[1].toFixed(1); pen = true; }); return d; };
-  const tgtLine = '<path d="' + path(pts(b => b.tgt ? b.tgt * tgtK() : null)) + '" class="pc-tgt"/>';
+  const tgtLine = '<path d="' + path(pts(b => b.tgt ? (F.tgt === 'INTERNAL' ? (b.tgtI || 0) : b.tgt) : null)) + '" class="pc-tgt"/>';
   const prevPts = pts(b => b.prev != null && b.prev > 0 ? b.prev : null);
   const prevLine = R.monthly || R.noPrev ? '' : '<path d="' + path(prevPts) + '" class="pc-prev"/>' + prevPts.filter(Boolean).map(p => '<circle cx="' + p[0].toFixed(1) + '" cy="' + p[1].toFixed(1) + '" r="2.6" class="pc-prevdot"/>').join('');
   if(R.avgAll) avg = bs.reduce((a, b) => a + b.tot, 0) / n;   // per hour: the day's total spread over 24 hours
@@ -1947,16 +1949,16 @@ function plantHours(si, day, all){
     else if(h[0] === prevDay) b.prev += h[4];
   });
   const ds = B.days[di], m = ds.slice(0, 7), d = +ds.slice(8);
-  let dayTgt = 0;
+  let dayTgt = 0, dayTgtI = 0;
   B.targets.forEach(t => {
     if(t[0] !== m || t[4] !== si || !inSet.has(tInc(t)) || !kemOk(tKem(t)) || !areaProvOk(t[1])) return;
-    dayTgt += t[6] ? (t[6][d - 1] || 0) : t[5] / dim(m);
+    const v_ = t[6] ? (t[6][d - 1] || 0) : t[5] / dim(m); dayTgt += v_; dayTgtI += v_ * rowIntK(t);
   });
   Bk.forEach(b => b.tgt = dayTgt / 24);
   const used = [...new Set(H.filter(h => h[0] === di).map(h => h[2]))];
   return {keys, Bk, incs: incs.filter(i => used.includes(i)), monthly: false, hourly: true, avgAll: true, noPrev: prevDay == null,
     tick: k => k, title: k => dayLabel(ds) + ' · jam ' + k + '.00–' + k + '.59', prevLbl: prevDay != null ? 'Hari sebelumnya (' + shortDate(B.days[prevDay]) + ')' : '',
-    day: di, days, dayTgt, prevDay};
+    day: di, days, dayTgt, dayTgtI, prevDay};
 }
 function plantHourSection(){
   const c = plantHourCtx; if(!c) return '';
@@ -1965,7 +1967,7 @@ function plantHourSection(){
   const bs = R.keys.map(k => R.Bk.get(k)), tot = bs.reduce((a, b) => a + b.tot, 0), trips = bs.reduce((a, b) => a + b.trips, 0);
   const peak = bs.reduce((a, b, i) => b.tot > a.v ? {v: b.tot, i} : a, {v: 0, i: 0}), idle = bs.filter(b => !b.tot).length;
   const ds = B.days[R.day], pos = R.days.indexOf(R.day), prv = pos > 0 ? R.days[pos - 1] : null, nxt = pos < R.days.length - 1 ? R.days[pos + 1] : null;
-  const tgtDay = R.dayTgt * tgtK();
+  const tgtDay = F.tgt === 'INTERNAL' ? R.dayTgtI : R.dayTgt;
   const nav = '<div class="ph-nav">' + (prv != null ? '<a href="#" data-plantday="' + prv + '">&lsaquo; ' + shortDate(B.days[prv]) + '</a>' : '<span></span>') +
     '<b>' + dayLabel(ds) + '</b>' + (nxt != null ? '<a href="#" data-plantday="' + nxt + '">' + shortDate(B.days[nxt]) + ' &rsaquo;</a>' : '<span></span>') + '</div>';
   const stats = '<div class="ph-stats"><span>Total <b>' + fmt(tot) + ' t</b> · ' + fmt(trips) + ' trip</span><span>Rata-rata <b>' + fmt(tot / 24) + ' t/jam</b></span>' +
@@ -1983,7 +1985,7 @@ function pagePlant(name){
   const R = plantReview(si, m, plantAllInc);
   const sum = f => R.I.reduce((a, o) => a + f(o), 0);
   const vol = sum(o => o.vol), az = sum(o => o.tgt ? o.az : 0), tgt = sum(o => o.tgt), prev = sum(o => o.prev), trips = sum(o => o.trips);
-  const dwS = sum(o => o.dwS), dwN = sum(o => o.dwN), tI = tgt * TGT_INT();
+  const dwS = sum(o => o.dwS), dwN = sum(o => o.dwN), tI = sum(o => o.tgtI || 0);
   const pS = tgt ? pctOf(az, tgt) : null, pI = tgt ? pctOf(az, tI) : null, chg = prev ? (vol / prev - 1) * 100 : null;
   const dayKeys = R.keys.filter(k => R.Bk.get(k).tot > 0), lastK = dayKeys[dayKeys.length - 1];
   const avg = dayKeys.length ? vol / dayKeys.length : 0;
@@ -1995,15 +1997,15 @@ function pagePlant(name){
   const chips = [
     heroChip('Realisasi', fmt(vol) + ' <small>t</small>', fmt(trips) + ' trip'),
     heroChip('Target SNOP', tgt ? fmt(tgt) + ' <small>t</small>' : '–', tgt ? 'capaian <b style="color:' + heroTier(pctOf(az, tgt)) + '">' + pctTxt(pctOf(az, tgt)) + '</b> · ' + signed(az - tgt) + ' t' : 'tidak ada target'),
-    heroChip('Target Internal', tgt ? fmt(tI) + ' <small>t</small>' : '–', tgt ? 'capaian <b style="color:' + heroTier(pI) + '">' + pctTxt(pI) + '</b> · ' + signed(az - tI) + ' t' : tgtIntNow() + '% SNOP'),
+    heroChip('Target Internal', tgt ? fmt(tI) + ' <small>t</small>' : '–', tgt ? 'capaian <b style="color:' + heroTier(pI) + '">' + pctTxt(pI) + '</b> · ' + signed(az - tI) + ' t' : 'SNOP × ' + tgtIntNow()),
     heroChip(R.monthly ? 'Rata-rata / bulan' : 'Rata-rata / hari', fmt(R.monthly ? vol / Math.max(1, dayKeys.length) : avg) + ' <small>t</small>', lastK ? (R.monthly ? monthShort(lastK) : shortDate(lastK)) + ': ' + fmt(R.Bk.get(lastK).tot) + ' t' : ''),
     heroChip('vs ' + cmpTag(m), chg == null ? '–' : (chg >= 0 ? '▲ ' : '▼ ') + fmt1(Math.abs(chg)) + '%', prev ? fmt(prev) + ' t · ' + shortDate(R.pp.from) + '–' + shortDate(R.pp.to) : '', chg == null ? null : chg >= 0 ? '#5FD08F' : '#FF6B74'),
     heroChip('SLA rata-rata', dwN ? fmt1(dwS / dwN) + ' <small>jam</small>' : '–', 'target ' + SLA_TARGET + ' jam · masuk → keluar', dwN ? (dwS / dwN <= SLA_TARGET ? '#5FD08F' : '#FF6B74') : null)];
   const cards = R.I.map(o => {
-    const n = INCS()[o.i], ps = o.tgt ? pctOf(o.az, o.tgt) : null, pi = o.tgt ? pctOf(o.az, o.tgt * TGT_INT()) : null;
+    const n = INCS()[o.i], ps = o.tgt ? pctOf(o.az, o.tgt) : null, pi = o.tgt ? pctOf(o.az, (o.tgtI || 0)) : null;
     return '<div class="ph-card" style="--c:' + incColor(o.i) + '"><div class="ph-n">' + esc(incLbl(n)) + '</div><div class="ph-v">' + fmt(o.vol) + ' <small>t</small></div>' +
       '<div class="ph-k"><span>SNOP</span><b style="color:' + heroTier(ps) + '">' + (o.tgt ? pctTxt(ps) : '–') + '</b><small>' + (o.tgt ? 'T ' + fmt(o.tgt) : 'tanpa target') + '</small></div>' +
-      '<div class="ph-k"><span>Internal</span><b style="color:' + heroTier(pi) + '">' + (o.tgt ? pctTxt(pi) : '–') + '</b><small>' + (o.tgt ? 'T ' + fmt(o.tgt * TGT_INT()) : '') + '</small></div></div>';
+      '<div class="ph-k"><span>Internal</span><b style="color:' + heroTier(pi) + '">' + (o.tgt ? pctTxt(pi) : '–') + '</b><small>' + (o.tgt ? 'T ' + fmt((o.tgtI || 0)) : '') + '</small></div></div>';
   }).join('') || '<div class="mh-miss">Tidak ada incoterm dengan rilis atau target.</div>';
   const bg = (window.BG || {})[plantBg(name)];
   const hero = '<section class="map-hero mh-page plant-hero"><div class="mh-bg"' + (bg ? ' style="background-image:linear-gradient(90deg,rgba(15,26,33,.95) 0%,rgba(15,26,33,.82) 48%,rgba(15,26,33,.5) 100%),url(&quot;assets/bg/' + bg.f + '&quot;)"' : '') + '></div><div class="mh-inner">' +
@@ -2018,7 +2020,7 @@ function pagePlant(name){
     (sla ? '<div class="dp-panel pc-panel" style="margin-top:14px"><div class="pt">SLA per ' + (R.monthly ? 'bulan' : 'hari') + ' (jam, masuk → keluar pabrik)<span class="pt-sub">rata-rata <b style="color:' + slaColor(slaAvg) + '">' + fmt1(slaAvg) + ' jam</b> · target ' + SLA_TARGET + ' jam</span></div>' + sla +
       '<div class="trend-legend"><span><i style="background:var(--green)"></i>&le;' + SLA_TARGET + ' jam (memenuhi target)</span><span><i style="background:var(--red)"></i>&gt;' + SLA_TARGET + ' jam</span><span><i class="dash"></i>target ' + SLA_TARGET + ' jam</span></div></div>' : '');
   // comparison table per incoterm
-  const rows = R.I.map(o => ({n: o.i, vol: o.vol, tgt: o.tgt, ps: o.tgt ? pctOf(o.az, o.tgt) : null, pi: o.tgt ? pctOf(o.az, o.tgt * TGT_INT()) : null, gap: o.az - o.tgt, prev: o.prev, chg: o.prev ? (o.vol / o.prev - 1) * 100 : null, trips: o.trips, sla: o.dwN ? o.dwS / o.dwN : null}));
+  const rows = R.I.map(o => ({n: o.i, vol: o.vol, tgt: o.tgt, ps: o.tgt ? pctOf(o.az, o.tgt) : null, pi: o.tgt ? pctOf(o.az, (o.tgtI || 0)) : null, gap: o.az - o.tgt, prev: o.prev, chg: o.prev ? (o.vol / o.prev - 1) * 100 : null, trips: o.trips, sla: o.dwN ? o.dwS / o.dwN : null}));
   const pc = p => p == null ? '–' : '<b style="color:' + tierColor(p) + '">' + pctTxt(p) + '</b>';
   const cols = [{h:'Incoterm', cls:'name', val: r => incLbl(INCS()[r.n]), html: r => '<span class="inc-dot" style="background:' + incColor(r.n) + '"></span>' + esc(incLbl(INCS()[r.n]))},
     {h:'Realisasi (Ton)', num:true, val: r => r.vol, html: r => fmt(r.vol)},

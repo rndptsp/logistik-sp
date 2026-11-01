@@ -94,7 +94,11 @@
   "SUMATERA SELATAN"
  ],
  "target_internal_pct": {
-  "default": 115,
-  "2026-11": 120
+  "_catatan": "Target Internal = SNOP x persen, per segmen (sesuai rekap marketing): zak darat (FRC/FOT), zak laut (FOB/FAS/kontainer/kapal), curah & jumbo. Kunci bulan YYYY-MM menimpa default.",
+  "default": {
+   "darat": 115,
+   "laut": 100,
+   "curah": 105
+  }
  }
 }

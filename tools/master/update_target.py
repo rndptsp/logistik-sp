@@ -119,10 +119,16 @@ def synth_tactical(mn,snop,mon_path,td_old):
         if not r[1] or not r[3]: continue
         for i,x in enumerate(r[6:37]):
             if isinstance(x,(int,float)): day[i]+=x
-    pm=mn-1 or 12;py=2026 if mn>1 else 2025
-    wk=C.defaultdict(list)
-    for i in range(calendar.monthrange(py,pm)[1]): wk[calendar.weekday(py,pm,i+1)].append(day[i])
-    wd={k:(sum(v)/len(v) if v else 0) for k,v in wk.items()}
+    # the file does not say its month and the pattern repeats weekly: anchor it on its quietest day = Sunday (as the
+    # marketing daily targets), then read the weekday weights from the 7-day phase
+    ph=C.defaultdict(list)
+    for i,v in enumerate(day):
+        if v>0: ph[i%7].append(v)
+    avg={k:sum(v)/len(v) for k,v in ph.items()}
+    if len(avg)==7:
+        p0=min(avg,key=avg.get);wd={w:avg[(p0+w-6)%7] for w in range(7)}   # weekday w (Mon=0..Sun=6)
+    else: wd={}
+    log('Pola hari: hari terendah = Minggu; bobot Sen..Min =',[round(wd.get(i,0),1) for i in range(7)])
     if sum(wd.values())<=0: wd={k:1.0 for k in range(7)}
     nd=calendar.monthrange(2026,mn)[1];w=[wd.get(calendar.weekday(2026,mn,i+1),0) if i<nd else 0.0 for i in range(31)];T=sum(w);w=[x/T for x in w]
     # SNOP retail volume per district x syarat
@@ -316,7 +322,7 @@ def snop_inc(term,h):
     if term=='FRC': return {'NONE':'FRC','CONTAINER':'FRC CONTAINER','POLYSLING':'FRC KAPAL'}.get(h,'FRC')
     if term=='FOT': return 'FOT CONTAINER' if h=='CONTAINER' else 'FOT'
     return term
-def build_nonzak(mn,rows,te_ref):
+def build_nonzak(mn,rows,te_ref,w=None):
     """Baris TE untuk curah/jumbo bulan mn: volume SNOP apa adanya, plant dari SNOP, harian = rata per hari,
     ekspeditur/distributor tidak diketahui (TANPA_EKSPEDITUR / TANPA_DISTRIBUTOR). Provinsi non-kinerja dilewati."""
     import calendar
@@ -331,7 +337,7 @@ def build_nonzak(mn,rows,te_ref):
     out=[]
     for (p,kd,d,kp,pn,inc,kem),v in sorted(agg.items(),key=str):
         e='TANPA_EKSPEDITUR' if inc.startswith('FRC') else 'TANPA_DISTRIBUTOR'
-        dl=[v/nd if i<nd else 0.0 for i in range(31)]
+        dl=[v*w[i] for i in range(31)] if w else [v/nd if i<nd else 0.0 for i in range(31)]   # same day pattern as zak FRC (marketing recap)
         out.append([2026,mn,INV[mn],'SNOP',inc,p,kd,d,kp,PD.get(pn,pn),pn,e,v,1.0,'SNOP_KORSALES','%s: volume SNOP, tanpa %s, harian rata'%(kem,'ekspeditur' if inc.startswith('FRC') else 'distributor')]+dl+[kem])
     return out
 def check_nonzak(mn,rows,out):
@@ -378,7 +384,7 @@ def cmd_target(a):
     for r in te: r.append('ZAK')
     msgs,bad=checks(mn,tact,td,te)
     log('Rekonsiliasi ZAK (ton):');[log(m) for m in msgs]
-    nzr=read_snop_nonzak(a.snop);nzo=build_nonzak(mn,nzr,[r for r in te_old if r[len(TEC)-1] in (None,'ZAK')]+te);_,nzbad=check_nonzak(mn,nzr,nzo)
+    nzr=read_snop_nonzak(a.snop);nzo=build_nonzak(mn,nzr,[r for r in te_old if r[len(TEC)-1] in (None,'ZAK')]+te,W.get('FRC'));_,nzbad=check_nonzak(mn,nzr,nzo)
     log('Curah/jumbo (SNOP): %d baris, %.1f t | selisih vs SNOP: %d kombinasi'%(len(nzo),sum(r[12] for r in nzo),len(nzbad)))
     if nzbad: bad+=1
     te=te+nzo
