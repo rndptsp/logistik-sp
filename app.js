@@ -77,7 +77,7 @@ const soTip = o => o.so > 0 ? '|SO ' + fmt(o.so) + ' t · % OF ' + pctTxt(o.of) 
 /* ===================== State ===================== */
 let B = null;            // decrypted bundle
 let D = null;            // derived indexes
-const F = { per: null, inc: 'ALL', moda: 'ALL', area: 'ALL', srcOff: new Set(), tgt: 'SNOP', kem: 'ZAK' };   // per: {kind:'month',month} | {kind:'ytd'} | {kind:'range',from,to}
+const F = { per: null, inc: 'ALL', moda: 'ALL', area: 'ALL', srcOff: new Set(), tgt: 'SNOP', kem: 'ZAK', prov: [] };   // prov: selected province indexes, [] = all (Rendy)   // per: {kind:'month',month} | {kind:'ytd'} | {kind:'range',from,to}
 const DEFAULT_SRC = 'CP INDARUNG';   // the main plant (labels only); default view = every plant, moda & incoterm, kemasan ZAK, SNOP, area Semua
 let DEFAULT_SRC_OFF = [];
 
@@ -170,7 +170,7 @@ const soIncOk = r => r[6] == null ? true : incOk(r[6]);
 const soOn = () => soAll() || F.inc === 'FRC' || (F.inc === 'ALL' && F.moda !== 'LAUT');
 const incName = () => F.inc === 'ALL' ? 'semua incoterm' + (F.moda === 'ALL' ? '' : ' ' + MODA_LBL[F.moda].toLowerCase()) : incLbl(F.inc);
 const setInc = (inc, moda) => { F.inc = inc; F.moda = moda || (inc === 'ALL' ? F.moda : modaOf(inc)); };
-const saveFilter = () => { try { sessionStorage.setItem('osp_f3', JSON.stringify({per: F.per, inc: F.inc, moda: F.moda, kem: F.kem, area: F.area, srcOff: [...F.srcOff], tgt: F.tgt})); } catch(e) {} };
+const saveFilter = () => { try { sessionStorage.setItem('osp_f3', JSON.stringify({per: F.per, inc: F.inc, moda: F.moda, kem: F.kem, area: F.area, srcOff: [...F.srcOff], tgt: F.tgt, prov: (F.prov || []).map(i => B.dims.prov[i])})); } catch(e) {} };
 
 /* ===================== Periods ===================== */
 /* Every page works on a period {from, to} (ISO dates). A "month" is just one kind of period.
@@ -244,7 +244,9 @@ const NKP = () => B._nk || (B._nk = new Set(B.dims.nonKin || []));
    NON AP1 = the non-kinerja provinces (shown without target). Default Semua (both); AP1 matches the daily report. A province's own
    page always shows its data. Non-AP1 realisasi never counts toward achievement. */
 const areaOn = () => NKP().size > 0;
-const areaProvOk = p => !areaOn() || F.area === 'ALL' || (F.area === 'AP1') !== NKP().has(p);
+const provSel = p => !F.prov || !F.prov.length || F.prov.includes(p);   // province filter (Rendy)
+const areaProvOk = p => provSel(p) && (!areaOn() || F.area === 'ALL' || (F.area === 'AP1') !== NKP().has(p));
+const provName = () => !F.prov || !F.prov.length ? 'semua provinsi' : F.prov.length <= 2 ? F.prov.map(i => tc(B.dims.prov[i])).join(', ') : F.prov.length + ' provinsi';
 const areaName = () => F.area === 'ALL' ? 'AP1 + NON AP1' : F.area === 'AP1' ? 'AP1' : 'NON AP1';
 const nkAch = p => F.area !== 'AP1' || !NKP().has(p);   // non-kinerja provinces (Sumsel) count for capaian unless the filter is AP1 only (Rendy)
 const nkSkip = (p, group, sc) => !areaProvOk(p) && (sc || {}).prov !== p;   // AP1 only: non-kinerja provinces out of every total (except their own page)
@@ -269,9 +271,9 @@ function blank(){ return {vol:0, frc:0, frc0:0, trips:0, dwS:0, dwN:0, tgt:0, tg
 const sofOn = () => !!B.sof;
 function sofScan(per, sc, keyOf, add){
   per = toPer(per); const to = per.tgtTo || per.to;
-  B.sof.forEach(r => { if(r[0] < per.from || r[0] > to || !kemOk(r[5]) || !incOk(r[6]) || (sc.prov != null && r[1] !== sc.prov) || (sc.dist != null && r[2] !== sc.dist) || (sc.eksp != null && r[3] !== sc.eksp) || (sc.distr != null && r[8] !== sc.distr)) return;
+  B.sof.forEach(r => { if(r[0] < per.from || r[0] > to || (sc.prov == null && !provSel(r[1])) || !kemOk(r[5]) || !incOk(r[6]) || (sc.prov != null && r[1] !== sc.prov) || (sc.dist != null && r[2] !== sc.dist) || (sc.eksp != null && r[3] !== sc.eksp) || (sc.distr != null && r[8] !== sc.distr)) return;
     add(keyOf(r), r[4], r[7], null, 0, r[1]); });
-  (B.soopen || []).forEach(r => { if(!kemOk(r[4]) || !incOk(r[5]) || (sc.prov != null && r[0] !== sc.prov) || (sc.dist != null && r[1] !== sc.dist) || (sc.eksp != null && r[2] !== sc.eksp) || (sc.distr != null && r[3] !== sc.distr)) return;
+  (B.soopen || []).forEach(r => { if((sc.prov == null && !provSel(r[0])) || !kemOk(r[4]) || !incOk(r[5]) || (sc.prov != null && r[0] !== sc.prov) || (sc.dist != null && r[1] !== sc.dist) || (sc.eksp != null && r[2] !== sc.eksp) || (sc.distr != null && r[3] !== sc.distr)) return;
     add(keyOf([null, r[0], r[1], r[2], 0, 0, 0, 0, r[3]]), 0, 0, r[6], r[7], r[0]); });
 }
 const sofAdd = o => (k, so, ship, b, t) => { o.so += so; o.soShip += ship; if(b != null){ o.soOpen = o.soOpen || [0, 0, 0]; o.soOpen[b] += t; } };
@@ -759,7 +761,7 @@ function buildNav(){
 let draft = null;
 function buildFilterPanel(){
   const cur = PER();
-  draft = {per: Object.assign({}, F.per), inc: F.inc, moda: F.moda, kem: F.kem, area: F.area, srcOff: new Set(F.srcOff), tgt: F.tgt,
+  draft = {per: Object.assign({}, F.per), inc: F.inc, moda: F.moda, kem: F.kem, area: F.area, srcOff: new Set(F.srcOff), tgt: F.tgt, prov: (F.prov || []).slice(),
            from: cur.from, to: cur.to, month: cur.month};
   renderFilterPanel();
 }
@@ -786,6 +788,8 @@ function renderFilterPanel(){
   const AREA_OPT = [['AP1', 'AP1'], ['NON', 'Non AP1'], ['ALL', 'Semua']];
   const area = areaOn() ? AREA_OPT.map(x => '<span data-area="' + x[0] + '" class="' + (draft.area === x[0] ? 'on' : '') + '">' + x[1] + '</span>').join('') : '';
   const areaTip = 'AP1 = provinsi di laporan Realisasi harian: ' + B.dims.prov.filter((p, i) => !NKP().has(i) && D.liveProv.has(i)).map(tc).join(', ') + '. NON AP1 = ' + [...NKP()].map(i => tc(B.dims.prov[i])).join(', ') + ' (tanpa target, tidak dihitung dalam capaian).';
+  const provs = [...D.liveProv].sort((a, b) => B.dims.prov[a].localeCompare(B.dims.prov[b]));
+  const provCh = '<span data-fprov="ALL" class="' + (!draft.prov.length ? 'on' : '') + '">Semua</span>' + provs.map(i => '<span data-fprov="' + i + '" class="' + (draft.prov.includes(i) ? 'on' : '') + '">' + esc(tc(B.dims.prov[i])) + '</span>').join('');
   const kemTip = 'Default ZAK. Target tersedia untuk: ' + [...D.tgtKem].map(k => KEMS()[k]).join(', ') + '. Kemasan tanpa target tidak dihitung dalam capaian.';
   const incTip = 'DARAT = pengiriman truk (FRC, FOT). LAUT = pengiriman kapal/kontainer (FOB, FAS, FRC KAPAL, FRC KONTAINER, FOT KONTAINER); truk pengangkut ke pelabuhan ikut moda laut. % pencapaian = realisasi incoterm terpilih vs target ' + tgtLbl() + '-nya sampai hari data terakhir. Target FRC dibagi ke ekspeditur, target FOT ke distributor.';
   const srcTip = 'Berlaku untuk semua halaman: peta, grafik, tabel, ekspeditur, distributor, armada & prognosa. Pilihan tersimpan selama sesi.';
@@ -795,6 +799,7 @@ function renderFilterPanel(){
     '<div class="fp-row">' + (kem ? '<div class="fp-group"><label class="fl">Kemasan' + tip(kemTip) + '</label><div class="fp-chips">' + kem + '</div></div>' : '<div class="fp-group"></div>') +
     '<div class="fp-group"><label class="fl">Target' + tip('SNOP = target resmi. Internal (sesuai rekap marketing) = SNOP × ' + tgtIntNow() + '.', true) + '</label><div class="fp-chips">' + tgt + '</div></div></div>' +
     (area ? '<div class="fp-row"><div class="fp-group"><label class="fl">Area' + tip(areaTip) + '</label><div class="fp-chips">' + area + '</div></div><div class="fp-group"></div></div>' : '') +
+    '<div class="fp-group" style="margin-bottom:18px"><label class="fl">Provinsi' + tip('Pilih satu atau beberapa provinsi; Semua = tanpa filter. Berlaku untuk semua halaman (peta, Top 10, tabel, ekspeditur, distributor, armada). Halaman provinsi sendiri selalu tampil.') + '</label><div class="fp-chips">' + provCh + '</div></div>' +
     '<div class="fp-group" style="margin-bottom:18px"><label class="fl">Source plant' + tip(srcTip) + '<span class="fp-all"><a data-srcall="1">Centang semua</a><a data-srcall="0">Hapus semua</a></span></label><div class="fp-cols">' + src + '</div></div>' +
     '<div class="fp-foot"><div class="fp-reset" data-act="reset">Reset filter</div><div class="fp-reset" data-act="laporan">Tampilan laporan harian</div><div class="fp-apply" data-act="apply">Terapkan</div></div>';
 }
@@ -805,17 +810,18 @@ function filterStrip(){
     '<span class="tag qk" data-qk="inc" title="Ganti incoterm"><b>' + incName() + '</b> &#9662;</span>' +
     '<span class="tag qk" data-qk="kem" title="Ganti kemasan"><b>' + (F.kem === 'ALL' ? 'RETAIL + CURAH' : esc(MKT[F.kem].toUpperCase())) + '</b> &#9662;</span>' +
     (areaOn() ? '<span class="tag qk" data-qk="area" title="Ganti area"><b>' + areaName() + '</b> &#9662;</span>' : '') +
+    '<span class="tag qk" data-qk="prov" title="Ganti provinsi"><b>' + esc(provName().toUpperCase()) + '</b> &#9662;</span>' +
     '<span class="tag">target <b>' + (F.tgt === 'INTERNAL' ? 'Internal' : 'SNOP') + '</b></span>' +
     '<span class="tag">' + srcTxt() + '</span>' +
     '<span class="edit qrep' + (isReportView() ? ' on' : '') + '" data-act="laporan" title="' + (isReportView() ? 'Kembali ke tampilan lengkap (semua moda, incoterm, plant & area)' : 'Sama dengan laporan Realisasi harian: AP1 · FRC TRUK · ZAK · CP Indarung · SNOP · bulan berjalan') + '">' + (isReportView() ? '&#10003; Laporan harian' : 'Laporan harian') + '</span>' +
     '<span class="edit" data-act="openfilter">Ubah filter &#9662;</span>';
 }
 /* "Laporan harian" quick view = the daily Realisasi report: AP1, FRC truk, ZAK, CP Indarung, SNOP, current month. */
-const REPORT_VIEW = () => ({per: {kind: 'month', month: D.months[D.months.length - 1]}, inc: 'FRC', moda: 'DARAT', kem: 'ZAK', area: 'AP1', srcOff: new Set(D.sources.filter(x => x !== DEFAULT_SRC)), tgt: 'SNOP'});
-const DEFAULT_VIEW = () => ({per: {kind: 'month', month: D.months[D.months.length - 1]}, inc: 'ALL', moda: 'ALL', kem: 'ZAK', area: 'ALL', srcOff: new Set(DEFAULT_SRC_OFF), tgt: 'SNOP'});
+const REPORT_VIEW = () => ({per: {kind: 'month', month: D.months[D.months.length - 1]}, inc: 'FRC', moda: 'DARAT', kem: 'ZAK', area: 'AP1', srcOff: new Set(D.sources.filter(x => x !== DEFAULT_SRC)), tgt: 'SNOP', prov: []});
+const DEFAULT_VIEW = () => ({per: {kind: 'month', month: D.months[D.months.length - 1]}, inc: 'ALL', moda: 'ALL', kem: 'ZAK', area: 'ALL', srcOff: new Set(DEFAULT_SRC_OFF), tgt: 'SNOP', prov: []});
 function isReportView(){
   const r = REPORT_VIEW(), p = F.per || {kind: 'month', month: D.months[D.months.length - 1]};
-  return F.inc === r.inc && F.kem === r.kem && F.area === r.area && F.tgt === r.tgt && p.kind === 'month' && p.month === r.per.month &&
+  return F.inc === r.inc && F.kem === r.kem && F.area === r.area && !(F.prov || []).length && F.tgt === r.tgt && p.kind === 'month' && p.month === r.per.month &&
     F.srcOff.size === r.srcOff.size && [...r.srcOff].every(x => F.srcOff.has(x));
 }
 /* Quick switches under the header (moda / incoterm / kemasan) - same filters as the filter panel, one click. */
@@ -825,6 +831,7 @@ function quickMenu(kind, anchor){
   if(kind === 'moda') items = ['DARAT', 'LAUT', 'ALL'].map(x => '<a href="javascript:void(0)" data-navmoda="' + x + '"' + on(F.moda, x) + '>' + (x === 'ALL' ? 'Semua moda' : 'Moda ' + MODA_LBL[x].toLowerCase()) + ck(F.moda, x) + '</a>').join('');
   else if(kind === 'inc') items = modaIncs(F.moda).map(x => [x, incLbl(x)]).concat([['ALL', F.moda === 'ALL' ? 'Semua incoterm' : 'Semua ' + MODA_LBL[F.moda].toLowerCase()]]).map(x => '<a href="javascript:void(0)" data-navinc="' + x[0] + '"' + on(F.inc, x[0]) + '>' + x[1] + ck(F.inc, x[0]) + '</a>').join('');
   else if(kind === 'area') items = [['AP1', 'AP1'], ['NON', 'NON AP1'], ['ALL', 'AP1 + NON AP1']].map(x => '<a href="javascript:void(0)" data-navarea="' + x[0] + '"' + on(F.area, x[0]) + '>' + x[1] + ck(F.area, x[0]) + '</a>').join('');
+  else if(kind === 'prov') items = '<a href="javascript:void(0)" data-navprov="ALL"' + (!(F.prov || []).length ? ' class="on"' : '') + '>Semua provinsi' + (!(F.prov || []).length ? '<span>&#10003;</span>' : '') + '</a>' + [...D.liveProv].sort((a, b) => B.dims.prov[a].localeCompare(B.dims.prov[b])).map(i => { const o = (F.prov || []).length === 1 && F.prov[0] === i; return '<a href="javascript:void(0)" data-navprov="' + i + '"' + (o ? ' class="on"' : '') + '>' + esc(tc(B.dims.prov[i])) + (o ? '<span>&#10003;</span>' : '') + '</a>'; }).join('');
   else items = kemOpts().map(x => '<a href="javascript:void(0)" data-navkem="' + x[0] + '"' + on(F.kem, x[0]) + '>' + x[1] + ck(F.kem, x[0]) + '</a>').join('');
   closeQuick();
   const pop = document.createElement('div'); pop.className = 'qk-pop mega-list'; pop.id = 'qkPop'; pop.innerHTML = items;
@@ -844,7 +851,7 @@ function applyFilter(){
   if(k === 'range'){ let a = draft.from || B.days[0], b = draft.to || B.asOf; if(a > b) [a, b] = [b, a]; F.per = {kind: 'range', from: a, to: b}; }
   else if(k === 'ytd') F.per = {kind: 'ytd'};
   else F.per = {kind: 'month', month: draft.per.month || D.months[D.months.length - 1]};
-  F.inc = draft.inc; F.moda = draft.moda || 'ALL'; F.kem = kemGrp(draft.kem === 'ALL' ? null : draft.kem); if(draft.kem === 'ALL') F.kem = 'ALL'; F.area = draft.area || 'ALL'; F.srcOff = new Set(draft.srcOff); F.tgt = draft.tgt || 'SNOP';
+  F.inc = draft.inc; F.moda = draft.moda || 'ALL'; F.kem = kemGrp(draft.kem === 'ALL' ? null : draft.kem); if(draft.kem === 'ALL') F.kem = 'ALL'; F.area = draft.area || 'ALL'; F.srcOff = new Set(draft.srcOff); F.tgt = draft.tgt || 'SNOP'; F.prov = (draft.prov || []).slice();
   saveFilter();
   closeNav(); closeFilter(); buildNav(); filterStrip(); route();
 }
@@ -859,7 +866,7 @@ function openFilter(){
 function restoreFilter(){
   try {
     const s = JSON.parse(sessionStorage.getItem('osp_f3') || 'null');
-    if(s && s.per && (s.per.kind !== 'month' || D.months.includes(s.per.month))){ F.per = s.per; F.inc = s.inc; F.moda = s.moda || (s.inc === 'ALL' ? 'ALL' : modaOf(s.inc)); F.kem = s.kem === 'ALL' ? 'ALL' : kemGrp(s.kem); F.area = s.area || 'ALL'; F.srcOff = new Set(s.srcOff); F.tgt = s.tgt === 'INTERNAL' ? 'INTERNAL' : 'SNOP'; }
+    if(s && s.per && (s.per.kind !== 'month' || D.months.includes(s.per.month))){ F.per = s.per; F.inc = s.inc; F.moda = s.moda || (s.inc === 'ALL' ? 'ALL' : modaOf(s.inc)); F.kem = s.kem === 'ALL' ? 'ALL' : kemGrp(s.kem); F.area = s.area || 'ALL'; F.srcOff = new Set(s.srcOff); F.tgt = s.tgt === 'INTERNAL' ? 'INTERNAL' : 'SNOP'; F.prov = (s.prov || []).map(n => B.dims.prov.indexOf(n)).filter(i => i >= 0); }
   } catch(e) {}
 }
 
@@ -1364,7 +1371,7 @@ function distrSO(m, sc){
   if(!B.sodd || !soOn()) return 0;
   const per = toPer(m), m0 = per.from.slice(0, 7), m9 = per.to.slice(0, 7);
   let v = 0;
-  B.sodd.forEach(r => { const mo = r[0].slice(0, 7); if(mo < m0 || mo > m9 || !kemOk(r[5]) || !soIncOk(r) || (sc.distr != null && r[3] !== sc.distr) || (sc.prov != null && r[1] !== sc.prov) || (sc.dist != null && r[2] !== sc.dist)) return; v += r[4]; });
+  B.sodd.forEach(r => { const mo = r[0].slice(0, 7); if(mo < m0 || mo > m9 || (sc.prov == null && !provSel(r[1])) || !kemOk(r[5]) || !soIncOk(r) || (sc.distr != null && r[3] !== sc.distr) || (sc.prov != null && r[1] !== sc.prov) || (sc.dist != null && r[2] !== sc.dist)) return; v += r[4]; });
   return v;
 }
 function annotateDistrTargets(nodes, m, base, ctx, only){
@@ -3252,11 +3259,11 @@ function bindEvents(){
     const qk = e.target.closest('[data-qk]');
     if(qk){ e.stopPropagation(); const was = $('#qkPop') && $('#qkPop').dataset.k === qk.dataset.qk; closeQuick(); closeNav(); closeFilter(); if(!was){ quickMenu(qk.dataset.qk, qk); $('#qkPop').dataset.k = qk.dataset.qk; } return; }
     if(!e.target.closest('#qkPop')) closeQuick();
-    const ni = e.target.closest('[data-navinc],[data-navkem],[data-navmoda],[data-navarea]');
+    const ni = e.target.closest('[data-navinc],[data-navkem],[data-navmoda],[data-navarea],[data-navprov]');
     if(ni){
       e.preventDefault();
       if(ni.dataset.navmoda != null){ F.moda = ni.dataset.navmoda; F.inc = F.moda === 'DARAT' ? 'FRC' : 'ALL'; modaPlants(F.moda); }
-      else if(ni.dataset.navinc != null) setInc(ni.dataset.navinc); else if(ni.dataset.navarea != null) F.area = ni.dataset.navarea; else F.kem = ni.dataset.navkem === 'ALL' ? 'ALL' : kemGrp(ni.dataset.navkem);
+      else if(ni.dataset.navinc != null) setInc(ni.dataset.navinc); else if(ni.dataset.navarea != null) F.area = ni.dataset.navarea; else if(ni.dataset.navprov != null) F.prov = ni.dataset.navprov === 'ALL' ? [] : [+ni.dataset.navprov]; else F.kem = ni.dataset.navkem === 'ALL' ? 'ALL' : kemGrp(ni.dataset.navkem);
       saveFilter();
       closeQuick(); closeNav(); closeFilter(); buildNav(); filterStrip(); route(); return;
     }
@@ -3288,6 +3295,9 @@ function bindEvents(){
     }
     const tg = e.target.closest('[data-tgt]');
     if(tg){ draft.tgt = tg.dataset.tgt; $$('[data-tgt]').forEach(x => x.classList.toggle('on', x === tg)); return; }
+    const fpv = e.target.closest('[data-fprov]');
+    if(fpv){ const v = fpv.dataset.fprov; if(v === 'ALL') draft.prov = []; else { const i = +v; draft.prov = draft.prov.includes(i) ? draft.prov.filter(x => x !== i) : draft.prov.concat(i); }
+      $$('[data-fprov]').forEach(x => x.classList.toggle('on', x.dataset.fprov === 'ALL' ? !draft.prov.length : draft.prov.includes(+x.dataset.fprov))); return; }
     const arEl = e.target.closest('[data-area]');
     if(arEl){ draft.area = arEl.dataset.area; $$('[data-area]').forEach(x => x.classList.toggle('on', x === arEl)); return; }
     const kemEl = e.target.closest('[data-kem]');
