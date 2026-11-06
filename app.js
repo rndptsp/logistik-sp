@@ -793,6 +793,12 @@ function buildNav(){
   /* Plant menu: every plant with shipments or targets in the period (plant filter not applied, like the plant pages) */
   const pl = plantList().map(o => Object.assign(o, total(PER(), {src: o.key}))).filter(o => o.vol > 0 || o.tgt > 0).sort((a, b) => b.vol - a.vol);
   $('#navPlantList').innerHTML = pl.map(o => '<a href="' + plantHref(o.n) + '"' + (F.srcOff.has(o.n) ? ' class="off" title="tidak dicentang di filter plant"' : '') + '>' + esc(o.n) + '<span' + (o.hasTgt ? ' style="color:' + tierColor(o.pct) + '"' : '') + '>' + (o.hasTgt ? pctTxt(o.pct) : fmt(o.vol) + ' t') + '</span></a>').join('') || '<span class="empty">—</span>';
+  if($('#navBrandList')){   // brand menu (Rendy): Retail and Curah brands of the period, with % Ach. against the SNOP brand target
+    const nb = () => { const rows = brandRows(PER()); if(!rows.length) return ''; const list = brandAttach(brandAgg(rows, r => r[6]), brandTgt(PER(), {}, TB_KEY.brand)).filter(o => o.vol > 0);
+      return list.map(o => '<a href="#/brand/' + enc((B.dims.brand || [])[o.key]) + '">' + esc(brandName(o.key)) + '<span' + (o.hasTgt ? ' style="color:' + tierColor(o.pct) + '"' : '') + '>' + (o.hasTgt ? pctTxt(o.pct) : fmt(o.vol) + ' t') + '</span></a>').join(''); };
+    const sv = F.kem, h = !B.brand ? '' : (F.kem === 'ALL' ? ['ZAK', 'CURAH'] : [F.kem]).map(k => { F.kem = k; const x = nb(); return x ? '<div class="mega-sub">' + MKT[k] + '</div>' + x : ''; }).join('');
+    F.kem = sv; $('#navBrandList').innerHTML = h || '<span class="empty">—</span>';
+  }
   $('#dayLabel').textContent = 'Data s.d. ' + dayLabel(B.asOf);
 }
 let draft = null;
@@ -1793,10 +1799,15 @@ function mapHero(provRows, t, head, chg, isLatest){
   const m = PER();
   const rank = provRows.slice().sort((a, b) => (b.pct == null ? -1 : b.pct) - (a.pct == null ? -1 : a.pct) || b.vol - a.vol);
   const maxV = Math.max(1, ...rank.map(o => o.vol));
-  const list = rank.map((o, i) => {
+  const provRow = (o, i) => {
     const name = B.dims.prov[o.key];
     return '<a class="mh-row" href="#/provinsi/' + enc(name) + '" data-prov="' + esc(name) + '"><span class="mh-rk">' + (i + 1) + '</span><span class="mh-nm">' + esc(tc(name)) + '<i style="width:' + (o.vol / maxV * 100) + '%;background:' + tierColor(o.pct) + '"></i></span><span class="mh-tn">' + fmt(o.vol) + ' t</span><span class="mh-pc" style="color:' + tierColor(o.pct) + '">' + pctTxt(o.pct) + '</span><span class="mh-so">' + (o.of == null ? '–' : pctTxt(o.of)) + '</span></a>';
-  }).join('');
+  };
+  /* grouped per region (Rendy): region line (total, % Ach., % OF), then its provinces ranked inside the region */
+  const regs = summarize('reg', m), grp = ['NS', 'CS', 'LAIN'].map(k => ({k, rs: rank.filter(o => regOf(o.key) === k)})).filter(g => g.rs.length);
+  const list = grp.length > 1 || (grp.length && grp[0].k !== 'LAIN') ? grp.map(g => { const r = regs.get(g.k) || {};
+      return '<a class="mh-row mh-reg" href="javascript:void(0)" data-navreg="' + g.k + '" title="Filter ke region ini"><span></span><span class="mh-nm">' + esc(REG_LBL[g.k]) + '</span><span class="mh-tn">' + fmt(r.vol || 0) + ' t</span><span class="mh-pc" style="color:' + tierColor(r.pct) + '">' + (g.k === 'LAIN' ? '–' : pctTxt(r.pct)) + '</span><span class="mh-so">' + (r.of == null ? '–' : pctTxt(r.of)) + '</span></a>' +
+        g.rs.map(provRow).join(''); }).join('') : rank.map(provRow).join('');
   const chip = (l, v, sub, color) => '<div class="mh-chip"><div class="l">' + l + '</div><div class="v"' + (color ? ' style="color:' + color + '"' : '') + '>' + v + '</div>' + (sub ? '<div class="s">' + sub + '</div>' : '') + '</div>';
   return '<section class="map-hero"><div class="mh-bg"></div><div class="mh-inner">' +
     '<div class="mh-left"><div class="eyebrow">Peta capaian · ' + esc(m.sub) + '</div>' +

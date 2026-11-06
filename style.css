@@ -921,3 +921,7 @@ a.t10-row:hover .t10-nm{color:var(--red)}
 .tbl tr.subtot.top td{background:#E4E9EC;border-top:2px solid #B7C1C8}
 .tbl tr.subtot.top td.fz{background:#E4E9EC}
 .tbl tr.reg-kid td.name{padding-left:28px;font-weight:600}
+/* hero rank list: region lines (Rendy) */
+.mh-row.mh-reg{background:rgba(255,255,255,.07);border-top:1px solid rgba(255,255,255,.18);font-weight:800;font-size:12px;margin-top:6px}
+.mh-row.mh-reg .mh-nm{color:#fff;text-transform:uppercase;letter-spacing:.03em}
+.mega-list .mega-sub{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em;color:var(--sub);padding:8px 10px 2px;grid-column:1/-1}
