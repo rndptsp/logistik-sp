@@ -247,7 +247,7 @@ const areaOn = () => NKP().size > 0;
 /* Region (senior sales manager, Nov 2026): NS = Aceh, Sumatera Utara, Kepulauan Riau; CS = Sumatera Barat, Riau, Jambi, Bengkulu;
    any other province = Lainnya. F.reg: 'ALL' | 'NS' | 'CS' | 'LAIN'. */
 const REG_LBL = {NS: 'North Sumatera', CS: 'Central Sumatera', LAIN: 'Lainnya'};
-const regOfName = n => { n = String(n || '').toUpperCase(); return /ACEH|SUMATERA UTARA|SUMUT|KEPULAUAN RIAU|KEPRI/.test(n) ? 'NS' : /SUMATERA BARAT|SUMBAR|^RIAU$|JAMBI|BENGKULU/.test(n) ? 'CS' : 'LAIN'; };
+const regOfName = n => { n = String(n || '').toUpperCase(); return /ACEH|SUMATERA UTARA|SUMUT|KEPULAUAN RIAU|RIAU KEPULAUAN|KEPRI/.test(n) ? 'NS' : /SUMATERA BARAT|SUMBAR|RIAU|JAMBI|BENGKULU/.test(n) ? 'CS' : 'LAIN'; };   // Riau daratan = CS, Riau kepulauan = NS
 const regOf = p => { const c = B._reg || (B._reg = (B.dims.prov || []).map(regOfName)); return c[p] || 'LAIN'; };
 const regName = () => F.reg && F.reg !== 'ALL' ? REG_LBL[F.reg] : 'semua region';
 const provSel = p => (!F.reg || F.reg === 'ALL' || regOf(p) === F.reg) && (!F.prov || !F.prov.length || F.prov.includes(p));   // region + province filter (Rendy)
@@ -699,14 +699,16 @@ function tableInner(id){
   };
   let body;
   const rg = T.opt.prov ? ['NS', 'CS', 'LAIN'].map(k => ({k, rs: rows.filter(r => regOf(T.opt.prov(r)) === k)})).filter(g => g.rs.length) : [];
-  if(rg.length > 1){   // region blocks with a subtotal each
+  if(rg.length > 1 || (T.opt.subTop && rg.length)){   // region blocks with a subtotal each (region table: always a region header)
     const nameI = T.cols.findIndex(c => /\bname\b/.test(c.cls || '')), pvs = T.cols.filter(c => c.pv && c.keyOf);
     body = rg.map(g => {
       const sub = regSum(g.rs, 'reg:' + g.k); if(T.opt.subFix) T.opt.subFix(sub);
       pvs.forEach(c => c.pv.set(sub.key, g.rs.reduce((a, r) => a + (c.pv.get(c.keyOf(r)) || 0), 0)));
-      if(g.k === 'LAIN') return g.rs.map(rowHTML).join('');   // not a region: rows only, no subtotal
-      return g.rs.map(rowHTML).join('') + '<tr class="subtot">' + T.cols.map((c, i) => '<td class="' + (c.cls || '') + (c.num ? ' num' : '') + kc(c) + fz(i) + '"' + (c.num && c.style ? ' style="' + c.style(sub) + '"' : '') + '>' +
-        (i === nameI ? '<b>Subtotal ' + esc(REG_LBL[g.k]) + '</b>' : /\brank\b/.test(c.cls || '') || !c.num ? '' : (c.html ? c.html(sub, -1) : esc(c.val(sub)))) + '</td>').join('') + '</tr>';
+      if(g.k === 'LAIN' && !T.opt.subTop) return g.rs.map(rowHTML).join('');   // not a region: rows only, no subtotal
+      const subRow = '<tr class="subtot' + (T.opt.subTop ? ' top' : '') + '">' + T.cols.map((c, i) => '<td class="' + (c.cls || '') + (c.num ? ' num' : '') + kc(c) + fz(i) + '"' + (c.num && c.style ? ' style="' + c.style(sub) + '"' : '') + '>' +
+        (i === nameI ? (T.opt.subTop ? '<a href="javascript:void(0)" data-navreg="' + g.k + '" title="Filter ke region ini"><b>' + esc(REG_LBL[g.k]) + '</b></a>' : '<b>Subtotal ' + esc(REG_LBL[g.k]) + '</b>') : /\brank\b/.test(c.cls || '') || !c.num ? '' : (c.html ? c.html(sub, -1) : esc(c.val(sub)))) + '</td>').join('') + '</tr>';
+      const kids = g.rs.map(rowHTML).join('');
+      return T.opt.subTop ? subRow + kids.replace(/<tr( class="go")?/g, (m0, go) => '<tr class="reg-kid' + (go ? ' go' : '') + '"') : kids + subRow;
     }).join('');
   } else body = rows.slice(0, lim).map(rowHTML).join('');
   const tot = T.opt.total ? '<tr class="total">' + T.cols.map((c, i) => '<td class="' + (c.num ? 'num' : '') + kc(c) + fz(i) + '">' + (c.total != null ? c.total : c.cls === 'name' ? 'TOTAL' : '') + '</td>').join('') + '</tr>' : '';
@@ -1848,13 +1850,11 @@ function incTable(m, sc){
 }
 /* Per region (NS / CS / Lainnya), same columns as the province table; a click on the name sets the region filter. */
 function regionTable(m){
-  return kemGroups(() => { const rows = [...summarize('reg', m).values()].filter(o => o.vol > 0 || o.tgt > 0).sort((a, b) => ['NS', 'CS', 'LAIN'].indexOf(a.key) - ['NS', 'CS', 'LAIN'].indexOf(b.key));
+  return kemGroups(() => { const rows = [...summarize('prov', m).values()].filter(o => o.vol > 0 || o.tgt > 0).sort((a, b) => b.vol - a.vol);
     if(!rows.length) return '';
-    const t = total(m), provs = k => [...D.liveProv].filter(i => regOf(i) === k && areaProvOk(i)).map(i => tc(B.dims.prov[i])).sort().join(', ');
-    const pv = prevVols('reg', m), cols = [{h: 'Region', cls: 'name', val: r => REG_LBL[r.key], html: r => '<a href="javascript:void(0)" data-navreg="' + r.key + '" title="Filter ke region ini">' + esc(REG_LBL[r.key]) + '</a><small>' + esc(provs(r.key)) + '</small>'},
-      C.fm, C.tgt, C.vol(), C.pct, C.gap, C.so, C.of, C.trips, vsCol(pv, m)].map(c => Object.assign({}, c));
+    const t = total(m), pv = prevVols('prov', m), cols = [{h: 'Region / provinsi', cls: 'name', val: r => tc(B.dims.prov[r.key])}, C.fm, C.tgt, C.vol(), C.pct, C.gap, C.so, C.of, C.trips, vsCol(pv, m)].map(c => Object.assign({}, c));
     cols[0].total = '<b>Total</b>'; cols[1].total = fmt(t.tgtFull); cols[2].total = fmt(t.tgt); cols[3].total = fmt(t.vol); cols[4].total = pctTxt(t.pct); cols[5].total = signed(t.gap); cols[6].total = fmt(t.so); cols[7].total = pctTxt(t.of); cols[8].total = fmt(t.trips); cols[9].total = vsTot(t.vol, total(prevPer(toPer(m))).vol);
-    return table(cols, rows, {total: rows.length > 1}); }, kemSub(m));
+    return table(cols, rows, {go: r => '#/provinsi/' + enc(B.dims.prov[r.key]), total: true, prov: r => r.key, subTop: true}); }, kemSub(m));
 }
 function pageProvList(){
   const rows = ranked(summarize('prov', PER()));
@@ -1865,9 +1865,8 @@ function pageProvList(){
   return table(cols, rows, {go: r => '#/provinsi/' + enc(B.dims.prov[r.key]), total: true, prov: r => r.key}); };
   page('<div class="wrap">' + crumb([['Wilayah'], ['Semua provinsi']]) +
     '<div class="dp-head"><div><div class="nm">Semua Provinsi</div><div class="sub">Capaian tonase &amp; rank · ' + periodSub() + '</div></div><div class="badges"><div class="dp-badge ' + tierClass(t.pct) + '">Total ' + pctTxt(t.pct) + ' dari target</div></div></div>' +
-    '<div class="section-head"><div class="section-title">Per region</div><div class="section-sub">NS = Aceh, Sumut, Kepri · CS = Sumbar, Riau, Jambi, Bengkulu</div></div>' + regionTable(PER()) +
     incPerf(PER(), {}) +
-    '<div class="section-head"><div class="section-title">Per provinsi</div></div>' +
+    '<div class="section-head"><div class="section-title">Per region &amp; provinsi</div><div class="section-sub">NS = Aceh, Sumut, Riau kepulauan · CS = Sumbar, Riau daratan, Jambi, Bengkulu</div></div>' +
     (kemGroups(provTbl, kemSub(PER())) || '<div class="dp-review">Tidak ada data untuk filter ini.</div>') +
     '<div class="dp-cols even">' + trendPanel({}, 'mingguan', 'Tren seluruh provinsi') + sourcePanel({}) + '</div>' +
     '</div>', 'wilayah');

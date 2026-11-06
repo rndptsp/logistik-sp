@@ -918,3 +918,6 @@ a.t10-row:hover .t10-nm{color:var(--red)}
 /* region subtotal rows in province tables (Rendy) */
 .tbl tr.subtot td{background:#EEF1F3;border-top:1px solid #C9D0D5;font-weight:700}
 .tbl tr.subtot td.fz{background:#EEF1F3}
+.tbl tr.subtot.top td{background:#E4E9EC;border-top:2px solid #B7C1C8}
+.tbl tr.subtot.top td.fz{background:#E4E9EC}
+.tbl tr.reg-kid td.name{padding-left:28px;font-weight:600}
