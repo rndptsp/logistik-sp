@@ -77,7 +77,7 @@ const soTip = o => o.so > 0 ? '|SO ' + fmt(o.so) + ' t · % OF ' + pctTxt(o.of) 
 /* ===================== State ===================== */
 let B = null;            // decrypted bundle
 let D = null;            // derived indexes
-const F = { per: null, inc: 'ALL', moda: 'ALL', area: 'ALL', srcOff: new Set(), tgt: 'SNOP', kem: 'ZAK', prov: [] };   // prov: selected province indexes, [] = all (Rendy)   // per: {kind:'month',month} | {kind:'ytd'} | {kind:'range',from,to}
+const F = { per: null, inc: 'ALL', moda: 'ALL', area: 'ALL', srcOff: new Set(), tgt: 'SNOP', kem: 'ZAK', prov: [], reg: 'ALL' };   // prov: selected province indexes, [] = all (Rendy)   // per: {kind:'month',month} | {kind:'ytd'} | {kind:'range',from,to}
 const DEFAULT_SRC = 'CP INDARUNG';   // the main plant (labels only); default view = every plant, moda & incoterm, kemasan ZAK, SNOP, area Semua
 let DEFAULT_SRC_OFF = [];
 
@@ -170,7 +170,7 @@ const soIncOk = r => r[6] == null ? true : incOk(r[6]);
 const soOn = () => soAll() || F.inc === 'FRC' || (F.inc === 'ALL' && F.moda !== 'LAUT');
 const incName = () => F.inc === 'ALL' ? 'semua incoterm' + (F.moda === 'ALL' ? '' : ' ' + MODA_LBL[F.moda].toLowerCase()) : incLbl(F.inc);
 const setInc = (inc, moda) => { F.inc = inc; F.moda = moda || (inc === 'ALL' ? F.moda : modaOf(inc)); };
-const saveFilter = () => { try { sessionStorage.setItem('osp_f3', JSON.stringify({per: F.per, inc: F.inc, moda: F.moda, kem: F.kem, area: F.area, srcOff: [...F.srcOff], tgt: F.tgt, prov: (F.prov || []).map(i => B.dims.prov[i])})); } catch(e) {} };
+const saveFilter = () => { try { sessionStorage.setItem('osp_f3', JSON.stringify({per: F.per, inc: F.inc, moda: F.moda, kem: F.kem, area: F.area, srcOff: [...F.srcOff], tgt: F.tgt, prov: (F.prov || []).map(i => B.dims.prov[i]), reg: F.reg})); } catch(e) {} };
 
 /* ===================== Periods ===================== */
 /* Every page works on a period {from, to} (ISO dates). A "month" is just one kind of period.
@@ -244,15 +244,21 @@ const NKP = () => B._nk || (B._nk = new Set(B.dims.nonKin || []));
    NON AP1 = the non-kinerja provinces (shown without target). Default Semua (both); AP1 matches the daily report. A province's own
    page always shows its data. Non-AP1 realisasi never counts toward achievement. */
 const areaOn = () => NKP().size > 0;
-const provSel = p => !F.prov || !F.prov.length || F.prov.includes(p);   // province filter (Rendy)
+/* Region (senior sales manager, Nov 2026): NS = Aceh, Sumatera Utara, Kepulauan Riau; CS = Sumatera Barat, Riau, Jambi, Bengkulu;
+   any other province = Lainnya. F.reg: 'ALL' | 'NS' | 'CS' | 'LAIN'. */
+const REG_LBL = {NS: 'North Sumatera', CS: 'Central Sumatera', LAIN: 'Lainnya'};
+const regOfName = n => { n = String(n || '').toUpperCase(); return /ACEH|SUMATERA UTARA|SUMUT|KEPULAUAN RIAU|KEPRI/.test(n) ? 'NS' : /SUMATERA BARAT|SUMBAR|^RIAU$|JAMBI|BENGKULU/.test(n) ? 'CS' : 'LAIN'; };
+const regOf = p => { const c = B._reg || (B._reg = (B.dims.prov || []).map(regOfName)); return c[p] || 'LAIN'; };
+const regName = () => F.reg && F.reg !== 'ALL' ? REG_LBL[F.reg] : 'semua region';
+const provSel = p => (!F.reg || F.reg === 'ALL' || regOf(p) === F.reg) && (!F.prov || !F.prov.length || F.prov.includes(p));   // region + province filter (Rendy)
 const areaProvOk = p => provSel(p) && (!areaOn() || F.area === 'ALL' || (F.area === 'AP1') !== NKP().has(p));
 const provName = () => !F.prov || !F.prov.length ? 'semua provinsi' : F.prov.length <= 2 ? F.prov.map(i => tc(B.dims.prov[i])).join(', ') : F.prov.length + ' provinsi';
 const areaName = () => F.area === 'ALL' ? 'AP1 + NON AP1' : F.area === 'AP1' ? 'AP1' : 'NON AP1';
 const nkAch = p => F.area !== 'AP1' || !NKP().has(p);   // non-kinerja provinces (Sumsel) count for capaian unless the filter is AP1 only (Rendy)
 const nkSkip = (p, group, sc) => !areaProvOk(p) && (sc || {}).prov !== p;   // AP1 only: non-kinerja provinces out of every total (except their own page)
-const FK = {prov: f => f[3], dist: f => f[4], eksp: f => f[5], src: f => f[2], all: () => 0};
-const TK = {prov: t => t[1], dist: t => t[2], eksp: t => t[3], src: t => t[4], all: () => 0};
-const SK = {prov: s => s[1], dist: s => s[2], eksp: s => s[3], src: () => null, all: () => 0};
+const FK = {reg: f => regOf(f[3]), prov: f => f[3], dist: f => f[4], eksp: f => f[5], src: f => f[2], all: () => 0};
+const TK = {reg: t => regOf(t[1]), prov: t => t[1], dist: t => t[2], eksp: t => t[3], src: t => t[4], all: () => 0};
+const SK = {reg: s => regOf(s[1]), prov: s => s[1], dist: s => s[2], eksp: s => s[3], src: () => null, all: () => 0};
 function scopeOkF(f, sc){ return (sc.src == null || f[2] === sc.src) && (sc.prov == null || f[3] === sc.prov) && (sc.dist == null || f[4] === sc.dist) && (sc.eksp == null || f[5] === sc.eksp); }
 function scopeOkT(t, sc){ return (sc.src == null || t[4] === sc.src) && (sc.prov == null || t[1] === sc.prov) && (sc.dist == null || t[2] === sc.dist) && (sc.eksp == null || t[3] === sc.eksp); }
 
@@ -761,7 +767,7 @@ function buildNav(){
 let draft = null;
 function buildFilterPanel(){
   const cur = PER();
-  draft = {per: Object.assign({}, F.per), inc: F.inc, moda: F.moda, kem: F.kem, area: F.area, srcOff: new Set(F.srcOff), tgt: F.tgt, prov: (F.prov || []).slice(),
+  draft = {per: Object.assign({}, F.per), inc: F.inc, moda: F.moda, kem: F.kem, area: F.area, srcOff: new Set(F.srcOff), tgt: F.tgt, prov: (F.prov || []).slice(), reg: F.reg || 'ALL',
            from: cur.from, to: cur.to, month: cur.month};
   renderFilterPanel();
 }
@@ -788,7 +794,8 @@ function renderFilterPanel(){
   const AREA_OPT = [['AP1', 'AP1'], ['NON', 'Non AP1'], ['ALL', 'Semua']];
   const area = areaOn() ? AREA_OPT.map(x => '<span data-area="' + x[0] + '" class="' + (draft.area === x[0] ? 'on' : '') + '">' + x[1] + '</span>').join('') : '';
   const areaTip = 'AP1 = provinsi di laporan Realisasi harian: ' + B.dims.prov.filter((p, i) => !NKP().has(i) && D.liveProv.has(i)).map(tc).join(', ') + '. NON AP1 = ' + [...NKP()].map(i => tc(B.dims.prov[i])).join(', ') + ' (tanpa target, tidak dihitung dalam capaian).';
-  const provs = [...D.liveProv].sort((a, b) => B.dims.prov[a].localeCompare(B.dims.prov[b]));
+  const provs = [...D.liveProv].filter(i => !draft.reg || draft.reg === 'ALL' || regOf(i) === draft.reg).sort((a, b) => B.dims.prov[a].localeCompare(B.dims.prov[b]));
+  const regCh = [['ALL', 'Semua'], ['NS', 'North Sumatera'], ['CS', 'Central Sumatera']].map(x => '<span data-freg="' + x[0] + '" class="' + ((draft.reg || 'ALL') === x[0] ? 'on' : '') + '">' + x[1] + '</span>').join('');
   const provCh = '<span data-fprov="ALL" class="' + (!draft.prov.length ? 'on' : '') + '">Semua</span>' + provs.map(i => '<span data-fprov="' + i + '" class="' + (draft.prov.includes(i) ? 'on' : '') + '">' + esc(tc(B.dims.prov[i])) + '</span>').join('');
   const kemTip = 'Default ZAK. Target tersedia untuk: ' + [...D.tgtKem].map(k => KEMS()[k]).join(', ') + '. Kemasan tanpa target tidak dihitung dalam capaian.';
   const incTip = 'DARAT = pengiriman truk (FRC, FOT). LAUT = pengiriman kapal/kontainer (FOB, FAS, FRC KAPAL, FRC KONTAINER, FOT KONTAINER); truk pengangkut ke pelabuhan ikut moda laut. % pencapaian = realisasi incoterm terpilih vs target ' + tgtLbl() + '-nya sampai hari data terakhir. Target FRC dibagi ke ekspeditur, target FOT ke distributor.';
@@ -799,6 +806,7 @@ function renderFilterPanel(){
     '<div class="fp-row">' + (kem ? '<div class="fp-group"><label class="fl">Kemasan' + tip(kemTip) + '</label><div class="fp-chips">' + kem + '</div></div>' : '<div class="fp-group"></div>') +
     '<div class="fp-group"><label class="fl">Target' + tip('SNOP = target resmi. Internal (sesuai rekap marketing) = SNOP × ' + tgtIntNow() + '.', true) + '</label><div class="fp-chips">' + tgt + '</div></div></div>' +
     (area ? '<div class="fp-row"><div class="fp-group"><label class="fl">Area' + tip(areaTip) + '</label><div class="fp-chips">' + area + '</div></div><div class="fp-group"></div></div>' : '') +
+    '<div class="fp-group" style="margin-bottom:14px"><label class="fl">Region' + tip('NS (North Sumatera) = Aceh, Sumatera Utara, Kepulauan Riau. CS (Central Sumatera) = Sumatera Barat, Riau, Jambi, Bengkulu (pembagian senior sales manager). Provinsi lain hanya tampil pada Semua.') + '</label><div class="fp-chips">' + regCh + '</div></div>' +
     '<div class="fp-group" style="margin-bottom:18px"><label class="fl">Provinsi' + tip('Pilih satu atau beberapa provinsi; Semua = tanpa filter. Berlaku untuk semua halaman (peta, Top 10, tabel, ekspeditur, distributor, armada). Halaman provinsi sendiri selalu tampil.') + '</label><div class="fp-chips">' + provCh + '</div></div>' +
     '<div class="fp-group" style="margin-bottom:18px"><label class="fl">Source plant' + tip(srcTip) + '<span class="fp-all"><a data-srcall="1">Centang semua</a><a data-srcall="0">Hapus semua</a></span></label><div class="fp-cols">' + src + '</div></div>' +
     '<div class="fp-foot"><div class="fp-reset" data-act="reset">Reset filter</div><div class="fp-reset" data-act="laporan">Tampilan laporan harian</div><div class="fp-apply" data-act="apply">Terapkan</div></div>';
@@ -810,6 +818,7 @@ function filterStrip(){
     '<span class="tag qk" data-qk="inc" title="Ganti incoterm"><b>' + incName() + '</b> &#9662;</span>' +
     '<span class="tag qk" data-qk="kem" title="Ganti kemasan"><b>' + (F.kem === 'ALL' ? 'RETAIL + CURAH' : esc(MKT[F.kem].toUpperCase())) + '</b> &#9662;</span>' +
     (areaOn() ? '<span class="tag qk" data-qk="area" title="Ganti area"><b>' + areaName() + '</b> &#9662;</span>' : '') +
+    '<span class="tag qk" data-qk="reg" title="Ganti region"><b>' + esc(regName().toUpperCase()) + '</b> &#9662;</span>' +
     '<span class="tag qk" data-qk="prov" title="Ganti provinsi"><b>' + esc(provName().toUpperCase()) + '</b> &#9662;</span>' +
     '<span class="tag">target <b>' + (F.tgt === 'INTERNAL' ? 'Internal' : 'SNOP') + '</b></span>' +
     '<span class="tag">' + srcTxt() + '</span>' +
@@ -817,11 +826,11 @@ function filterStrip(){
     '<span class="edit" data-act="openfilter">Ubah filter &#9662;</span>';
 }
 /* "Laporan harian" quick view = the daily Realisasi report: AP1, FRC truk, ZAK, CP Indarung, SNOP, current month. */
-const REPORT_VIEW = () => ({per: {kind: 'month', month: D.months[D.months.length - 1]}, inc: 'FRC', moda: 'DARAT', kem: 'ZAK', area: 'AP1', srcOff: new Set(D.sources.filter(x => x !== DEFAULT_SRC)), tgt: 'SNOP', prov: []});
-const DEFAULT_VIEW = () => ({per: {kind: 'month', month: D.months[D.months.length - 1]}, inc: 'ALL', moda: 'ALL', kem: 'ZAK', area: 'ALL', srcOff: new Set(DEFAULT_SRC_OFF), tgt: 'SNOP', prov: []});
+const REPORT_VIEW = () => ({per: {kind: 'month', month: D.months[D.months.length - 1]}, inc: 'FRC', moda: 'DARAT', kem: 'ZAK', area: 'AP1', srcOff: new Set(D.sources.filter(x => x !== DEFAULT_SRC)), tgt: 'SNOP', prov: [], reg: 'ALL'});
+const DEFAULT_VIEW = () => ({per: {kind: 'month', month: D.months[D.months.length - 1]}, inc: 'ALL', moda: 'ALL', kem: 'ZAK', area: 'ALL', srcOff: new Set(DEFAULT_SRC_OFF), tgt: 'SNOP', prov: [], reg: 'ALL'});
 function isReportView(){
   const r = REPORT_VIEW(), p = F.per || {kind: 'month', month: D.months[D.months.length - 1]};
-  return F.inc === r.inc && F.kem === r.kem && F.area === r.area && !(F.prov || []).length && F.tgt === r.tgt && p.kind === 'month' && p.month === r.per.month &&
+  return F.inc === r.inc && F.kem === r.kem && F.area === r.area && !(F.prov || []).length && (F.reg || 'ALL') === 'ALL' && F.tgt === r.tgt && p.kind === 'month' && p.month === r.per.month &&
     F.srcOff.size === r.srcOff.size && [...r.srcOff].every(x => F.srcOff.has(x));
 }
 /* Quick switches under the header (moda / incoterm / kemasan) - same filters as the filter panel, one click. */
@@ -831,7 +840,8 @@ function quickMenu(kind, anchor){
   if(kind === 'moda') items = ['DARAT', 'LAUT', 'ALL'].map(x => '<a href="javascript:void(0)" data-navmoda="' + x + '"' + on(F.moda, x) + '>' + (x === 'ALL' ? 'Semua moda' : 'Moda ' + MODA_LBL[x].toLowerCase()) + ck(F.moda, x) + '</a>').join('');
   else if(kind === 'inc') items = modaIncs(F.moda).map(x => [x, incLbl(x)]).concat([['ALL', F.moda === 'ALL' ? 'Semua incoterm' : 'Semua ' + MODA_LBL[F.moda].toLowerCase()]]).map(x => '<a href="javascript:void(0)" data-navinc="' + x[0] + '"' + on(F.inc, x[0]) + '>' + x[1] + ck(F.inc, x[0]) + '</a>').join('');
   else if(kind === 'area') items = [['AP1', 'AP1'], ['NON', 'NON AP1'], ['ALL', 'AP1 + NON AP1']].map(x => '<a href="javascript:void(0)" data-navarea="' + x[0] + '"' + on(F.area, x[0]) + '>' + x[1] + ck(F.area, x[0]) + '</a>').join('');
-  else if(kind === 'prov') items = '<a href="javascript:void(0)" data-navprov="ALL"' + (!(F.prov || []).length ? ' class="on"' : '') + '>Semua provinsi' + (!(F.prov || []).length ? '<span>&#10003;</span>' : '') + '</a>' + [...D.liveProv].sort((a, b) => B.dims.prov[a].localeCompare(B.dims.prov[b])).map(i => { const o = (F.prov || []).length === 1 && F.prov[0] === i; return '<a href="javascript:void(0)" data-navprov="' + i + '"' + (o ? ' class="on"' : '') + '>' + esc(tc(B.dims.prov[i])) + (o ? '<span>&#10003;</span>' : '') + '</a>'; }).join('');
+  else if(kind === 'reg') items = [['ALL', 'Semua region'], ['NS', 'North Sumatera (Aceh, Sumut, Kepri)'], ['CS', 'Central Sumatera (Sumbar, Riau, Jambi, Bengkulu)']].map(x => '<a href="javascript:void(0)" data-navreg="' + x[0] + '"' + on(F.reg || 'ALL', x[0]) + '>' + x[1] + ck(F.reg || 'ALL', x[0]) + '</a>').join('');
+  else if(kind === 'prov') items = '<a href="javascript:void(0)" data-navprov="ALL"' + (!(F.prov || []).length ? ' class="on"' : '') + '>Semua provinsi' + (!(F.prov || []).length ? '<span>&#10003;</span>' : '') + '</a>' + [...D.liveProv].filter(i => !F.reg || F.reg === 'ALL' || regOf(i) === F.reg).sort((a, b) => B.dims.prov[a].localeCompare(B.dims.prov[b])).map(i => { const o = (F.prov || []).length === 1 && F.prov[0] === i; return '<a href="javascript:void(0)" data-navprov="' + i + '"' + (o ? ' class="on"' : '') + '>' + esc(tc(B.dims.prov[i])) + (o ? '<span>&#10003;</span>' : '') + '</a>'; }).join('');
   else items = kemOpts().map(x => '<a href="javascript:void(0)" data-navkem="' + x[0] + '"' + on(F.kem, x[0]) + '>' + x[1] + ck(F.kem, x[0]) + '</a>').join('');
   closeQuick();
   const pop = document.createElement('div'); pop.className = 'qk-pop mega-list'; pop.id = 'qkPop'; pop.innerHTML = items;
@@ -851,7 +861,7 @@ function applyFilter(){
   if(k === 'range'){ let a = draft.from || B.days[0], b = draft.to || B.asOf; if(a > b) [a, b] = [b, a]; F.per = {kind: 'range', from: a, to: b}; }
   else if(k === 'ytd') F.per = {kind: 'ytd'};
   else F.per = {kind: 'month', month: draft.per.month || D.months[D.months.length - 1]};
-  F.inc = draft.inc; F.moda = draft.moda || 'ALL'; F.kem = kemGrp(draft.kem === 'ALL' ? null : draft.kem); if(draft.kem === 'ALL') F.kem = 'ALL'; F.area = draft.area || 'ALL'; F.srcOff = new Set(draft.srcOff); F.tgt = draft.tgt || 'SNOP'; F.prov = (draft.prov || []).slice();
+  F.inc = draft.inc; F.moda = draft.moda || 'ALL'; F.kem = kemGrp(draft.kem === 'ALL' ? null : draft.kem); if(draft.kem === 'ALL') F.kem = 'ALL'; F.area = draft.area || 'ALL'; F.srcOff = new Set(draft.srcOff); F.tgt = draft.tgt || 'SNOP'; F.prov = (draft.prov || []).slice(); F.reg = draft.reg || 'ALL';
   saveFilter();
   closeNav(); closeFilter(); buildNav(); filterStrip(); route();
 }
@@ -866,7 +876,7 @@ function openFilter(){
 function restoreFilter(){
   try {
     const s = JSON.parse(sessionStorage.getItem('osp_f3') || 'null');
-    if(s && s.per && (s.per.kind !== 'month' || D.months.includes(s.per.month))){ F.per = s.per; F.inc = s.inc; F.moda = s.moda || (s.inc === 'ALL' ? 'ALL' : modaOf(s.inc)); F.kem = s.kem === 'ALL' ? 'ALL' : kemGrp(s.kem); F.area = s.area || 'ALL'; F.srcOff = new Set(s.srcOff); F.tgt = s.tgt === 'INTERNAL' ? 'INTERNAL' : 'SNOP'; F.prov = (s.prov || []).map(n => B.dims.prov.indexOf(n)).filter(i => i >= 0); }
+    if(s && s.per && (s.per.kind !== 'month' || D.months.includes(s.per.month))){ F.per = s.per; F.inc = s.inc; F.moda = s.moda || (s.inc === 'ALL' ? 'ALL' : modaOf(s.inc)); F.kem = s.kem === 'ALL' ? 'ALL' : kemGrp(s.kem); F.area = s.area || 'ALL'; F.srcOff = new Set(s.srcOff); F.tgt = s.tgt === 'INTERNAL' ? 'INTERNAL' : 'SNOP'; F.prov = (s.prov || []).map(n => B.dims.prov.indexOf(n)).filter(i => i >= 0); F.reg = REG_LBL[s.reg] ? s.reg : 'ALL'; }
   } catch(e) {}
 }
 
@@ -1677,7 +1687,7 @@ function pageHome(){
   page(
     mapHero(provRows, t, head, chg, isLatest) +
     '<div class="wrap"><div class="data-asof">Data realisasi s.d. ' + dayLabel(B.asOf) + (prog.date ? ' · snapshot Prognosa ' + dayLabel(prog.date) + ' ' + esc(prog.time) : '') + ' · ' + esc(B.build || '') + '</div>' +
-    attn + homeTop10(m) + incPerf(m, {}) +
+    attn + '<div class="section-head"><div class="section-title">Kinerja per region</div><a class="section-link" href="#/provinsi">Wilayah &rsaquo;</a></div>' + regionTable(m) + homeTop10(m) + incPerf(m, {}) +
     '<div class="section-head"><div class="section-title">Capaian ' + esc(m.label) + '</div></div>' +
     '<div class="main-chart">' + trendPanel({}, 'harian', 'Realisasi vs target ' + tgtLbl(), {grans: ['harian', 'mingguan', 'bulanan'], noCmp: true}) + '</div>' +
     '<div class="section-head"><div class="section-title">Ringkasan operasional</div><a class="section-link" href="#/armada">Armada &rsaquo;</a></div>' +
@@ -1807,6 +1817,16 @@ function incTable(m, sc){
     return table(cs, rows, {total: rows.length > 1, sort: 3});
   }, kemSub(m, sc));
 }
+/* Per region (NS / CS / Lainnya), same columns as the province table; a click on the name sets the region filter. */
+function regionTable(m){
+  return kemGroups(() => { const rows = [...summarize('reg', m).values()].filter(o => o.vol > 0 || o.tgt > 0).sort((a, b) => ['NS', 'CS', 'LAIN'].indexOf(a.key) - ['NS', 'CS', 'LAIN'].indexOf(b.key));
+    if(!rows.length) return '';
+    const t = total(m), provs = k => [...D.liveProv].filter(i => regOf(i) === k && areaProvOk(i)).map(i => tc(B.dims.prov[i])).sort().join(', ');
+    const pv = prevVols('reg', m), cols = [{h: 'Region', cls: 'name', val: r => REG_LBL[r.key], html: r => '<a href="javascript:void(0)" data-navreg="' + r.key + '" title="Filter ke region ini">' + esc(REG_LBL[r.key]) + '</a><small>' + esc(provs(r.key)) + '</small>'},
+      C.fm, C.tgt, C.vol(), C.pct, C.gap, C.so, C.of, C.trips, vsCol(pv, m)].map(c => Object.assign({}, c));
+    cols[0].total = '<b>Total</b>'; cols[1].total = fmt(t.tgtFull); cols[2].total = fmt(t.tgt); cols[3].total = fmt(t.vol); cols[4].total = pctTxt(t.pct); cols[5].total = signed(t.gap); cols[6].total = fmt(t.so); cols[7].total = pctTxt(t.of); cols[8].total = fmt(t.trips); cols[9].total = vsTot(t.vol, total(prevPer(toPer(m))).vol);
+    return table(cols, rows, {total: rows.length > 1}); }, kemSub(m));
+}
 function pageProvList(){
   const rows = ranked(summarize('prov', PER()));
   const t = total(PER());
@@ -1816,7 +1836,9 @@ function pageProvList(){
   return table(cols, rows, {go: r => '#/provinsi/' + enc(B.dims.prov[r.key]), total: true}); };
   page('<div class="wrap">' + crumb([['Wilayah'], ['Semua provinsi']]) +
     '<div class="dp-head"><div><div class="nm">Semua Provinsi</div><div class="sub">Capaian tonase &amp; rank · ' + periodSub() + '</div></div><div class="badges"><div class="dp-badge ' + tierClass(t.pct) + '">Total ' + pctTxt(t.pct) + ' dari target</div></div></div>' +
+    '<div class="section-head"><div class="section-title">Per region</div><div class="section-sub">NS = Aceh, Sumut, Kepri · CS = Sumbar, Riau, Jambi, Bengkulu</div></div>' + regionTable(PER()) +
     incPerf(PER(), {}) +
+    '<div class="section-head"><div class="section-title">Per provinsi</div></div>' +
     (kemGroups(provTbl, kemSub(PER())) || '<div class="dp-review">Tidak ada data untuk filter ini.</div>') +
     '<div class="dp-cols even">' + trendPanel({}, 'mingguan', 'Tren seluruh provinsi') + sourcePanel({}) + '</div>' +
     '</div>', 'wilayah');
@@ -3259,11 +3281,11 @@ function bindEvents(){
     const qk = e.target.closest('[data-qk]');
     if(qk){ e.stopPropagation(); const was = $('#qkPop') && $('#qkPop').dataset.k === qk.dataset.qk; closeQuick(); closeNav(); closeFilter(); if(!was){ quickMenu(qk.dataset.qk, qk); $('#qkPop').dataset.k = qk.dataset.qk; } return; }
     if(!e.target.closest('#qkPop')) closeQuick();
-    const ni = e.target.closest('[data-navinc],[data-navkem],[data-navmoda],[data-navarea],[data-navprov]');
+    const ni = e.target.closest('[data-navinc],[data-navkem],[data-navmoda],[data-navarea],[data-navprov],[data-navreg]');
     if(ni){
       e.preventDefault();
       if(ni.dataset.navmoda != null){ F.moda = ni.dataset.navmoda; F.inc = F.moda === 'DARAT' ? 'FRC' : 'ALL'; modaPlants(F.moda); }
-      else if(ni.dataset.navinc != null) setInc(ni.dataset.navinc); else if(ni.dataset.navarea != null) F.area = ni.dataset.navarea; else if(ni.dataset.navprov != null) F.prov = ni.dataset.navprov === 'ALL' ? [] : [+ni.dataset.navprov]; else F.kem = ni.dataset.navkem === 'ALL' ? 'ALL' : kemGrp(ni.dataset.navkem);
+      else if(ni.dataset.navinc != null) setInc(ni.dataset.navinc); else if(ni.dataset.navarea != null) F.area = ni.dataset.navarea; else if(ni.dataset.navreg != null){ F.reg = ni.dataset.navreg; F.prov = F.prov.filter(provSel); } else if(ni.dataset.navprov != null) F.prov = ni.dataset.navprov === 'ALL' ? [] : [+ni.dataset.navprov]; else F.kem = ni.dataset.navkem === 'ALL' ? 'ALL' : kemGrp(ni.dataset.navkem);
       saveFilter();
       closeQuick(); closeNav(); closeFilter(); buildNav(); filterStrip(); route(); return;
     }
@@ -3295,6 +3317,8 @@ function bindEvents(){
     }
     const tg = e.target.closest('[data-tgt]');
     if(tg){ draft.tgt = tg.dataset.tgt; $$('[data-tgt]').forEach(x => x.classList.toggle('on', x === tg)); return; }
+    const frg = e.target.closest('[data-freg]');
+    if(frg){ draft.reg = frg.dataset.freg; draft.prov = draft.prov.filter(i => draft.reg === 'ALL' || regOf(i) === draft.reg); renderFilterPanel(); return; }
     const fpv = e.target.closest('[data-fprov]');
     if(fpv){ const v = fpv.dataset.fprov; if(v === 'ALL') draft.prov = []; else { const i = +v; draft.prov = draft.prov.includes(i) ? draft.prov.filter(x => x !== i) : draft.prov.concat(i); }
       $$('[data-fprov]').forEach(x => x.classList.toggle('on', x.dataset.fprov === 'ALL' ? !draft.prov.length : draft.prov.includes(+x.dataset.fprov))); return; }
