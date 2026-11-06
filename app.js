@@ -660,6 +660,23 @@ function table(cols, rows, opt){
   TABLES[id] = {cols, rows, opt, sort: opt.sort || null, dir: opt.dir || -1};
   return '<div class="tbl-wrap' + (rows.length > 15 ? ' tall' : '') + '" id="' + id + '">' + tableInner(id) + '</div>';   // tall: own scroll area so the header row stays frozen
 }
+/* Province tables split per region (Rendy): NS rows + subtotal, CS rows + subtotal, (Lainnya), then the table total.
+   opt.prov = row -> province index; opt.subFix(sub) recomputes derived fields a plain sum cannot (e.g. projection %). */
+function regSum(rs, key){
+  const o = {};
+  rs.forEach(r => Object.keys(r).forEach(k => { const v = r[k];
+    if(typeof v === 'number') o[k] = (o[k] || 0) + v;
+    else if(typeof v === 'boolean') o[k] = o[k] || v;
+    else if(v instanceof Map){ o[k] = o[k] || new Map(); v.forEach((x, kk) => o[k].set(kk, (o[k].get(kk) || 0) + (typeof x === 'number' ? x : 0))); }
+    else if(v instanceof Set){ o[k] = o[k] || new Set(); v.forEach(x => o[k].add(x)); }
+    else if(Array.isArray(v) && v.every(x => typeof x === 'number')) o[k] = o[k] ? o[k].map((x, i) => x + (v[i] || 0)) : v.slice(); }));
+  const base = o.frc != null ? o.frc : o.nfz != null ? o.nfz : o.vol || 0;
+  o.key = key; o.rank = null; o.hasTgt = (o.tgt || 0) > 0;
+  o.gap = base - (o.tgt || 0); o.pct = o.hasTgt ? pctOf(base, o.tgt) : null;
+  o.of = o.so > 0 ? pctOf(o.soShip != null ? o.soShip : o.frc0 != null ? o.frc0 : o.vol, o.so) : null;
+  o.dwell = o.dwN ? o.dwS / o.dwN : null;
+  return o;
+}
 function tableInner(id){
   const T = TABLES[id];
   let rows = T.rows.slice();
@@ -676,10 +693,22 @@ function tableInner(id){
     if(!c.num) return ''; const h = String(c.h || '').replace(/<[^>]*>/g, '');
     return /\((t|ton)\)\s*$/i.test(h) ? ' cv' + (/^(Target|Estimasi)/i.test(h) ? ' ct' : '') : /^(%|vs |Real ?\/|OF )/i.test(h) || /%\s*$/.test(h) ? ' cp' : ''; };
   const head = '<tr>' + T.cols.map((c, i) => '<th class="' + (c.num ? 'num' : '') + (/\blmc\b/.test(c.cls || '') ? ' lmc' : '') + kc(c) + fz(i) + '" data-sort="' + id + ':' + i + '">' + c.h + (T.sort === i ? '<span class="arr">' + (T.dir > 0 ? '▲' : '▼') + '</span>' : '') + '</th>').join('') + '</tr>';
-  const body = rows.slice(0, lim).map((r, ri) => {
+  const rowHTML = (r, ri) => {
     const href = T.opt.go ? T.opt.go(r) : null;
     return '<tr' + (href ? ' class="go" data-href="' + href + '"' : '') + '>' + T.cols.map((c, i) => '<td class="' + (c.cls || '') + (c.num ? ' num' : '') + kc(c) + fz(i) + '"' + (c.style ? ' style="' + c.style(r) + '"' : '') + '>' + (c.html ? c.html(r, ri) : esc(c.val(r))) + '</td>').join('') + '</tr>';
-  }).join('');
+  };
+  let body;
+  const rg = T.opt.prov ? ['NS', 'CS', 'LAIN'].map(k => ({k, rs: rows.filter(r => regOf(T.opt.prov(r)) === k)})).filter(g => g.rs.length) : [];
+  if(rg.length > 1){   // region blocks with a subtotal each
+    const nameI = T.cols.findIndex(c => /\bname\b/.test(c.cls || '')), pvs = T.cols.filter(c => c.pv && c.keyOf);
+    body = rg.map(g => {
+      const sub = regSum(g.rs, 'reg:' + g.k); if(T.opt.subFix) T.opt.subFix(sub);
+      pvs.forEach(c => c.pv.set(sub.key, g.rs.reduce((a, r) => a + (c.pv.get(c.keyOf(r)) || 0), 0)));
+      if(g.k === 'LAIN') return g.rs.map(rowHTML).join('');   // not a region: rows only, no subtotal
+      return g.rs.map(rowHTML).join('') + '<tr class="subtot">' + T.cols.map((c, i) => '<td class="' + (c.cls || '') + (c.num ? ' num' : '') + kc(c) + fz(i) + '"' + (c.num && c.style ? ' style="' + c.style(sub) + '"' : '') + '>' +
+        (i === nameI ? '<b>Subtotal ' + esc(REG_LBL[g.k]) + '</b>' : /\brank\b/.test(c.cls || '') || !c.num ? '' : (c.html ? c.html(sub, -1) : esc(c.val(sub)))) + '</td>').join('') + '</tr>';
+    }).join('');
+  } else body = rows.slice(0, lim).map(rowHTML).join('');
   const tot = T.opt.total ? '<tr class="total">' + T.cols.map((c, i) => '<td class="' + (c.num ? 'num' : '') + kc(c) + fz(i) + '">' + (c.total != null ? c.total : c.cls === 'name' ? 'TOTAL' : '') + '</td>').join('') + '</tr>' : '';
   const more = rows.length > lim ? '<tr><td colspan="' + T.cols.length + '" style="color:var(--sub)">… ' + (rows.length - lim) + ' baris lainnya tidak ditampilkan</td></tr>' : '';
   return '<table class="tbl"><thead>' + head + '</thead><tbody>' + body + tot + more + '</tbody></table>';
@@ -694,7 +723,7 @@ function capTable(list, h, name, href, so, cmp){
     cols.push({h: tag + ' (Ton)', num: true, cls: 'lmc', kind: 'lmv', val: p, html: r => p(r) ? fmt(p(r)) : '–'},
       {h: 'Gap vs ' + tag + ' (Ton)', num: true, cls: 'lmc', kind: 'lmv', val: r => r.vol - p(r), html: r => dCell(r.vol, p(r), '', false, false)}, vsCol(pv, cmp.m));
   }
-  return '<div class="cap-tbl">' + table(cols, list, {go: href, sort: 1}) + '</div>';
+  return '<div class="cap-tbl">' + table(cols, list, {go: href, sort: 1, prov: h === 'Provinsi' ? (r => r.key) : null}) + '</div>';
 }
 function volTable(list, h, name, href){
   if(!list.length) return '';
@@ -1833,7 +1862,7 @@ function pageProvList(){
   const provTbl = () => { const rows = ranked(summarize('prov', PER())), t = total(PER()); if(!rows.some(o => o.vol > 0 || o.tgt > 0)) return '';
   const pv = prevVols('prov', PER()), cols = [C.rank, {h:'Provinsi', cls:'name', val: r => tc(B.dims.prov[r.key])}, C.fm, C.tgt, C.vol(), C.pct, C.gap, C.so, C.of, C.trips, vsCol(pv, PER())];
   cols[2].total = fmt(t.tgtFull); cols[3].total = fmt(t.tgt); cols[4].total = fmt(t.vol); cols[5].total = pctTxt(t.pct); cols[6].total = signed(t.gap); cols[7].total = fmt(t.so); cols[8].total = pctTxt(t.of); cols[9].total = fmt(t.trips); cols[10].total = vsTot(t.vol, total(prevPer(PER())).vol);
-  return table(cols, rows, {go: r => '#/provinsi/' + enc(B.dims.prov[r.key]), total: true}); };
+  return table(cols, rows, {go: r => '#/provinsi/' + enc(B.dims.prov[r.key]), total: true, prov: r => r.key}); };
   page('<div class="wrap">' + crumb([['Wilayah'], ['Semua provinsi']]) +
     '<div class="dp-head"><div><div class="nm">Semua Provinsi</div><div class="sub">Capaian tonase &amp; rank · ' + periodSub() + '</div></div><div class="badges"><div class="dp-badge ' + tierClass(t.pct) + '">Total ' + pctTxt(t.pct) + ' dari target</div></div></div>' +
     '<div class="section-head"><div class="section-title">Per region</div><div class="section-sub">NS = Aceh, Sumut, Kepri · CS = Sumbar, Riau, Jambi, Bengkulu</div></div>' + regionTable(PER()) +
@@ -2304,7 +2333,7 @@ function pageForecast(gran){
       '<div class="prog-cell"><div class="pl">Proyeksi akhir bulan</div><div class="pv" style="color:' + tierColor(pctOf(proj, t.tgtFull)) + '">' + fmt(proj) + ' t</div><div class="pd">laju ' + fmt(rr) + ' t/hari</div></div>' +
       '<div class="prog-cell"><div class="pl">Target bulan</div><div class="pv">' + fmt(t.tgtFull) + ' t</div><div class="pd">proyeksi ' + pctTxt(pctOf(proj, t.tgtFull)) + '</div></div>' +
       '<div class="prog-cell"><div class="pl">Perlu per hari</div><div class="pv">' + (n > ld ? fmt(Math.max(0, (t.tgtFull - t.frc) / (n - ld))) : '–') + ' t</div><div class="pd">sisa ' + (n - ld) + ' hari</div></div></div>' +
-      table(cols, rows, {go: r => '#/provinsi/' + enc(B.dims.prov[r.key])});
+      table(cols, rows, {go: r => '#/provinsi/' + enc(B.dims.prov[r.key]), prov: r => r.key, subFix: o => { o.projPct = o.hasTgt ? pctOf(o.proj, o.tgtFull) : null; }});
   }
   const pname = {harian: 'Hari ini', mingguan: 'Minggu ini', bulanan: 'Akhir bulan'}[gran];
   page('<div class="wrap">' + crumb([['Prognosa'], [pname]]) +
@@ -2857,7 +2886,7 @@ function brandTable(list, tot, nameCol, href, prevMap, extra, opt){
     cols[2] = Object.assign({}, C.fm, {total: fmt(tf)}); cols[3] = Object.assign({}, C.tgt, {total: fmt(tm)});
     cols[4] = Object.assign({}, C.gap, {total: signed(v - tm)}); cols[5] = Object.assign({}, C.pct, {total: pctTxt(pctOf(v, tm))}); }
   const tr = cols.find(c => c === C.trips); if(tr) cols[cols.indexOf(tr)] = Object.assign({}, C.trips, {total: fmt(sum(o => o.trips))});
-  return table(cols, list, {go: href, total: list.length > 1, sort: 1});
+  return table(cols, list, {go: href, total: list.length > 1, sort: 1, prov: opt.prov});
 }
 const prevAgg = (sc, keyOf) => new Map(brandAgg(brandRows(prevPer(PER()), sc), keyOf).map(o => [o.key, o.vol]));
 const tbNote = () => tbOn() ? 'Target per brand = SNOP per material (DETAIL MATERIAL)' + (F.tgt === 'INTERNAL' ? ' × ' + tgtIntNow() : '') + '; target MTD mengikuti pola harian target market itu.' : 'Target per brand belum ada di build ini.';
@@ -2881,7 +2910,7 @@ function pageBrandList(){
     const cols = [{h: lbl, cls: 'name', val: o => nameOf(o.key), total: '<b>Total</b>'}, Object.assign(C.vol('Total (Ton)'), {total: '<b>' + fmt(t) + '</b>'}),
       {h: '% Total rilis', num: true, kind: 'p', slot: 4.6, val: o => o.vol / (all || 1), html: o => pctTxt(pctOf(o.vol, all)), total: pctTxt(pctOf(t, all))}]
       .concat(bs.map(b => ({h: esc(brandName(b)) + ' (Ton)', num: true, val: o => o.by.get(b) || 0, html: o => { const v = o.by.get(b) || 0; return v ? fmt(v) + '<small>' + pctTxt(pctOf(v, o.vol)) + '</small>' : '–'; }, total: fmt(rows.filter(r => r[6] === b).reduce((a, r) => a + r[9], 0))})));
-    return table(cols, list, {go: href, total: true, sort: 1}); };
+    return table(cols, list, {go: href, total: true, sort: 1, prov: lbl === 'Provinsi' ? (r => r.key) : null}); };
   const skuTbl = () => { const rows = brandRows(m), t = rows.reduce((a, r) => a + r[9], 0); if(!t) return '';
     const name = {h: 'Material (SKU)', cls: 'name', val: o => skuInfo(o.key).n, html: o => { const i = skuInfo(o.key); return esc(i.n) + '<small>' + esc(i.lbl) + '</small>'; }};
     const br = {h: 'Brand', val: o => { const r = rows.find(x => x[7] === o.key); return r ? brandName(r[6]) : ''; }};
@@ -2917,7 +2946,7 @@ function pageBrand(name){
   const mg = rows.length ? kemGrp(KEMS()[rows[0][8]]) : ((B.tbrand || []).find(t => t[5] === bi) ? kemGrp(KEMS()[(B.tbrand.find(t => t[5] === bi))[6]]) : 'ZAK');
   const mTot = brandRows(m, {anyKem: true}).filter(r => kemGrp(KEMS()[r[8]]) === mg).reduce((a, r) => a + r[9], 0);
   const tAll = brandTgt(m, sc, () => 0).get(0);
-  const sec = (keyOf, lbl, nameOf, href, tk, extra) => brandTable(brandAttach(brandAgg(rows, keyOf), tk ? brandTgt(m, sc, tk) : null), tot, {h: lbl, cls: 'name', val: o => nameOf(o.key)}, href, prevAgg(sc, keyOf), extra, {shareLbl: 'Porsi', all});
+  const sec = (keyOf, lbl, nameOf, href, tk, extra) => brandTable(brandAttach(brandAgg(rows, keyOf), tk ? brandTgt(m, sc, tk) : null), tot, {h: lbl, cls: 'name', val: o => nameOf(o.key)}, href, prevAgg(sc, keyOf), extra, {shareLbl: 'Porsi', all, prov: lbl === 'Provinsi' ? (o => o.key) : null});
   const pT = tAll && tAll.tgt ? pctOf(tot, tAll.tgt) : null;
   page('<div class="wrap">' + crumb([['Brand', '#/brand'], [brandName(bi)]]) +
     '<div class="dp-head"><div><div class="nm">' + esc(brandName(bi)) + '</div><div class="sub">Brand ' + MKT[mg].toLowerCase() + ' · ' + esc(incName()) + ' · ' + periodSub() + '</div></div><div class="badges"><div class="dp-badge">' + pctTxt(pctOf(tot, mTot)) + ' dari market ' + MKT[mg].toLowerCase() + '</div><div class="dp-badge">' + pctTxt(pctOf(tot, all)) + ' dari total rilis</div></div></div>' +

@@ -915,3 +915,6 @@ a.t10-row:hover .t10-nm{color:var(--red)}
 .t10-bw{margin-left:auto;display:inline-flex;border:1px solid var(--line);border-radius:12px;overflow:hidden;flex:none}
 .t10-bw button{border:0;background:#fff;padding:3px 10px;font-size:11px;font-weight:800;color:var(--sub);cursor:pointer}
 .t10-bw button[data-t10d="b"].on{background:var(--green);color:#fff}.t10-bw button[data-t10d="w"].on{background:var(--red);color:#fff}
+/* region subtotal rows in province tables (Rendy) */
+.tbl tr.subtot td{background:#EEF1F3;border-top:1px solid #C9D0D5;font-weight:700}
+.tbl tr.subtot td.fz{background:#EEF1F3}
