@@ -2438,10 +2438,11 @@ function shipGantt(m, name, opt){
     list.sort((a, b) => a.first - b.first || b.vol - a.vol);
     const vol = list.reduce((a, o) => a + o.vol, 0), nv = list.reduce((a, o) => a + o.vs.length, 0);
     const lines = list.map(o => {
-      const dayT = new Map(); o.rs.forEach(r => dayT.set(r[0], (dayT.get(r[0]) || 0) + r[8]));
+      const dayT = new Map(), dayP = new Map(); o.rs.forEach(r => { dayT.set(r[0], (dayT.get(r[0]) || 0) + r[8]); const q = dayP.get(r[0]) || [0, 0]; q[r[12] === 1 ? 1 : 0] += r[8]; dayP.set(r[0], q); });
       const bars = o.vs.map(v => '<a class="kg-v ' + o.kind + '" href="#/kapal/' + enc(o.nm) + '" style="left:' + pc(v.d0) + ';width:' + wd(v.d1 - v.d0 + 1) + '" title="' + esc(o.nm.replace(/^KAPAL /, '') + ' · ' + shortDate(B.days[v.d0]) + (v.d1 !== v.d0 ? '–' + shortDate(B.days[v.d1]) : '') + ' · ' + fmt(v.vol) + ' t · ' + v.days.size + ' hari muat · tujuan ' + tujTxt(o.rs.filter(r => r[2] === v.src && v.days.has(r[0])))) + '">' +
         '</a>' + (v.d1 - v.d0 + 1 >= 2 ? '<span class="kg-lb" style="left:' + pc(v.d0) + ';width:' + wd(v.d1 - v.d0 + 1) + '">' + fmt(v.vol) + ' t</span>' : '')).join('') +
-        [...dayT.entries()].map(([d, t]) => '<i class="kg-day ' + o.kind + '" style="left:' + pc(d) + ';width:' + wd(1) + '" title="' + esc(dayLabel(B.days[d]) + ' · ' + fmt(t) + ' t') + '"></i>').join('');
+        [...dayT.entries()].map(([d, t]) => { const q = dayP.get(d), pk = !packOn() ? '' : q[1] > 0 && q[0] > 0 ? ' mix' : q[1] > 0 ? ' poly' : '';   // poly = hatched, both = half hatched (Rendy)
+          return '<i class="kg-day ' + o.kind + pk + '" style="left:' + pc(d) + ';width:' + wd(1) + '" title="' + esc(dayLabel(B.days[d]) + ' · ' + fmt(t) + ' t' + (packOn() ? ' · lasahan ' + fmt(q[0]) + ' t · poly ' + fmt(q[1]) + ' t' : '')) + '"></i>'; }).join('');
       return '<div class="kg-row"><a class="kg-nm" href="#/kapal/' + enc(o.nm) + '">' + esc(o.nm.replace(/^KAPAL /, '')) + '<small>' + o.kind + ' · ' + fmt(o.vol) + ' t' + (tujTxt(o.rs) ? ' · → ' + esc(tujTxt(o.rs)) : '') + '</small></a><div class="kg-track">' + bars + '</div></div>';
     }).join('');
     return {vol, html: (name == null && !opt.bare ? '<div class="inc-grp" style="--c:var(--black)"><b>' + esc(dermagaLbl(si)) + '</b><small>' + fmt(list.length) + ' kapal · ' + fmt(nv) + ' voyage · ' + fmt(vol) + ' t</small></div>' : '') +
@@ -2450,7 +2451,8 @@ function shipGantt(m, name, opt){
   if(!blocks.length) return '';
   return blocks.map(b => b.html).join('') + (opt.noKey ? '' : shipKey(start, end));
 }
-const shipKey = (start, end) => '<div class="kg-key"><span><i class="kargo"></i>kapal kargo</span><span><i class="reguler"></i>kapal reguler</span><span><i class="span"></i>rentang voyage</span><span>blok pekat = hari muat · ' + shortDate(B.days[start]) + ' – ' + shortDate(B.days[end]) + '</span></div>';
+const packOn = () => (B.ship || []).some(r => r[12] === 1);   // bundle carries the lasahan / poly flag and some poly exists
+const shipKey = (start, end) => '<div class="kg-key">' + (packOn() ? '<span><i class="kargo"></i>lasahan</span><span><i class="kargo poly"></i>poly</span><span><i class="kargo mix"></i>lasahan + poly (hari sama)</span>' : '') + '<span><i class="kargo"></i>kapal kargo</span><span><i class="reguler"></i>kapal reguler</span><span><i class="span"></i>rentang voyage</span><span>blok pekat = hari muat · ' + shortDate(B.days[start]) + ' – ' + shortDate(B.days[end]) + '</span></div>';
 /* netto timbangan - tonase SPJ (kg): red when the gap is more than 0.5% of the SPJ tonnage */
 const kspjDiff = (d, base) => { if(Math.abs(d) < 0.5) return '0'; const p = base ? d / base * 100 : null, off = p != null && Math.abs(p) > 0.5;
   return '<span style="white-space:nowrap;color:' + (off ? 'var(--red)' : 'var(--sub)') + '">' + (d > 0 ? '+' : '−') + fmt(Math.abs(d)) + ' kg' + (p != null ? '<small>' + (d > 0 ? '+' : '−') + fmt1(Math.abs(p)) + '%</small>' : '') + '</span>'; };
@@ -2548,17 +2550,25 @@ function pageKapal(){
     const srcs = [...new Set(rows.map(r => r[2]))].map(si => ({si, rs: rows.filter(r => r[2] === si)})).map(g => Object.assign(g, {vol: g.rs.reduce((a, r) => a + r[8], 0)})).sort((a, b) => b.vol - a.vol);
     const groups = tabsHTML('kapal', srcs.map(g => {
       const list = agg(g.rs), n = list.filter(o => o.k !== '\u0000');
-      // one block per muatan (lasahan / poly) when the dermaga loads both; one block otherwise
-      const packs = [0, 1].filter(k => g.rs.some(r => r[12] === k)), split = packs.length > 1;
-      const block = pk => { const rs = pk == null ? g.rs : g.rs.filter(r => r[12] === pk), l = agg(rs), c = cols.map(x => Object.assign({}, x)), v = rs.reduce((a, r) => a + r[8], 0);
+      // Rendy: one timeline per dermaga (the berth is one resource; poly = hatched blocks); detail table per muatan (lasahan / poly)
+      const packs = [0, 1].filter(k => g.rs.some(r => (r[12] === 1 ? 1 : 0) === k && r[12] != null)), split = packs.length > 1;
+      const pRows = pk => g.rs.filter(r => (r[12] === 1 ? 1 : 0) === pk);
+      const detail = (rs, lbl) => { const l = agg(rs), c = cols.map(x => Object.assign({}, x)), v = rs.reduce((a, r) => a + r[8], 0);
         c[2].total = fmt(l.reduce((a, o) => a + (o.voy || 0), 0)); c[3].total = fmt(v);
-        const tl = shipGantt(m, null, {src: g.si, pack: pk == null ? null : pk, bare: true, noKey: true});
-        return (pk == null ? '' : '<div class="krm-pack"><b>' + PACK_LBL[pk] + '</b><small>' + PACK_SUB[pk] + ' · ' + fmt(l.filter(o => o.k !== '\u0000').length) + ' kapal · ' + fmt(v) + ' t · ' + pctTxt(pctOf(v, g.vol)) + ' dermaga ini</small></div>') +
-          '<div class="krm-sub">Timeline 30 hari' + (pk == null ? '' : ' · ' + PACK_LBL[pk].toLowerCase()) + '</div>' + (tl || '<div class="dp-review">Tidak ada kapal bernama dalam 30 hari terakhir.</div>') +
-          '<div class="krm-sub">Detail kapal' + (pk == null ? '' : ' · ' + PACK_LBL[pk].toLowerCase()) + '</div>' + table(c, l, {total: true, limit: 400, go: o => o.k === '\u0000' ? null : '#/kapal/' + enc(o.nm)}); };
-      const packTxt = split ? ' · ' + packs.map(k => PACK_LBL[k].toLowerCase() + ' ' + fmt(g.rs.filter(r => r[12] === k).reduce((a, r) => a + r[8], 0)) + ' t').join(' · ') : packs.length ? ' · ' + PACK_LBL[packs[0]].toLowerCase() : '';
+        return '<div class="krm-sub">Detail kapal' + (lbl ? ' · ' + lbl : '') + '</div>' + table(c, l, {total: true, limit: 400, go: o => o.k === '\u0000' ? null : '#/kapal/' + enc(o.nm)}); };
+      const cmp = () => { const st = packs.map(pk => { const rs = pRows(pk).filter(r => shipName(r)), l = agg(rs), voy = l.reduce((a, o) => a + (o.voy || 0), 0), v = rs.reduce((a, r) => a + r[8], 0), days = new Set(rs.map(r => r[0])).size, hm = l.reduce((a, o) => a + o.days.size, 0);
+          return {pk, n: l.length, voy, v, days, hm}; });
+        const cc = [{h: 'Muatan', cls: 'name', val: o => PACK_LBL[o.pk], html: o => '<b>' + PACK_LBL[o.pk] + '</b><small>' + PACK_SUB[o.pk] + '</small>'},
+          {h: 'Kapal', num: true, val: o => o.n}, {h: 'Voyage', num: true, val: o => o.voy}, {h: 'Tonase (Ton)', num: true, val: o => o.v, html: o => '<b>' + fmt(o.v) + '</b>'},
+          {h: 'Porsi', num: true, val: o => o.v, html: o => pctTxt(pctOf(o.v, g.vol))}, {h: 't / voyage', num: true, val: o => o.voy ? o.v / o.voy : 0, html: o => o.voy ? fmt(o.v / o.voy) : '–'},
+          {h: 'Hari muat (kapal × hari)', num: true, val: o => o.hm}, {h: 't / hari muat', num: true, val: o => o.hm ? o.v / o.hm : 0, html: o => o.hm ? fmt(o.v / o.hm) : '–'},
+          {h: 'Hari dermaga terpakai', num: true, val: o => o.days}];
+        return '<div class="krm-sub">Lasahan vs poly · kapal bernama, ' + esc(periodSub()) + '</div>' + table(cc, st, {}); };
+      const tl = shipGantt(m, null, {src: g.si, bare: true, noKey: true});
+      const packTxt = split ? ' · ' + packs.map(k => PACK_LBL[k].toLowerCase() + ' ' + fmt(pRows(k).reduce((a, r) => a + r[8], 0)) + ' t').join(' · ') : packs.length ? ' · ' + PACK_LBL[packs[0]].toLowerCase() : '';
       const h = '<section class="krm-grp"><div class="krm-h"><b>' + esc(dermagaLbl(g.si)) + '</b><small>' + fmt(n.length) + ' kapal · ' + fmt(g.vol) + ' t · ' + pctTxt(pctOf(g.vol, tot)) + ' tonase laut' + packTxt + ' · ' + esc(periodSub()) + '</small></div>' +
-        (split ? packs.map(block).join('') : block(null)) + '</section>';
+        '<div class="krm-sub">Timeline 30 hari' + (split ? ' · blok berarsir = poly' : '') + '</div>' + (tl || '<div class="dp-review">Tidak ada kapal bernama dalam 30 hari terakhir.</div>') +
+        (split ? cmp() + packs.map(pk => '<div class="krm-pack"><b>' + PACK_LBL[pk] + '</b><small>' + PACK_SUB[pk] + ' · ' + fmt(pRows(pk).reduce((a, r) => a + r[8], 0)) + ' t · ' + pctTxt(pctOf(pRows(pk).reduce((a, r) => a + r[8], 0), g.vol)) + ' dermaga ini</small></div>' + detail(pRows(pk), PACK_LBL[pk].toLowerCase())).join('') : detail(g.rs, '')) + '</section>';
       return {k: String(g.si), label: dermagaLbl(g.si), n: n.length, html: h};
     }));
     const e30 = Math.max(0, B.days.indexOf(m.to) >= 0 ? B.days.indexOf(m.to) : B.days.length - 1);

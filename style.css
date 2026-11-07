@@ -928,3 +928,5 @@ a.t10-row:hover .t10-nm{color:var(--red)}
 /* kapal: muatan lasahan / poly blocks (Rendy) */
 .krm-pack{display:flex;align-items:baseline;gap:10px;margin:22px 0 4px;padding:8px 12px;background:var(--gray-l);border-left:4px solid var(--black)}
 .krm-pack b{font-size:13px;text-transform:uppercase;letter-spacing:.04em}.krm-pack small{color:var(--sub);font-size:12px}
+.kg-day.poly,.kg-key i.poly{background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.7) 0 3px,transparent 3px 6px)}
+.kg-day.mix,.kg-key i.mix{background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.7) 0 3px,transparent 3px 6px);background-size:100% 50%;background-repeat:no-repeat}
