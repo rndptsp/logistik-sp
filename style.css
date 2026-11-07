@@ -930,3 +930,11 @@ a.t10-row:hover .t10-nm{color:var(--red)}
 .krm-pack b{font-size:13px;text-transform:uppercase;letter-spacing:.04em}.krm-pack small{color:var(--sub);font-size:12px}
 .kg-day.poly,.kg-key i.poly{background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.7) 0 3px,transparent 3px 6px)}
 .kg-day.mix,.kg-key i.mix{background-image:repeating-linear-gradient(45deg,rgba(255,255,255,.7) 0 3px,transparent 3px 6px);background-size:100% 50%;background-repeat:no-repeat}
+/* kapal muatan colours (Rendy): lasahan green, poly red; voyage span neutral */
+.kg-day.pk0,.kg-key i.pk0{background:var(--green)}
+.kg-day.pk1,.kg-key i.pk1{background:var(--red)}
+.kg-day.pkm,.kg-key i.pkm{background:linear-gradient(to bottom,var(--red) 50%,var(--green) 50%)}
+.kgantt:has(.pk0,.pk1,.pkm) .kg-v{background:rgba(120,130,138,.18);color:#33414a}
+.pk-dot::before{content:'';display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
+.pk-dot.pk0::before{background:var(--green)}.pk-dot.pk1::before{background:var(--red)}
+.tbl tr.subtot.top td.name small{display:block;font-weight:400;color:var(--sub);font-size:11px}
