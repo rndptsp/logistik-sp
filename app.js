@@ -2363,6 +2363,8 @@ function setTxt(set, dims, unit){
      loading day is its own voyage;
    - cargo ships: loading days of one ship at one plant with gaps of at most VOY_GAP days form one voyage. */
 const VOY_GAP = 3, VOY_SMALL = 150;
+/* Muatan (Rendy): ship row col 12 = 1 poly (polysling) / 0 lasahan (karung lepas); older bundles: undefined. */
+const PACK_LBL = ['Lasahan', 'Poly'], PACK_SUB = ['karung lepas', 'polysling'];
 /* Vessel of a ship row: bundle column 11 (B.dims.kapal) since the ekspeditur of FOB/FAS/FOT is the distributor;
    older bundles carried the vessel as ekspeditur "KAPAL <nama>". */
 const shipName = r => B.dims.kapal ? (r[11] != null && r[11] >= 0 ? 'KAPAL ' + B.dims.kapal[r[11]] : null)
@@ -2425,7 +2427,7 @@ function shipGantt(m, name, opt){
   const rows = kapalRows(makePer('range', B.days[start], B.days[end]), name == null ? null : name).filter(r => shipName(r));
   if(!rows.length) return '';
   const bySrc = new Map();
-  rows.forEach(r => { if(opt.src != null && r[2] !== opt.src) return; const g = bySrc.get(r[2]) || bySrc.set(r[2], new Map()).get(r[2]), nm = shipName(r); (g.get(nm) || g.set(nm, []).get(nm)).push(r); });
+  rows.forEach(r => { if((opt.src != null && r[2] !== opt.src) || (opt.pack != null && r[12] !== opt.pack)) return; const g = bySrc.get(r[2]) || bySrc.set(r[2], new Map()).get(r[2]), nm = shipName(r); (g.get(nm) || g.set(nm, []).get(nm)).push(r); });
   const pc = d => ((d - start) / N * 100).toFixed(3) + '%', wd = n => (n / N * 100).toFixed(3) + '%';
   let head = '';
   for(let d = start; d <= end; d++){ const ds = B.days[d], dw = D.dayDow[d], first = d === start || ds.slice(8) === '01';
@@ -2545,12 +2547,18 @@ function pageKapal(){
     // grouping: per dermaga (loading point = source plant); vessel names exist for FOB only, so an incoterm split adds nothing
     const srcs = [...new Set(rows.map(r => r[2]))].map(si => ({si, rs: rows.filter(r => r[2] === si)})).map(g => Object.assign(g, {vol: g.rs.reduce((a, r) => a + r[8], 0)})).sort((a, b) => b.vol - a.vol);
     const groups = tabsHTML('kapal', srcs.map(g => {
-      const list = agg(g.rs), c = cols.map(x => Object.assign({}, x)), n = list.filter(o => o.k !== '\u0000');
-      c[2].total = fmt(list.reduce((a, o) => a + (o.voy || 0), 0)); c[3].total = fmt(g.vol);
-      const tl = shipGantt(m, null, {src: g.si, bare: true, noKey: true});
-      const h = '<section class="krm-grp"><div class="krm-h"><b>' + esc(dermagaLbl(g.si)) + '</b><small>' + fmt(n.length) + ' kapal · ' + fmt(g.vol) + ' t · ' + pctTxt(pctOf(g.vol, tot)) + ' tonase laut · ' + esc(periodSub()) + '</small></div>' +
-        '<div class="krm-sub">Timeline 30 hari</div>' + (tl || '<div class="dp-review">Tidak ada kapal bernama dalam 30 hari terakhir.</div>') +
-        '<div class="krm-sub">Detail kapal</div>' + table(c, list, {total: true, limit: 400, go: o => o.k === '\u0000' ? null : '#/kapal/' + enc(o.nm)}) + '</section>';
+      const list = agg(g.rs), n = list.filter(o => o.k !== '\u0000');
+      // one block per muatan (lasahan / poly) when the dermaga loads both; one block otherwise
+      const packs = [0, 1].filter(k => g.rs.some(r => r[12] === k)), split = packs.length > 1;
+      const block = pk => { const rs = pk == null ? g.rs : g.rs.filter(r => r[12] === pk), l = agg(rs), c = cols.map(x => Object.assign({}, x)), v = rs.reduce((a, r) => a + r[8], 0);
+        c[2].total = fmt(l.reduce((a, o) => a + (o.voy || 0), 0)); c[3].total = fmt(v);
+        const tl = shipGantt(m, null, {src: g.si, pack: pk == null ? null : pk, bare: true, noKey: true});
+        return (pk == null ? '' : '<div class="krm-pack"><b>' + PACK_LBL[pk] + '</b><small>' + PACK_SUB[pk] + ' · ' + fmt(l.filter(o => o.k !== '\u0000').length) + ' kapal · ' + fmt(v) + ' t · ' + pctTxt(pctOf(v, g.vol)) + ' dermaga ini</small></div>') +
+          '<div class="krm-sub">Timeline 30 hari' + (pk == null ? '' : ' · ' + PACK_LBL[pk].toLowerCase()) + '</div>' + (tl || '<div class="dp-review">Tidak ada kapal bernama dalam 30 hari terakhir.</div>') +
+          '<div class="krm-sub">Detail kapal' + (pk == null ? '' : ' · ' + PACK_LBL[pk].toLowerCase()) + '</div>' + table(c, l, {total: true, limit: 400, go: o => o.k === '\u0000' ? null : '#/kapal/' + enc(o.nm)}); };
+      const packTxt = split ? ' · ' + packs.map(k => PACK_LBL[k].toLowerCase() + ' ' + fmt(g.rs.filter(r => r[12] === k).reduce((a, r) => a + r[8], 0)) + ' t').join(' · ') : packs.length ? ' · ' + PACK_LBL[packs[0]].toLowerCase() : '';
+      const h = '<section class="krm-grp"><div class="krm-h"><b>' + esc(dermagaLbl(g.si)) + '</b><small>' + fmt(n.length) + ' kapal · ' + fmt(g.vol) + ' t · ' + pctTxt(pctOf(g.vol, tot)) + ' tonase laut' + packTxt + ' · ' + esc(periodSub()) + '</small></div>' +
+        (split ? packs.map(block).join('') : block(null)) + '</section>';
       return {k: String(g.si), label: dermagaLbl(g.si), n: n.length, html: h};
     }));
     const e30 = Math.max(0, B.days.indexOf(m.to) >= 0 ? B.days.indexOf(m.to) : B.days.length - 1);

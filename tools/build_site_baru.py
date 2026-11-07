@@ -385,7 +385,9 @@ def build(cfg):
         kc = up(r.get("NAMA_KEC_SUBDISTRIK"))
         if kt and kc:
             toko_kec[ti][kec(kc)] += ton
-        g = ship[(d.isoformat(), inc, s, p, di, distr(up(r.get("DISTRIBUTOR"))), e, ti, kem, kapal_d(kapal) if kapal else -1)]
+        # Rendy: muatan kapal lasahan (karung lepas) vs poly (polysling): POLY in the material name, or a polysling incoterm
+        pack = 1 if (inc in ("FOB KAPAL", "FRC KAPAL") or "POLY" in re.split(r"[^A-Z0-9]+", up(r.get("PRODUK")))) else 0
+        g = ship[(d.isoformat(), inc, s, p, di, distr(up(r.get("DISTRIBUTOR"))), e, ti, kem, kapal_d(kapal) if kapal else -1, pack)]
         prod_ = re.sub(r"\s+", " ", up(r.get("PRODUK")))
         bg = brand_rows[(d.isoformat(), inc, s, p, di, distr(up(r.get("DISTRIBUTOR"))), brand_d(brand_of(prod_)), sku_d(prod_ or "-"), kem)]
         bg[0] += ton; bg[1] += 1
@@ -612,7 +614,7 @@ def build(cfg):
         "tbrand": tbrand,
         "brand": [[day_idx[k[0]], INCOTERMS.index(k[1]), k[2], k[3], k[4], k[5], k[6], k[7], k[8], round(v[0], 2), v[1]]
                   for k, v in brand_rows.items() if k[0] in day_idx],
-        "ship": [[day_idx[k[0]], INCOTERMS.index(k[1]), k[2], k[3], k[4], k[5], k[6], k[7], round(v[0], 2), v[1], k[8], k[9]]
+        "ship": [[day_idx[k[0]], INCOTERMS.index(k[1]), k[2], k[3], k[4], k[5], k[6], k[7], round(v[0], 2), v[1], k[8], k[9], k[10]]
                  for k, v in ship.items()],
         # per day, so any date range can be cut exactly:
         # [day, truck, inc, eksp, src, prov, trips, ton, dwellSum, dwellN, kem, dist, waitSum, waitN]
