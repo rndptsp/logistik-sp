@@ -2442,18 +2442,24 @@ function shipGantt(m, name, opt){
   for(let d = start; d <= end; d++){ const ds = B.days[d], dw = D.dayDow[d], first = d === start || ds.slice(8) === '01';
     head += '<span class="kg-d' + (dw === 0 ? ' sun' : '') + '"' + ' title="' + esc(dayLabel(ds)) + '">' + (first ? '<b>' + MON3[+ds.slice(5, 7) - 1] + '</b>' : '') + +ds.slice(8) + '</span>'; }
   const blocks = [...bySrc.entries()].map(([si, ships]) => {
-    const list = [...ships.entries()].map(([nm, rs]) => ({nm, rs, vs: voyagesOf(rs), vol: rs.reduce((a, r) => a + r[8], 0), kind: shipKind(nm)}));
-    list.forEach(o => o.first = Math.min(...o.vs.map(v => v.d0)));
-    list.sort((a, b) => a.first - b.first || b.vol - a.vol);
+    const mk = sh => { const l = [...sh.entries()].map(([nm, rs]) => ({nm, rs, vs: voyagesOf(rs), vol: rs.reduce((a, r) => a + r[8], 0), kind: shipKind(nm)})).filter(o => o.rs.length);
+      l.forEach(o => o.first = Math.min(...o.vs.map(v => v.d0))); l.sort((a, b) => a.first - b.first || b.vol - a.vol); return l; };
+    const list = mk(ships);
     const vol = list.reduce((a, o) => a + o.vol, 0), nv = list.reduce((a, o) => a + o.vs.length, 0);
-    const lines = list.map(o => {
+    const lineOf = o => {
       const dayT = new Map(), dayP = new Map(); o.rs.forEach(r => { dayT.set(r[0], (dayT.get(r[0]) || 0) + r[8]); const q = dayP.get(r[0]) || [0, 0]; q[r[12] === 1 ? 1 : 0] += r[8]; dayP.set(r[0], q); });
       const bars = o.vs.map(v => '<a class="kg-v ' + o.kind + '" href="#/kapal/' + enc(o.nm) + '" style="left:' + pc(v.d0) + ';width:' + wd(v.d1 - v.d0 + 1) + '" title="' + esc(o.nm.replace(/^KAPAL /, '') + ' · ' + shortDate(B.days[v.d0]) + (v.d1 !== v.d0 ? '–' + shortDate(B.days[v.d1]) : '') + ' · ' + fmt(v.vol) + ' t · ' + v.days.size + ' hari muat · tujuan ' + tujTxt(o.rs.filter(r => r[2] === v.src && v.days.has(r[0])))) + '">' +
         '</a>' + (v.d1 - v.d0 + 1 >= 2 ? '<span class="kg-lb" style="left:' + pc(v.d0) + ';width:' + wd(v.d1 - v.d0 + 1) + '">' + fmt(v.vol) + ' t</span>' : '')).join('') +
         [...dayT.entries()].map(([d, t]) => { const q = dayP.get(d), pk = !packOn() ? '' : q[1] > 0 && q[0] > 0 ? ' pkm' : q[1] > 0 ? ' pk1' : ' pk0';   // poly = hatched, both = half hatched (Rendy)
           return '<i class="kg-day ' + o.kind + pk + '" style="left:' + pc(d) + ';width:' + wd(1) + '" title="' + esc(dayLabel(B.days[d]) + ' · ' + fmt(t) + ' t' + (packOn() ? ' · lasahan ' + fmt(q[0]) + ' t · poly ' + fmt(q[1]) + ' t' : '')) + '"></i>'; }).join('');
       return '<div class="kg-row"><a class="kg-nm" href="#/kapal/' + enc(o.nm) + '">' + esc(o.nm.replace(/^KAPAL /, '')) + '<small>' + o.kind + ' · ' + fmt(o.vol) + ' t' + (tujTxt(o.rs) ? ' · → ' + esc(tujTxt(o.rs)) : '') + '</small></a><div class="kg-track">' + bars + '</div></div>';
-    }).join('');
+    };
+    // opt.grpPack (Rendy): ships grouped by muatan - Lasahan rows, then Poly rows, on the same day axis; a ship carrying both appears in both
+    const pks = opt.grpPack && packOn() ? [0, 1].filter(k => list.some(o => o.rs.some(r => (r[12] === 1 ? 1 : 0) === k))) : [];
+    const lines = pks.length > 1 ? pks.map(k => { const sh = new Map(); ships.forEach((rs, nm) => sh.set(nm, rs.filter(r => (r[12] === 1 ? 1 : 0) === k)));
+        const l = mk(sh), v = l.reduce((a, o) => a + o.vol, 0), dset = new Set(); l.forEach(o => o.rs.forEach(r => dset.add(r[0])));
+        return '<div class="kg-row kg-grp pk' + k + '"><span class="kg-nm"><b class="pk-dot pk' + k + '">' + PACK_LBL[k] + '</b><small>' + fmt(l.length) + ' kapal · ' + fmt(v) + ' t · ' + fmt(dset.size) + ' hari dermaga</small></span><div class="kg-track">' + [...dset].map(d => '<i class="kg-occ pk' + k + '" style="left:' + pc(d) + ';width:' + wd(1) + '" title="' + esc(dayLabel(B.days[d]) + ' · dermaga dipakai ' + PACK_LBL[k].toLowerCase()) + '"></i>').join('') + '</div></div>' + l.map(lineOf).join(''); }).join('')
+      : list.map(lineOf).join('');
     return {vol, html: (name == null && !opt.bare ? '<div class="inc-grp" style="--c:var(--black)"><b>' + esc(dermagaLbl(si)) + '</b><small>' + fmt(list.length) + ' kapal · ' + fmt(nv) + ' voyage · ' + fmt(vol) + ' t</small></div>' : '') +
       '<div class="kgantt"><div class="kg-row kg-head"><span class="kg-nm">' + (name == null ? 'Kapal (urut kedatangan)' : esc(dermagaLbl(si))) + '</span><div class="kg-days">' + head + '</div></div>' + lines + '</div>'};
   }).sort((a, b) => b.vol - a.vol);
@@ -2571,7 +2577,7 @@ function pageKapal(){
           grp: split ? {keys: packs, of: o => o.pk, cls: k => 'pk' + k, lbl: (k, sub) => '<b class="pk-dot pk' + k + '">' + PACK_LBL[k] + '</b><small>' + PACK_SUB[k] + ' · ' + fmt(l.filter(o => o.pk === k && o.k !== '\u0000').length) + ' kapal · ' + pctTxt(pctOf(sub.vol, g.vol)) + ' dermaga ini</small>'} : null,
           subFix: (sub, rs) => { sub.rank = null; sub.hm = rs.reduce((a, o) => a + (o.hm || 0), 0); }}); };
       // rank inside each muatan group
-      const tl = shipGantt(m, null, {src: g.si, bare: true, noKey: true});
+      const tl = shipGantt(m, null, {src: g.si, bare: true, noKey: true, grpPack: true});
       const packTxt = split ? ' · ' + packs.map(k => PACK_LBL[k].toLowerCase() + ' ' + fmt(pRows(k).reduce((a, r) => a + r[8], 0)) + ' t').join(' · ') : packs.length ? ' · ' + PACK_LBL[packs[0]].toLowerCase() : '';
       const h = '<section class="krm-grp"><div class="krm-h"><b>' + esc(dermagaLbl(g.si)) + '</b><small>' + fmt(n.length) + ' kapal · ' + fmt(g.vol) + ' t · ' + pctTxt(pctOf(g.vol, tot)) + ' tonase laut' + packTxt + ' · ' + esc(periodSub()) + '</small></div>' +
         '<div class="krm-sub">Timeline 30 hari' + (packOn() ? ' · hijau = lasahan, merah = poly' : '') + '</div>' + (tl || '<div class="dp-review">Tidak ada kapal bernama dalam 30 hari terakhir.</div>') + detail() + '</section>';

@@ -938,3 +938,10 @@ a.t10-row:hover .t10-nm{color:var(--red)}
 .pk-dot::before{content:'';display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:6px;vertical-align:-1px}
 .pk-dot.pk0::before{background:var(--green)}.pk-dot.pk1::before{background:var(--red)}
 .tbl tr.subtot.top td.name small{display:block;font-weight:400;color:var(--sub);font-size:11px}
+/* kapal timeline grouped by muatan (Rendy) */
+.kg-row.kg-grp{background:#EEF1F3;min-height:0}
+.kg-row.kg-grp .kg-nm{padding:6px 12px}.kg-row.kg-grp .kg-nm small{display:block;font-weight:400;color:var(--sub);font-size:10.5px}
+.kg-row.kg-grp .kg-track{height:auto}
+.kg-occ{position:absolute;bottom:6px;height:6px;border-radius:2px;opacity:.75}
+.kg-occ.pk0{background:var(--green)}.kg-occ.pk1{background:var(--red)}
+.kg-row.kg-grp .kg-track{position:relative}
