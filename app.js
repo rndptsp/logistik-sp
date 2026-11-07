@@ -858,18 +858,17 @@ function renderFilterPanel(){
     '<div class="fp-foot"><div class="fp-reset" data-act="reset">Reset filter</div><div class="fp-reset" data-act="laporan">Tampilan laporan harian</div><div class="fp-apply" data-act="apply">Terapkan</div></div>';
 }
 function filterStrip(){
-  const per = PER();
-  $('#filterSummary').innerHTML = '<span>Menampilkan</span><span class="tag"><b>' + esc(per.label) + '</b>' + (per.sub !== per.label ? ' · ' + esc(per.sub.replace(per.label + ' · ', '').replace(per.label, '')) : '') + '</span>' +
-    '<span class="tag qk" data-qk="moda" title="Ganti moda">moda <b>' + MODA_LBL[F.moda].toUpperCase() + '</b> &#9662;</span>' +
-    '<span class="tag qk" data-qk="inc" title="Ganti incoterm"><b>' + incName() + '</b> &#9662;</span>' +
-    '<span class="tag qk" data-qk="kem" title="Ganti kemasan"><b>' + (F.kem === 'ALL' ? 'RETAIL + CURAH' : esc(MKT[F.kem].toUpperCase())) + '</b> &#9662;</span>' +
-    (areaOn() ? '<span class="tag qk" data-qk="area" title="Ganti area"><b>' + areaName() + '</b> &#9662;</span>' : '') +
-    '<span class="tag qk" data-qk="reg" title="Ganti region"><b>' + esc(regName().toUpperCase()) + '</b> &#9662;</span>' +
-    '<span class="tag qk" data-qk="prov" title="Ganti provinsi"><b>' + esc(provName().toUpperCase()) + '</b> &#9662;</span>' +
-    '<span class="tag">target <b>' + (F.tgt === 'INTERNAL' ? 'Internal' : 'SNOP') + '</b></span>' +
-    '<span class="tag">' + srcTxt() + '</span>' +
+  const per = PER(), qk = (k, t, v) => '<span class="tag qk" data-qk="' + k + '" title="' + t + '">' + v + ' &#9662;</span>';
+  // two balanced rows (Rendy): what is shown | where it is shown + actions
+  $('#filterSummary').innerHTML = '<div class="fs-row"><span class="fs-lbl">Menampilkan</span><span class="tag"><b>' + esc(per.label) + '</b>' + (per.sub !== per.label ? ' · ' + esc(per.sub.replace(per.label + ' · ', '').replace(per.label, '')) : '') + '</span>' +
+    qk('moda', 'Ganti moda', 'moda <b>' + MODA_LBL[F.moda].toUpperCase() + '</b>') + qk('inc', 'Ganti incoterm', '<b>' + incName() + '</b>') +
+    qk('kem', 'Ganti kemasan', '<b>' + (F.kem === 'ALL' ? 'RETAIL + CURAH' : esc(MKT[F.kem].toUpperCase())) + '</b>') +
+    '<span class="tag">target <b>' + (F.tgt === 'INTERNAL' ? 'Internal' : 'SNOP') + '</b></span><span class="tag">' + srcTxt() + '</span></div>' +
+    '<div class="fs-row"><span class="fs-lbl">Wilayah</span>' + (areaOn() ? qk('area', 'Ganti area', '<b>' + areaName() + '</b>') : '') +
+    qk('reg', 'Ganti region', '<b>' + esc(regName().toUpperCase()) + '</b>') + qk('prov', 'Ganti provinsi', '<b>' + esc(provName().toUpperCase()) + '</b>') +
+    '<span class="fs-act"><span class="edit qprint" data-act="print" title="Cetak isi halaman ini (tanpa menu dan filter)">&#128438; Cetak</span>' +
     '<span class="edit qrep' + (isReportView() ? ' on' : '') + '" data-act="laporan" title="' + (isReportView() ? 'Kembali ke tampilan lengkap (semua moda, incoterm, plant & area)' : 'Sama dengan laporan Realisasi harian: AP1 · FRC TRUK · ZAK · CP Indarung · SNOP · bulan berjalan') + '">' + (isReportView() ? '&#10003; Laporan harian' : 'Laporan harian') + '</span>' +
-    '<span class="edit" data-act="openfilter">Ubah filter &#9662;</span>';
+    '<span class="edit" data-act="openfilter">Ubah filter &#9662;</span></span></div>';
 }
 /* "Laporan harian" quick view = the daily Realisasi report: AP1, FRC truk, ZAK, CP Indarung, SNOP, current month. */
 const REPORT_VIEW = () => ({per: {kind: 'month', month: D.months[D.months.length - 1]}, inc: 'FRC', moda: 'DARAT', kem: 'ZAK', area: 'AP1', srcOff: new Set(D.sources.filter(x => x !== DEFAULT_SRC)), tgt: 'SNOP', prov: [], reg: 'ALL'});
@@ -910,6 +909,15 @@ function applyFilter(){
   F.inc = draft.inc; F.moda = draft.moda || 'ALL'; F.kem = kemGrp(draft.kem === 'ALL' ? null : draft.kem); if(draft.kem === 'ALL') F.kem = 'ALL'; F.area = draft.area || 'ALL'; F.srcOff = new Set(draft.srcOff); F.tgt = draft.tgt || 'SNOP'; F.prov = (draft.prov || []).slice(); F.reg = draft.reg || 'ALL';
   saveFilter();
   closeNav(); closeFilter(); buildNav(); filterStrip(); route();
+}
+/* Print (Rendy): page content only (no menu, no filter strip); every tab pane printed under its tab name; a header line
+   repeats the active filters so the paper says what it shows. */
+function printPage(){
+  closeFilter(); closeNav(); closeQuick();
+  let ph = $('#printHead'); if(!ph){ ph = document.createElement('div'); ph.id = 'printHead'; $('#view').parentNode.insertBefore(ph, $('#view')); }
+  const f = [...$$('#filterSummary .tag')].map(t => t.innerText.replace(/[\u25BE\u25BC]/g, '').trim()).filter(Boolean).join(' · ');
+  ph.innerHTML = '<b>Semen Padang · Outbound Logistics</b><span>' + esc(f) + '</span><span>Data s.d. ' + esc(dayLabel(B.asOf)) + ' · dicetak ' + esc(new Date().toLocaleString('id-ID', {day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'})) + '</span>';
+  setTimeout(() => window.print(), 50);
 }
 function closeFilter(){ const f = $('#filterStrip'); if(f) f.classList.remove('open'); }
 function openFilter(){
@@ -2634,7 +2642,7 @@ function tabsHTML(id, list){
   let act = null; try { act = sessionStorage.getItem('tab:' + id); } catch(e){}
   if(!list.some(t => t.k === act)) act = list[0].k;
   return '<div class="tabbar" role="tablist" data-tabs="' + id + '">' + list.map(t => '<button class="tab' + (t.k === act ? ' on' : '') + '" role="tab" data-tab="' + id + ':' + t.k + '">' + esc(t.label) + (t.n != null ? '<small>' + t.n + '</small>' : '') + '</button>').join('') + '</div>' +
-    list.map(t => '<div class="tabpane" data-pane="' + id + ':' + t.k + '"' + (t.k === act ? '' : ' hidden') + '>' + t.html + '</div>').join('');
+    list.map(t => '<div class="tabpane" data-tl="' + esc(t.label) + '" data-pane="' + id + ':' + t.k + '"' + (t.k === act ? '' : ' hidden') + '>' + t.html + '</div>').join('');
 }
 function tabClick(btn){
   const [id, k] = btn.dataset.tab.split(':');
@@ -3380,6 +3388,7 @@ function bindEvents(){
       if(a === 'reset'){ draft = DEFAULT_VIEW(); applyFilter(); }
       if(a === 'laporan'){ e.stopPropagation(); draft = isReportView() ? DEFAULT_VIEW() : REPORT_VIEW(); applyFilter(); }
       if(a === 'openfilter'){ e.stopPropagation(); openFilter(); }
+      if(a === 'print'){ e.stopPropagation(); printPage(); }
       if(a === 'logout'){ logout(); }
       if(a === 'closemodal'){ closeModal(); }
       return;
