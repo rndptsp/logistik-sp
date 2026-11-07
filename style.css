@@ -960,8 +960,6 @@ a.t10-row:hover .t10-nm{color:var(--red)}
   body{background:#fff !important}
   #printHead{display:flex !important;flex-direction:column;gap:2px;font-size:11px;color:#333;border-bottom:2px solid #000;padding:0 0 6px;margin:0 0 12px}
   #printHead b{font-size:13px;color:#000}
-  .tabpane[hidden]{display:block !important}
-  .tabpane::before{content:attr(data-tl);display:block;font-weight:800;text-transform:uppercase;letter-spacing:.04em;font-size:12px;border-bottom:1px solid #999;margin:18px 0 8px;padding-bottom:3px}
   .tbl-wrap,.tbl-wrap.tall{max-height:none !important;overflow:visible !important}
   .tbl thead th{position:static !important}
   .tbl tr{break-inside:avoid}
@@ -969,3 +967,12 @@ a.t10-row:hover .t10-nm{color:var(--red)}
   .map-hero{break-inside:avoid}
   *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
 }
+
+/* Cetak = snapshot of the shown page (Rendy) */
+body.snap .tbl-wrap,body.snap .tbl-wrap.tall{max-height:none !important;overflow:visible !important}
+body.snap .tbl thead th,body.snap .tabbar{position:static !important}
+body.snap #printHead{display:flex;flex-direction:column;gap:2px;font-size:12px;color:#333;border-bottom:2px solid #000;padding:14px 0 8px;margin:0 auto 12px;max-width:1200px}
+body.snap #printHead b{font-size:15px;color:#000}
+#toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#111;color:#fff;padding:10px 16px;border-radius:4px;font-size:13px;z-index:200;opacity:0;pointer-events:none;transition:opacity .2s}
+#toast.show{opacity:.95}
+body.snap *,body.snap *::before,body.snap *::after{animation:none !important;transition:none !important}

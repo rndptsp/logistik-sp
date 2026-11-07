@@ -866,7 +866,7 @@ function filterStrip(){
     '<span class="tag">target <b>' + (F.tgt === 'INTERNAL' ? 'Internal' : 'SNOP') + '</b></span><span class="tag">' + srcTxt() + '</span></div>' +
     '<div class="fs-row"><span class="fs-lbl">Wilayah</span>' + (areaOn() ? qk('area', 'Ganti area', '<b>' + areaName() + '</b>') : '') +
     qk('reg', 'Ganti region', '<b>' + esc(regName().toUpperCase()) + '</b>') + qk('prov', 'Ganti provinsi', '<b>' + esc(provName().toUpperCase()) + '</b>') +
-    '<span class="fs-act"><span class="edit qprint" data-act="print" title="Cetak isi halaman ini (tanpa menu dan filter)">&#128438; Cetak</span>' +
+    '<span class="fs-act"><span class="edit qprint" data-act="print" title="Simpan halaman yang tampil sebagai satu gambar PNG resolusi 4K (tanpa menu dan filter)">&#128438; Cetak</span>' +
     '<span class="edit qrep' + (isReportView() ? ' on' : '') + '" data-act="laporan" title="' + (isReportView() ? 'Kembali ke tampilan lengkap (semua moda, incoterm, plant & area)' : 'Sama dengan laporan Realisasi harian: AP1 · FRC TRUK · ZAK · CP Indarung · SNOP · bulan berjalan') + '">' + (isReportView() ? '&#10003; Laporan harian' : 'Laporan harian') + '</span>' +
     '<span class="edit" data-act="openfilter">Ubah filter &#9662;</span></span></div>';
 }
@@ -910,14 +910,33 @@ function applyFilter(){
   saveFilter();
   closeNav(); closeFilter(); buildNav(); filterStrip(); route();
 }
-/* Print (Rendy): page content only (no menu, no filter strip); every tab pane printed under its tab name; a header line
-   repeats the active filters so the paper says what it shows. */
-function printPage(){
+/* Cetak (Rendy): the page as shown (current tab only, no menu / filter strip) as ONE image, at least 4K wide (3840 px).
+   html2canvas (MIT, self-hosted in assets/vendor, loaded on first use). Scrolling tables are expanded first so nothing is cut;
+   a header line states the filters and dates. Browsers cap a canvas at 32767 px high: very long pages get a lower scale (said in the toast). */
+let H2C = null;
+const loadH2C = () => H2C || (H2C = new Promise((ok, no) => { if(window.html2canvas) return ok(); const s = document.createElement('script'); s.src = 'assets/vendor/html2canvas.min.js'; s.onload = ok; s.onerror = () => { H2C = null; no(new Error('html2canvas tidak termuat')); }; document.head.appendChild(s); }));
+function toast(msg, ms){ let t = $('#toast'); if(!t){ t = document.createElement('div'); t.id = 'toast'; document.body.appendChild(t); } t.innerHTML = msg; t.className = 'show'; clearTimeout(t._h); if(ms) t._h = setTimeout(() => { t.className = ''; }, ms); }
+async function printPage(){
   closeFilter(); closeNav(); closeQuick();
-  let ph = $('#printHead'); if(!ph){ ph = document.createElement('div'); ph.id = 'printHead'; $('#view').parentNode.insertBefore(ph, $('#view')); }
-  const f = [...$$('#filterSummary .tag')].map(t => t.innerText.replace(/[\u25BE\u25BC]/g, '').trim()).filter(Boolean).join(' · ');
-  ph.innerHTML = '<b>Semen Padang · Outbound Logistics</b><span>' + esc(f) + '</span><span>Data s.d. ' + esc(dayLabel(B.asOf)) + ' · dicetak ' + esc(new Date().toLocaleString('id-ID', {day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'})) + '</span>';
-  setTimeout(() => window.print(), 50);
+  const view = $('#view'), f = [...$$('#filterSummary .tag')].map(t => t.innerText.replace(/[▾▼]/g, '').trim()).filter(Boolean).join(' · ');
+  const now = new Date(), stamp = now.toISOString().slice(0, 16).replace(/[-:T]/g, '');
+  const ph = document.createElement('div'); ph.id = 'printHead';
+  ph.innerHTML = '<b>Semen Padang · Outbound Logistics</b><span>' + esc(f) + '</span><span>Data s.d. ' + esc(dayLabel(B.asOf)) + ' · dicetak ' + esc(now.toLocaleString('id-ID', {day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit'})) + '</span>';
+  toast('Menyiapkan gambar 4K …');
+  try {
+    await loadH2C();
+    document.body.classList.add('snap'); view.insertBefore(ph, view.firstChild);
+    await new Promise(r => setTimeout(r, 120));
+    const W = view.scrollWidth, H = view.scrollHeight;
+    let scale = Math.max(3840 / W, 2); const capped = H * scale > 32000; if(capped) scale = 32000 / H;
+    const cv = await window.html2canvas(view, {scale, useCORS: true, backgroundColor: '#ffffff', logging: false, windowWidth: document.documentElement.clientWidth, scrollX: 0, scrollY: -window.scrollY, onclone: d => d.body.classList.add('snap')});
+    const blob = await new Promise(r => cv.toBlob(r, 'image/png'));
+    const page = (location.hash.replace(/^#\/?/, '') || 'ringkasan').replace(/[^a-z0-9]+/gi, '_').slice(0, 40);
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'Outbound_' + page + '_' + stamp + '.png'; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 4000);
+    toast('Gambar tersimpan: ' + fmt(cv.width) + ' × ' + fmt(cv.height) + ' px' + (capped ? ' (halaman sangat panjang: lebar di bawah 4K karena batas browser)' : ''), 6000);
+  } catch(err){ toast('Gagal membuat gambar: ' + esc(err.message), 6000); }
+  finally { ph.remove(); document.body.classList.remove('snap'); }
 }
 function closeFilter(){ const f = $('#filterStrip'); if(f) f.classList.remove('open'); }
 function openFilter(){
