@@ -154,6 +154,15 @@ const MODA_LBL = {DARAT: 'Darat', LAUT: 'Laut', ALL: 'Semua'};
 const SUBM = [['KONT', 'Kontainer', 'FOT / FRC container'], ['POLY', 'Poly', 'polysling'], ['LAS', 'Lasahan', 'karung lepas']];
 const subOf = (inc, pack) => { const n = INCS()[inc] || ''; return /CONTAINER/.test(n) ? 'KONT' : pack === 1 || n === 'FRC KAPAL' || n === 'FOB KAPAL' ? 'POLY' : 'LAS'; };
 const subOk = (inc, pack) => !F.sub || (modaOf(INCS()[inc]) === 'LAUT' && subOf(inc, pack) === F.sub);
+/* Target split for Poly / Lasahan (Rendy: SNOP kemasan already has a poly group): share of poly in the SNOP volume per
+   month x district x incoterm, from B.tbrand col 8 (1 poly / 0 not). Without it, FOB/FAS targets count as lasahan. */
+let PSH = null;
+const polyShare = t => { if(!PSH || PSH.b !== B){ PSH = {b: B, m: new Map()}; (B.tbrand || []).forEach(r => { if(r[8] == null || r[8] < 0) return; const k = r[0] + '|' + r[4] + '|' + r[1]; const o = PSH.m.get(k) || [0, 0]; o[1] += r[7]; if(r[8] === 1) o[0] += r[7]; PSH.m.set(k, o); }); }
+  const o = PSH.m.get(t[0] + '|' + t[2] + '|' + tInc(t)); return o && o[1] > 0 ? o[0] / o[1] : null; };
+/* weight of a target row inside the current F.sub: 1 / 0, or the poly share for FOB/FAS */
+const subW = t => { if(!F.sub) return 1; const inc = tInc(t), n = INCS()[inc] || ''; if(modaOf(n) !== 'LAUT') return 0;
+  const s0 = subOf(inc, null); if(s0 === 'KONT' || n === 'FRC KAPAL' || n === 'FOB KAPAL') return s0 === F.sub ? 1 : 0;
+  if(F.sub === 'KONT') return 0; const sh = polyShare(t); return sh == null ? (F.sub === 'LAS' ? 1 : 0) : F.sub === 'POLY' ? sh : 1 - sh; };
 let MG_ON = false;
 function modaGroups(build, sub){
   if(MG_ON || F.sub || F.moda !== 'LAUT' || F.inc !== 'ALL') return build();
@@ -280,8 +289,9 @@ function targetBetween(t, from, to){
   const m = t[0], n = dim(m), a = m + '-01', b = m + '-' + pad2(n);
   if(b < from || a > to) return 0;
   const d0 = from > a ? +from.slice(8) : 1, d1 = to < b ? +to.slice(8) : n;
-  if(t[6]){ let s = 0; for(let d = d0; d <= d1; d++) s += t[6][d - 1] || 0; return s * tgtRowK(t); }
-  return t[5] * (d1 - d0 + 1) / n * tgtRowK(t);
+  const w = subW(t); if(!w) return 0;
+  if(t[6]){ let s = 0; for(let d = d0; d <= d1; d++) s += t[6][d - 1] || 0; return s * tgtRowK(t) * w; }
+  return t[5] * (d1 - d0 + 1) / n * tgtRowK(t) * w;
 }
 function blank(){ return {vol:0, frc:0, frc0:0, trips:0, dwS:0, dwN:0, tgt:0, tgtFull:0, so:0, soShip:0, soOpen:null, hasTgt:false}; }
 /* % OF per SO (Rendy, option 1; builds with B.sof): SO due (Tgl Kirim) inside the period up to the last data day vs the realisasi on
@@ -314,7 +324,7 @@ function summarize(group, per, sc, opt){
   });
   const m0 = per.from.slice(0, 7), m1 = fullTo.slice(0, 7);
   B.targets.forEach(t => {
-    if(!kemOk(tKem(t)) || t[0] < m0 || t[0] > m1 || !incOk(tInc(t)) || !srcOkS(t[4], sc) || !scopeOkT(t, sc) || nkSkip(t[1], group, sc) || !subOk(tInc(t), null)) return;
+    if(!kemOk(tKem(t)) || t[0] < m0 || t[0] > m1 || !incOk(tInc(t)) || !srcOkS(t[4], sc) || !scopeOkT(t, sc) || nkSkip(t[1], group, sc) || !subW(t)) return;
     const o = get(TK[group](t));
     o.tgt += targetBetween(t, per.from, per.tgtTo); o.tgtFull += targetBetween(t, per.from, fullTo); o.hasTgt = true;
   });

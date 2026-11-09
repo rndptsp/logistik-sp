@@ -369,7 +369,8 @@ def cmd_nonzak(a):
     write_brand_target(a.snop,keep)
 
 # ---------------------------------------------------------------- target per brand (Rendy, Nov 2026)
-TBC=['TAHUN','BULAN_NO','PROVINSI','KODE_DISTRIK','DISTRIK','PLANT_SNOP','SOURCE_PLANT','INCOTERM','KEMASAN','BRAND','TARGET_TON']
+TBC0=['TAHUN','BULAN_NO','PROVINSI','KODE_DISTRIK','DISTRIK','PLANT_SNOP','SOURCE_PLANT','INCOTERM','KEMASAN','BRAND','TARGET_TON']
+TBC=TBC0+['POLY']   # POLY: 1 = polysling (POLY in KEMASAN DETAIL / DETAIL MATERIAL, or HANDLING POLYSLING), 0 = not; files written before have no column
 BRAND_CODE=[('MDK','SEMEN MERDEKA'),('DYX','DYNAMIX'),('AND','SEMEN ANDALAS'),('SMBR','SEMEN BATURAJA'),('SG','SEMEN GRESIK'),('ST','SEMEN TONASA'),('SP','SEMEN PADANG')]
 CURAH_BRAND=[('ULTRAPRO','ULTRAPRO'),('EZPRO','EZPRO'),('SPRINTPRO','SPRINTPRO'),('PWRPRO','POWERPRO'),('POWERPRO','POWERPRO'),('DUPRO','DUPRO+'),('SUPERTERMO','SUPERTERMO')]
 def brand_of(prod):
@@ -402,14 +403,16 @@ def write_brand_target(path,te_ref):
         if not v: continue
         dn=str(r[ix['SALES DISTRIK']] or '');d=spell.get(nz(dn),re.sub(r'^(KAB|KOTA)\.(?=\S)',r'\1. ',dn.strip()))
         pn=r[ix['DELIV. PLANT']]
-        agg[(int(r[ix['Tahun']] or 2026) if 'Tahun' in ix else 2026,mn,NM.get(r[ix['PROVINSI']],r[ix['PROVINSI']]),int(r[ix['KODE DISTRIK']]),d,pn,PD.get(pn,pn),snop_inc(r[ix['TERM']],r[ix['HANDLING']]),k,br)]+=v
+        pk_txt=' '.join(str(r[ix[c]] or '') for c in ('KEMASAN DETAIL','DETAIL MATERIAL') if c in ix).upper()
+        poly=1 if ('POLY' in re.split('[^A-Z0-9]+',pk_txt) or str(r[ix['HANDLING']] or '').upper()=='POLYSLING') else 0   # Rendy: kemasan poly
+        agg[(int(r[ix['Tahun']] or 2026) if 'Tahun' in ix else 2026,mn,NM.get(r[ix['PROVINSI']],r[ix['PROVINSI']]),int(r[ix['KODE DISTRIK']]),d,pn,PD.get(pn,pn),snop_inc(r[ix['TERM']],r[ix['HANDLING']]),k,br,poly)]+=v
     p=DATA/'target_brand.csv.gz'
     old=[]
     if p.exists():
         with gzip.open(p,'rt',newline='',encoding='utf-8') as f:
             rd=csv.reader(f);hh=next(rd)
-            if hh==TBC: old=[r for r in rd if int(float(r[1])) not in months]
-    new=[[str(c) for c in k]+[repr(round(v,3))] for k,v in sorted(agg.items(),key=str)]
+            if hh in (TBC,TBC0): old=[(r if hh==TBC else r+['']) for r in rd if int(float(r[1])) not in months]
+    new=[[str(c) for c in k[:10]]+[repr(round(v,3)),str(k[10])] for k,v in sorted(agg.items(),key=str)]
     with gzip.open(p,'wt',newline='',encoding='utf-8') as f:
         w=csv.writer(f);w.writerow(TBC);w.writerows(sorted(old+new,key=lambda r:(int(float(r[1])),)))
     tot=C.defaultdict(float)

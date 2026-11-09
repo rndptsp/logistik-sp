@@ -472,7 +472,7 @@ def build(cfg):
                            INCOTERMS.index(inc), distr(up(r.get("DISTRIBUTOR"))), kem_d("ZAK")])
     print(f"  target FRC per distributor: {len(tdistr):,} baris")
 
-    # Target per brand (data/target_brand.csv.gz, update_target: SNOP x DETAIL MATERIAL): [month, inc, src, prov, dist, brand, kem, ton]
+    # Target per brand (data/target_brand.csv.gz, update_target: SNOP x DETAIL MATERIAL): [month, inc, src, prov, dist, brand, kem, ton, poly (1/0, -1 unknown)]
     tbrand = []
     tb_path = os.path.join(base, "data", "target_brand.csv.gz")
     if os.path.exists(tb_path):
@@ -484,7 +484,8 @@ def build(cfg):
             p, di = prov(up(r.get("PROVINSI"))), dist(up(r.get("DISTRIK")))
             dist_prov.setdefault(di, p)
             tbrand.append([f"{int(num(r.get('TAHUN')))}-{int(num(r.get('BULAN_NO'))):02d}", INCOTERMS.index(inc), src(up(r.get("SOURCE_PLANT"))), p, di,
-                           brand_d(up(r.get("BRAND"))), kemasan(r.get("KEMASAN")), round(num(r.get("TARGET_TON")), 3)])
+                           brand_d(up(r.get("BRAND"))), kemasan(r.get("KEMASAN")), round(num(r.get("TARGET_TON")), 3),
+                           int(num(r.get("POLY"))) if str(r.get("POLY") or "") != "" else -1])   # poly flag, -1 = file without it
     print(f"  target per brand: {len(tbrand):,} baris ({', '.join(sorted({t[0] for t in tbrand}))})")
 
     # ---------------- Sales Order (03_SO.xlsx / data/so.csv.gz): FRC truk only, SOCC by delivery day ----------------
