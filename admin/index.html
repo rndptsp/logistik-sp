@@ -137,9 +137,11 @@ function renderSlots(){
       '<a href="template/TEMPLATE_' + k.replace('tactical','TACTICAL').toUpperCase() + '.xlsx" download style="float:right;font-size:12px;color:var(--red);font-weight:700">⬇ Unduh template</a><input type="file" data-slot="' + k + '" accept=".xlsx"><div class="bar" id="bar_' + k + '"><i></i></div><div class="note" id="m_' + k + '"></div></td></tr>';
   }).join('') + '</tbody>';
   const have = k => !!inb[k], tg = ['tactical', 'snop', 'monitoring'].filter(have).length;
-  $('#go').disabled = busy || (tg > 0 && tg < 3) || !S.store;
+  // allowed (same rule as tools/master/run_web.py): SNOP alone (target per brand + porsi poly), SNOP + Monitoring (target without Tactical), all three
+  const bad = tg > 0 && !(have('snop') && (tg === 1 || (tg === 2 && have('monitoring')) || tg === 3));
+  $('#go').disabled = busy || bad || !S.store;
   $('#go').textContent = S.inbox.length ? 'Proses update' : 'Bangun ulang dari master';
-  if(tg > 0 && tg < 3) $('#upMsg').textContent = 'Target butuh tiga file: Tactical, SNOP, dan Monitoring.';
+  if(bad) $('#upMsg').textContent = 'Target: SNOP saja (target brand & porsi poly), SNOP + Monitoring, atau Tactical + SNOP + Monitoring.';
 }
 
 async function uploadSlot(slot, file){
