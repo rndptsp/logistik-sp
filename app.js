@@ -162,7 +162,7 @@ const polyShare = t => { if(!PSH || PSH.b !== B){ PSH = {b: B, m: new Map()}; (B
 /* weight of a target row inside the current F.sub: 1 / 0, or the poly share for FOB/FAS */
 const subW = t => { if(!F.sub) return 1; const inc = tInc(t), n = INCS()[inc] || ''; if(modaOf(n) !== 'LAUT') return 0;
   const s0 = subOf(inc, null); if(s0 === 'KONT' || n === 'FRC KAPAL' || n === 'FOB KAPAL') return s0 === F.sub ? 1 : 0;
-  if(F.sub === 'KONT') return 0; const sh = polyShare(t); return sh == null ? (F.sub === 'LAS' ? 1 : 0) : F.sub === 'POLY' ? sh : 1 - sh; };
+  if(F.sub === 'KONT') return 0; const sh = polyShare(t); return sh == null ? soW(inc, t[0], t[2]) : F.sub === 'POLY' ? sh : 1 - sh; };   // no SNOP poly flag yet: realisasi share (Rendy: pakai data yang ada)
 /* SO in the moda laut detail (Rendy: a ship SO always equals the ship capacity, so it carries no poly flag of its own):
    FOB/FAS SO is split poly / lasahan like the realisasi of the same month x district x incoterm (whole history when that
    month has none); kontainer and FRC KAPAL by incoterm. */
