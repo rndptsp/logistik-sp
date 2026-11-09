@@ -148,6 +148,19 @@ const LAUT_INC = new Set(['FRC CONTAINER', 'FRC KAPAL', 'FOT CONTAINER', 'FOB', 
 const modaOf = n => LAUT_INC.has(n) ? 'LAUT' : 'DARAT';
 const modaIncs = m => INCS().filter(n => m === 'ALL' || modaOf(n) === m);
 const MODA_LBL = {DARAT: 'Darat', LAUT: 'Laut', ALL: 'Semua'};
+/* Moda laut detail (Rendy): KONT = kontainer (FOT/FRC CONTAINER), POLY = polysling (POLY in the material, FRC KAPAL),
+   LAS = lasahan (karung lepas: other FOB / FAS). Realisasi carries the poly flag (fact col 11); targets and SO only have
+   the incoterm, so FOB/FAS targets count as lasahan. F.sub (set by modaGroups) narrows every total to one of them. */
+const SUBM = [['KONT', 'Kontainer', 'FOT / FRC container'], ['POLY', 'Poly', 'polysling'], ['LAS', 'Lasahan', 'karung lepas']];
+const subOf = (inc, pack) => { const n = INCS()[inc] || ''; return /CONTAINER/.test(n) ? 'KONT' : pack === 1 || n === 'FRC KAPAL' || n === 'FOB KAPAL' ? 'POLY' : 'LAS'; };
+const subOk = (inc, pack) => !F.sub || (modaOf(INCS()[inc]) === 'LAUT' && subOf(inc, pack) === F.sub);
+let MG_ON = false;
+function modaGroups(build, sub){
+  if(MG_ON || F.sub || F.moda !== 'LAUT' || F.inc !== 'ALL') return build();
+  MG_ON = true;
+  try { return SUBM.map(([k, l, d]) => { F.sub = k; const h = build(); return h ? '<div class="inc-grp moda-sub ms-' + k + '"><b>' + l + '</b><small>' + d + (sub ? ' · ' + sub() : '') + '</small></div>' + h : ''; }).join(''); }
+  finally { F.sub = null; MG_ON = false; }
+}
 const incOk = inc => { const n = INCS()[inc]; return F.inc === 'ALL' ? (F.moda === 'ALL' || modaOf(n) === F.moda) : n === F.inc; };
 /* Franco family: FRC (truk), FRC CONTAINER, FRC KAPAL - each its own incoterm; only FRC TRUK has SO (Real/SO).
    The rest is picked up by the distributor. */
@@ -277,9 +290,9 @@ function blank(){ return {vol:0, frc:0, frc0:0, trips:0, dwS:0, dwN:0, tgt:0, tg
 const sofOn = () => !!B.sof;
 function sofScan(per, sc, keyOf, add){
   per = toPer(per); const to = per.tgtTo || per.to;
-  B.sof.forEach(r => { if(r[0] < per.from || r[0] > to || (sc.prov == null && !provSel(r[1])) || !kemOk(r[5]) || !incOk(r[6]) || (sc.prov != null && r[1] !== sc.prov) || (sc.dist != null && r[2] !== sc.dist) || (sc.eksp != null && r[3] !== sc.eksp) || (sc.distr != null && r[8] !== sc.distr)) return;
+  B.sof.forEach(r => { if(r[0] < per.from || r[0] > to || !subOk(r[6], null) || (sc.prov == null && !provSel(r[1])) || !kemOk(r[5]) || !incOk(r[6]) || (sc.prov != null && r[1] !== sc.prov) || (sc.dist != null && r[2] !== sc.dist) || (sc.eksp != null && r[3] !== sc.eksp) || (sc.distr != null && r[8] !== sc.distr)) return;
     add(keyOf(r), r[4], r[7], null, 0, r[1]); });
-  (B.soopen || []).forEach(r => { if((sc.prov == null && !provSel(r[0])) || !kemOk(r[4]) || !incOk(r[5]) || (sc.prov != null && r[0] !== sc.prov) || (sc.dist != null && r[1] !== sc.dist) || (sc.eksp != null && r[2] !== sc.eksp) || (sc.distr != null && r[3] !== sc.distr)) return;
+  (B.soopen || []).forEach(r => { if(!subOk(r[5], null) || (sc.prov == null && !provSel(r[0])) || !kemOk(r[4]) || !incOk(r[5]) || (sc.prov != null && r[0] !== sc.prov) || (sc.dist != null && r[1] !== sc.dist) || (sc.eksp != null && r[2] !== sc.eksp) || (sc.distr != null && r[3] !== sc.distr)) return;
     add(keyOf([null, r[0], r[1], r[2], 0, 0, 0, 0, r[3]]), 0, 0, r[6], r[7], r[0]); });
 }
 const sofAdd = o => (k, so, ship, b, t) => { o.so += so; o.soShip += ship; if(b != null){ o.soOpen = o.soOpen || [0, 0, 0]; o.soOpen[b] += t; } };
@@ -293,7 +306,7 @@ function summarize(group, per, sc, opt){
   const out = new Map();
   const get = k => { let o = out.get(k); if(!o){ o = blank(); o.key = k; out.set(k, o); } return o; };
   B.facts.forEach(f => {
-    if(!inPer(f[0], per) || !srcOkS(f[2], sc) || !kemOk(f[10]) || !scopeOkF(f, sc) || nkSkip(f[3], group, sc)) return;
+    if(!inPer(f[0], per) || !srcOkS(f[2], sc) || !kemOk(f[10]) || !scopeOkF(f, sc) || nkSkip(f[3], group, sc) || !subOk(f[1], f[11])) return;
     const o = get(FK[group](f));
     if(soAll() ? incOk(f[1]) : f[1] === 0) o.frc0 += f[6];   // % OF basis: selected incoterm(s), or FRC TRUK on older builds
     if(achOk(f[1]) && achKem(f[10]) && nkAch(f[3])) o.frc += f[6];
@@ -301,7 +314,7 @@ function summarize(group, per, sc, opt){
   });
   const m0 = per.from.slice(0, 7), m1 = fullTo.slice(0, 7);
   B.targets.forEach(t => {
-    if(!kemOk(tKem(t)) || t[0] < m0 || t[0] > m1 || !incOk(tInc(t)) || !srcOkS(t[4], sc) || !scopeOkT(t, sc) || nkSkip(t[1], group, sc)) return;
+    if(!kemOk(tKem(t)) || t[0] < m0 || t[0] > m1 || !incOk(tInc(t)) || !srcOkS(t[4], sc) || !scopeOkT(t, sc) || nkSkip(t[1], group, sc) || !subOk(tInc(t), null)) return;
     const o = get(TK[group](t));
     o.tgt += targetBetween(t, per.from, per.tgtTo); o.tgtFull += targetBetween(t, per.from, fullTo); o.hasTgt = true;
   });
@@ -313,11 +326,11 @@ function summarize(group, per, sc, opt){
     if(group !== 'src'){
       const m9 = per.to.slice(0, 7);
       B.sod.forEach(s => {
-        if(s[0].slice(0, 7) < m0 || s[0].slice(0, 7) > m9 || !kemOk(s[5]) || !soIncOk(s) || !scopeOkT(s, sc) || nkSkip(s[1], group, sc)) return;
+        if(s[0].slice(0, 7) < m0 || s[0].slice(0, 7) > m9 || !kemOk(s[5]) || !soIncOk(s) || !scopeOkT(s, sc) || nkSkip(s[1], group, sc) || (F.sub && !subOk(s[6] || 0, null))) return;
         get(SK[group](s)).so += s[4];
       });
       B.so.forEach(s => {
-        if(s[0] < m0 || s[0] > per.to.slice(0, 7) || B.sodMonths.has(s[0]) || !scopeOkT(s, sc) || nkSkip(s[1], group, sc)) return;
+        if(F.sub || s[0] < m0 || s[0] > per.to.slice(0, 7) || B.sodMonths.has(s[0]) || !scopeOkT(s, sc) || nkSkip(s[1], group, sc)) return;
         get(SK[group](s)).so += s[4];
       });
     }
@@ -364,7 +377,7 @@ function rangeGroup(fromISO, toISO, sc, group){
   const get = k => { let o = out.get(k); if(!o){ o = {key:k, vol:0, frc:0, trips:0, tgt:0, hasTgt:false}; out.set(k, o); } return o; };
   B.facts.forEach(f => {
     const ds = B.days[f[0]];
-    if(ds < fromISO || ds > toISO || !srcOkS(f[2], sc) || !kemOk(f[10]) || !scopeOkF(f, sc) || nkSkip(f[3], group, sc)) return;
+    if(ds < fromISO || ds > toISO || !srcOkS(f[2], sc) || !kemOk(f[10]) || !scopeOkF(f, sc) || nkSkip(f[3], group, sc) || !subOk(f[1], f[11])) return;
     const o = get(FK[group](f));
     if(achOk(f[1]) && achKem(f[10]) && nkAch(f[3])) o.frc += f[6];
     if(incOk(f[1])){ o.vol += f[6]; o.trips += f[7]; }
@@ -457,6 +470,7 @@ function withInc(T, fn){ const s = F.inc; if(T && T.incFix) F.inc = T.incFix; tr
 const kemSub = (m, sc) => () => { const t = total(m, sc || {}); return fmt(t.vol) + ' t' + (t.hasTgt ? ' · ' + pctTxt(t.pct) + ' dari target ' + fmt(t.tgt) + ' t' : ' · tanpa target'); };
 function incGroups(build, sub){ return kemGroups(() => incGroups1(build, sub)); }
 function incGroups1(build, sub){
+  if(F.moda === 'LAUT' && F.inc === 'ALL' && !MG_ON) return modaGroups(build, sub);   // laut: Kontainer / Poly / Lasahan (Rendy)
   const act = INCS().map((n, i) => i).filter(i => incOk(i));
   if(act.length < 2) return build();
   return act.map(i => withInc({incFix: INCS()[i]}, () => { const h = build(); return h ? '<div class="inc-grp" style="--c:' + incColor(i) + '"><span class="inc-dot" style="background:' + incColor(i) + '"></span><b>' + esc(incLbl(INCS()[i])) + '</b>' + (sub ? '<small>' + sub() + '</small>' : '') + '</div>' + h : ''; })).join('');
@@ -1897,11 +1911,11 @@ function incTable(m, sc){
 }
 /* Per region (NS / CS / Lainnya), same columns as the province table; a click on the name sets the region filter. */
 function regionTable(m){
-  return kemGroups(() => { const rows = [...summarize('prov', m).values()].filter(o => o.vol > 0 || o.tgt > 0).sort((a, b) => b.vol - a.vol);
+  return kemGroups(() => modaGroups(() => { const rows = [...summarize('prov', m).values()].filter(o => o.vol > 0 || o.tgt > 0).sort((a, b) => b.vol - a.vol);
     if(!rows.length) return '';
     const t = total(m), pv = prevVols('prov', m), cols = [{h: 'Region / provinsi', cls: 'name', val: r => tc(B.dims.prov[r.key])}, C.fm, C.tgt, C.vol(), C.pct, C.gap, C.so, C.of, C.trips, vsCol(pv, m)].map(c => Object.assign({}, c));
     cols[0].total = '<b>Total</b>'; cols[1].total = fmt(t.tgtFull); cols[2].total = fmt(t.tgt); cols[3].total = fmt(t.vol); cols[4].total = pctTxt(t.pct); cols[5].total = signed(t.gap); cols[6].total = fmt(t.so); cols[7].total = pctTxt(t.of); cols[8].total = fmt(t.trips); cols[9].total = vsTot(t.vol, total(prevPer(toPer(m))).vol);
-    return table(cols, rows, {go: r => '#/provinsi/' + enc(B.dims.prov[r.key]), total: true, prov: r => r.key, subTop: true}); }, kemSub(m));
+    return table(cols, rows, {go: r => '#/provinsi/' + enc(B.dims.prov[r.key]), total: true, prov: r => r.key, subTop: true}); }, kemSub(m)), kemSub(m));
 }
 function pageProvList(){
   const rows = ranked(summarize('prov', PER()));
@@ -1914,7 +1928,7 @@ function pageProvList(){
     '<div class="dp-head"><div><div class="nm">Semua Provinsi</div><div class="sub">Capaian tonase &amp; rank · ' + periodSub() + '</div></div><div class="badges"><div class="dp-badge ' + tierClass(t.pct) + '">Total ' + pctTxt(t.pct) + ' dari target</div></div></div>' +
     incPerf(PER(), {}) +
     '<div class="section-head"><div class="section-title">Per region &amp; provinsi</div><div class="section-sub">NS = Aceh, Sumut, Riau kepulauan · CS = Sumbar, Riau daratan, Jambi, Bengkulu</div></div>' +
-    (kemGroups(provTbl, kemSub(PER())) || '<div class="dp-review">Tidak ada data untuk filter ini.</div>') +
+    (kemGroups(() => modaGroups(provTbl, kemSub(PER())), kemSub(PER())) || '<div class="dp-review">Tidak ada data untuk filter ini.</div>') +
     '<div class="dp-cols even">' + trendPanel({}, 'mingguan', 'Tren seluruh provinsi') + sourcePanel({}) + '</div>' +
     '</div>', 'wilayah');
 }

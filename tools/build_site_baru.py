@@ -369,7 +369,9 @@ def build(cfg):
         dwell = r.get("DWELL_TIME_JAM")
         ok_dwell = dwell not in (None, "") and not r.get("DWELL_WAITING_FLAG") and 0 < num(dwell) <= 48   # 0 jam = jam masuk/keluar tidak tercatat (DC), bukan muat instan
         kem = kem_of(r)
-        f = facts[(d.isoformat(), inc, s, p, di, e, kem)]
+        # Rendy: muatan laut lasahan (karung lepas) vs poly (polysling): POLY in the material name, or a polysling incoterm
+        pack = 1 if (inc in ("FOB KAPAL", "FRC KAPAL") or "POLY" in re.split(r"[^A-Z0-9]+", up(r.get("PRODUK")))) else 0
+        f = facts[(d.isoformat(), inc, s, p, di, e, kem, pack)]
         f[0] += ton; f[1] += 1
         if ok_dwell:
             f[2] += num(dwell); f[3] += 1
@@ -386,7 +388,6 @@ def build(cfg):
         if kt and kc:
             toko_kec[ti][kec(kc)] += ton
         # Rendy: muatan kapal lasahan (karung lepas) vs poly (polysling): POLY in the material name, or a polysling incoterm
-        pack = 1 if (inc in ("FOB KAPAL", "FRC KAPAL") or "POLY" in re.split(r"[^A-Z0-9]+", up(r.get("PRODUK")))) else 0
         g = ship[(d.isoformat(), inc, s, p, di, distr(up(r.get("DISTRIBUTOR"))), e, ti, kem, kapal_d(kapal) if kapal else -1, pack)]
         prod_ = re.sub(r"\s+", " ", up(r.get("PRODUK")))
         bg = brand_rows[(d.isoformat(), inc, s, p, di, distr(up(r.get("DISTRIBUTOR"))), brand_d(brand_of(prod_)), sku_d(prod_ or "-"), kem)]
@@ -564,7 +565,7 @@ def build(cfg):
         nonkin, tgt_int = [], {}
     zero = set()
     tgt_kem = {t[9] for t in targets} or {kem_d("ZAK")}   # only kemasan that have targets elsewhere
-    for (day, inc_, s_, p_, di_, e_, k_) in facts:
+    for (day, inc_, s_, p_, di_, e_, k_, *_) in facts:
         if p_ in nonkin and k_ in tgt_kem:
             zero.add((day[:7], p_, di_, e_, s_, INCOTERMS.index(inc_), k_))
     for m_, p_, di_, e_, s_, ii, k_ in sorted(zero):
@@ -607,7 +608,7 @@ def build(cfg):
                  "distProv": [dist_prov.get(i, -1) for i in range(len(dist.items))]},
         "days": days,
         "facts": [[day_idx[k[0]], INCOTERMS.index(k[1]), k[2], k[3], k[4], k[5],
-                   round(v[0], 2), v[1], round(v[2], 2), v[3], k[6]] for k, v in facts.items()],
+                   round(v[0], 2), v[1], round(v[2], 2), v[3], k[6], k[7]] for k, v in facts.items()],
         # one row per day x incoterm x source x province x district x distributor x ekspeditur x ship-to
         # [day, inc, src, prov, dist, distr, eksp, toko, ton, trips, kem, kapal (-1 = none)]
         # brand from the material name, per day: [day, inc, src, prov, dist, distr, brand, sku (material name), kem, ton, trips]

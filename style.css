@@ -976,3 +976,5 @@ body.snap #printHead b{font-size:15px;color:#000}
 #toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#111;color:#fff;padding:10px 16px;border-radius:4px;font-size:13px;z-index:200;opacity:0;pointer-events:none;transition:opacity .2s}
 #toast.show{opacity:.95}
 body.snap *,body.snap *::before,body.snap *::after{animation:none !important;transition:none !important}
+/* moda laut detail headers (Rendy) */
+.inc-grp.moda-sub{--c:#2a78d6}.inc-grp.ms-POLY{--c:var(--red)}.inc-grp.ms-LAS{--c:var(--green)}.inc-grp.ms-KONT{--c:#6A4FB3}
