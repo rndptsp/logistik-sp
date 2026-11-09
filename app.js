@@ -163,6 +163,17 @@ const polyShare = t => { if(!PSH || PSH.b !== B){ PSH = {b: B, m: new Map()}; (B
 const subW = t => { if(!F.sub) return 1; const inc = tInc(t), n = INCS()[inc] || ''; if(modaOf(n) !== 'LAUT') return 0;
   const s0 = subOf(inc, null); if(s0 === 'KONT' || n === 'FRC KAPAL' || n === 'FOB KAPAL') return s0 === F.sub ? 1 : 0;
   if(F.sub === 'KONT') return 0; const sh = polyShare(t); return sh == null ? (F.sub === 'LAS' ? 1 : 0) : F.sub === 'POLY' ? sh : 1 - sh; };
+/* SO in the moda laut detail (Rendy: a ship SO always equals the ship capacity, so it carries no poly flag of its own):
+   FOB/FAS SO is split poly / lasahan like the realisasi of the same month x district x incoterm (whole history when that
+   month has none); kontainer and FRC KAPAL by incoterm. */
+let RSH = null;
+const soW = (inc, mon, dist) => { if(!F.sub) return 1; const n = INCS()[inc] || ''; if(modaOf(n) !== 'LAUT') return 0;
+  const s0 = subOf(inc, null); if(s0 === 'KONT' || n === 'FRC KAPAL' || n === 'FOB KAPAL') return s0 === F.sub ? 1 : 0;
+  if(F.sub === 'KONT') return 0;
+  if(!RSH || RSH.b !== B){ RSH = {b: B, m: new Map()}; B.facts.forEach(f => { const nn = INCS()[f[1]] || ''; if(modaOf(nn) !== 'LAUT' || /CONTAINER/.test(nn)) return;
+    [B.days[f[0]].slice(0, 7) + '|' + f[4] + '|' + f[1], '*|' + f[4] + '|' + f[1]].forEach(k => { const o = RSH.m.get(k) || [0, 0]; o[1] += f[6]; if(f[11] === 1) o[0] += f[6]; RSH.m.set(k, o); }); }); }
+  const o = (mon && RSH.m.get(mon + '|' + dist + '|' + inc)) || RSH.m.get('*|' + dist + '|' + inc), sh = o && o[1] > 0 ? o[0] / o[1] : 0;
+  return F.sub === 'POLY' ? sh : 1 - sh; };
 let MG_ON = false;
 function modaGroups(build, sub){
   if(MG_ON || F.sub || F.moda !== 'LAUT' || F.inc !== 'ALL') return build();
@@ -300,10 +311,10 @@ function blank(){ return {vol:0, frc:0, frc0:0, trips:0, dwS:0, dwN:0, tgt:0, tg
 const sofOn = () => !!B.sof;
 function sofScan(per, sc, keyOf, add){
   per = toPer(per); const to = per.tgtTo || per.to;
-  B.sof.forEach(r => { if(r[0] < per.from || r[0] > to || !subOk(r[6], null) || (sc.prov == null && !provSel(r[1])) || !kemOk(r[5]) || !incOk(r[6]) || (sc.prov != null && r[1] !== sc.prov) || (sc.dist != null && r[2] !== sc.dist) || (sc.eksp != null && r[3] !== sc.eksp) || (sc.distr != null && r[8] !== sc.distr)) return;
-    add(keyOf(r), r[4], r[7], null, 0, r[1]); });
-  (B.soopen || []).forEach(r => { if(!subOk(r[5], null) || (sc.prov == null && !provSel(r[0])) || !kemOk(r[4]) || !incOk(r[5]) || (sc.prov != null && r[0] !== sc.prov) || (sc.dist != null && r[1] !== sc.dist) || (sc.eksp != null && r[2] !== sc.eksp) || (sc.distr != null && r[3] !== sc.distr)) return;
-    add(keyOf([null, r[0], r[1], r[2], 0, 0, 0, 0, r[3]]), 0, 0, r[6], r[7], r[0]); });
+  B.sof.forEach(r => { const w = soW(r[6], r[0].slice(0, 7), r[2]); if(r[0] < per.from || r[0] > to || !w || (sc.prov == null && !provSel(r[1])) || !kemOk(r[5]) || !incOk(r[6]) || (sc.prov != null && r[1] !== sc.prov) || (sc.dist != null && r[2] !== sc.dist) || (sc.eksp != null && r[3] !== sc.eksp) || (sc.distr != null && r[8] !== sc.distr)) return;
+    add(keyOf(r), r[4] * w, r[7] * w, null, 0, r[1]); });
+  (B.soopen || []).forEach(r => { const w = soW(r[5], null, r[1]); if(!w || (sc.prov == null && !provSel(r[0])) || !kemOk(r[4]) || !incOk(r[5]) || (sc.prov != null && r[0] !== sc.prov) || (sc.dist != null && r[1] !== sc.dist) || (sc.eksp != null && r[2] !== sc.eksp) || (sc.distr != null && r[3] !== sc.distr)) return;
+    add(keyOf([null, r[0], r[1], r[2], 0, 0, 0, 0, r[3]]), 0, 0, r[6], r[7] * w, r[0]); });
 }
 const sofAdd = o => (k, so, ship, b, t) => { o.so += so; o.soShip += ship; if(b != null){ o.soOpen = o.soOpen || [0, 0, 0]; o.soOpen[b] += t; } };
 
@@ -336,8 +347,8 @@ function summarize(group, per, sc, opt){
     if(group !== 'src'){
       const m9 = per.to.slice(0, 7);
       B.sod.forEach(s => {
-        if(s[0].slice(0, 7) < m0 || s[0].slice(0, 7) > m9 || !kemOk(s[5]) || !soIncOk(s) || !scopeOkT(s, sc) || nkSkip(s[1], group, sc) || (F.sub && !subOk(s[6] || 0, null))) return;
-        get(SK[group](s)).so += s[4];
+        if(s[0].slice(0, 7) < m0 || s[0].slice(0, 7) > m9 || !kemOk(s[5]) || !soIncOk(s) || !scopeOkT(s, sc) || nkSkip(s[1], group, sc) || (F.sub && !soW(s[6] || 0, s[0].slice(0, 7), s[2]))) return;
+        get(SK[group](s)).so += s[4] * soW(s[6] || 0, s[0].slice(0, 7), s[2]);
       });
       B.so.forEach(s => {
         if(F.sub || s[0] < m0 || s[0] > per.to.slice(0, 7) || B.sodMonths.has(s[0]) || !scopeOkT(s, sc) || nkSkip(s[1], group, sc)) return;
