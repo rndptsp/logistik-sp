@@ -2635,9 +2635,16 @@ function pageKapal(){
         c[2].total = fmt(l.reduce((a, o) => a + (o.voy || 0), 0)); c[3].total = fmt(g.vol);
         const hm = l.reduce((a, o) => a + (o.hm || 0), 0); c[5].total = fmt(hm); c[6].total = hm ? fmt(g.vol / hm) : '–'; { const vy = l.reduce((x, o) => x + (o.voy || 0), 0); c[4].total = vy ? fmt(g.vol / vy) : '–'; }
         if(split) c[0] = Object.assign({}, c[0], {html: o => o.rank ? '#' + o.rank : '–'});
+        // kinerja (Rendy): % Ach. to target per muatan and for the dermaga; ships themselves have no target
+        const TT = {}; const tOf = sub => { const sv = F.sub; F.sub = sub; try { return total(m, {src: g.si}); } finally { F.sub = sv; } };
+        packs.forEach(pk => { TT[pk] = tOf(pk ? 'POLY' : 'LAS'); }); const TA = tOf(null);
+        const tc = [{h: 'Target FM (Ton)', num: true, cls: 'ct', val: o => o.tgtFull ?? -1, html: o => o.tgtFull != null ? fmt(o.tgtFull) : '–'},
+          {h: 'Target MTD (Ton)', num: true, cls: 'ct', val: o => o.tgtM ?? -1, html: o => o.tgtM != null ? fmt(o.tgtM) : '–'},
+          {h: '% Ach.', num: true, cls: 'pc', val: o => o.ach ?? -1, html: o => o.ach != null ? pctTxt(o.ach) : '–', style: o => o.ach != null ? 'color:' + tierColor(o.ach) : ''}];
+        if(TA.hasTgt){ tc[0].total = fmt(TA.tgtFull); tc[1].total = fmt(TA.tgt); tc[2].total = '<b style="color:' + tierColor(TA.pct) + '">' + pctTxt(TA.pct) + '</b>'; c.splice(4, 0, ...tc); }
         return '<div class="krm-sub">Detail kapal' + (split ? ' · dikelompokkan per muatan' : '') + '</div>' + table(c, l, {total: true, limit: 400, go: o => o.k === '\u0000' ? null : '#/kapal/' + enc(o.nm),
           grp: split ? {keys: packs, of: o => o.pk, cls: k => 'pk' + k, lbl: (k, sub) => '<b class="pk-dot pk' + k + '">' + PACK_LBL[k] + '</b><small>' + PACK_SUB[k] + ' · ' + fmt(l.filter(o => o.pk === k && o.k !== '\u0000').length) + ' kapal · ' + pctTxt(pctOf(sub.vol, g.vol)) + ' dermaga ini</small>'} : null,
-          subFix: (sub, rs) => { sub.rank = null; sub.hm = rs.reduce((a, o) => a + (o.hm || 0), 0); }}); };
+          subFix: (sub, rs) => { sub.rank = null; sub.hm = rs.reduce((a, o) => a + (o.hm || 0), 0); const t = TT[rs[0] && rs[0].pk]; if(t && t.hasTgt){ sub.tgtFull = t.tgtFull; sub.tgtM = t.tgt; sub.ach = t.pct; } }}); };
       // rank inside each muatan group
       const tl = shipGantt(m, null, {src: g.si, bare: true, noKey: true, grpPack: true});
       const packTxt = split ? ' · ' + packs.map(k => PACK_LBL[k].toLowerCase() + ' ' + fmt(pRows(k).reduce((a, r) => a + r[8], 0)) + ' t').join(' · ') : packs.length ? ' · ' + PACK_LBL[packs[0]].toLowerCase() : '';
