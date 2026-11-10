@@ -489,9 +489,10 @@ function withInc(T, fn){ const s = F.inc; if(T && T.incFix) F.inc = T.incFix; tr
 /* More than one incoterm active: render a table/panel once per incoterm (build() runs with F.inc fixed to it and
    returns '' when that incoterm has nothing), each under its own incoterm header. One incoterm: build() as is. */
 const kemSub = (m, sc) => () => { const t = total(m, sc || {}); return fmt(t.vol) + ' t' + (t.hasTgt ? ' · ' + pctTxt(t.pct) + ' dari target ' + fmt(t.tgt) + ' t' : ' · tanpa target'); };
-function incGroups(build, sub){ return kemGroups(() => incGroups1(build, sub)); }
-function incGroups1(build, sub){
-  if(F.moda === 'LAUT' && F.inc === 'ALL' && !MG_ON) return modaGroups(build, sub);   // laut: Kontainer / Poly / Lasahan (Rendy)
+/* byInc: data without the poly flag (truck rows): split per incoterm, never per moda detail */
+function incGroups(build, sub, byInc){ return kemGroups(() => incGroups1(build, sub, byInc)); }
+function incGroups1(build, sub, byInc){
+  if(!byInc && F.moda === 'LAUT' && F.inc === 'ALL' && !MG_ON) return modaGroups(build, sub);   // laut: Kontainer / Poly / Lasahan (Rendy)
   const act = INCS().map((n, i) => i).filter(i => incOk(i));
   if(act.length < 2) return build();
   return act.map(i => withInc({incFix: INCS()[i]}, () => { const h = build(); return h ? '<div class="inc-grp" style="--c:' + incColor(i) + '"><span class="inc-dot" style="background:' + incColor(i) + '"></span><b>' + esc(incLbl(INCS()[i])) + '</b>' + (sub ? '<small>' + sub() + '</small>' : '') + '</div>' + h : ''; })).join('');
@@ -1451,7 +1452,7 @@ const SHK = {prov: r => r[3], dist: r => r[4], distr: r => r[5], eksp: r => r[6]
 function shipRows(m, sc){
   sc = sc || {};
   const per = m == null ? null : toPer(m);
-  return B.ship.filter(r => (per == null || inPer(r[0], per)) && incOk(r[1]) && srcOkS(r[2], sc) && kemOk(r[10]) && (sc.prov != null || areaProvOk(r[3])) &&
+  return B.ship.filter(r => (per == null || inPer(r[0], per)) && incOk(r[1]) && subOk(r[1], r[12]) && srcOkS(r[2], sc) && kemOk(r[10]) && (sc.prov != null || areaProvOk(r[3])) &&
     (sc.prov == null || r[3] === sc.prov) && (sc.dist == null || r[4] === sc.dist) &&
     (sc.distr == null || r[5] === sc.distr) && (sc.eksp == null || r[6] === sc.eksp));
 }
@@ -2311,8 +2312,8 @@ function pageEkspList(){
     (nfOn() ? '<div class="dp-review">' + incName() + ' diambil langsung oleh distributor (tanpa ekspeditur). Ganti filter ke FRC, atau buka <a href="#/distributor" style="color:var(--red);font-weight:700">Distributor</a>.</div>' : '') +
     '<div class="dp-cols even"><div class="dp-panel"><div class="pt">Scorecard keseluruhan</div>' +
       rateRow('Capaian target ' + tgtLbl(), t.pct) + rateRow('Realisasi / SO', t.of) + rateRow('Truk aktif > 1 trip', multi) +
-    '</div><div class="dp-panel"><div class="pt">Capaian per ekspeditur<span class="pt-sub">% Ach. · % OF</span></div>' + (incGroups(rates) || '<div class="empty">Tidak ada target untuk filter ini.</div>') + '</div></div>' +
-    (incGroups(build, () => { const t = total(m); return fmt(t.vol) + ' t' + (t.hasTgt ? ' · ' + pctTxt(t.pct) + ' dari target ' + fmt(t.tgt) + ' t' : ''); }) || '<div class="dp-review">Tidak ada ekspeditur FRC untuk filter ini.</div>') +
+    '</div><div class="dp-panel"><div class="pt">Capaian per ekspeditur<span class="pt-sub">% Ach. · % OF</span></div>' + (incGroups(rates, null, true) || '<div class="empty">Tidak ada target untuk filter ini.</div>') + '</div></div>' +
+    (incGroups(build, () => { const t = total(m); return fmt(t.vol) + ' t' + (t.hasTgt ? ' · ' + pctTxt(t.pct) + ' dari target ' + fmt(t.tgt) + ' t' : ''); }, true) || '<div class="dp-review">Tidak ada ekspeditur FRC untuk filter ini.</div>') +
     '</div>', 'ekspeditur');
 }
 
@@ -3320,7 +3321,7 @@ function pageArmada(){
     {k: 'koridor', label: 'Koridor', html: '<div class="tab-note">Kebutuhan armada = trip per hari × siklus aktual (median jeda antar muat truk yang sama, 60 hari) · kontrak hanya FRC, jadi <b>kontrak</b> dan <b>real</b> hanya ekspeditur pemenang rute: kontrak = volume kontrak per hari ÷ t/trip aktual, real = trip aktual pemenang per hari · <b>selisih = kontrak − real</b>, merah = armada kurang · klik provinsi → distrik → ekspeditur → truk</div>' +
     (corrTbl || '<div class="dp-review">Tidak ada data.</div>')},
     {k: 'eksp', label: 'Ekspeditur', html: '<div class="tab-note">Siklus vs koridor: jeda rata-rata antar muat truk ekspeditur dibanding rata-rata koridor yang sama; 100% = sama, &lt;100% lebih cepat</div>' +
-    (incGroups(scoreTbl) || '<div class="dp-review">Tidak ada data.</div>')}]) +
+    (incGroups(scoreTbl, null, true) || '<div class="dp-review">Tidak ada data.</div>')}]) +
     '</div>', 'armada');
 }
 function qTable(head, rows){
