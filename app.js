@@ -2623,41 +2623,52 @@ function pageKapal(){
       {h:'Muat terakhir', val: o => o.last, html: o => o.last >= 0 ? shortDate(B.days[o.last]) : '–'},
       {h:'Distributor', val: o => o.distr.size, html: o => setTxt(o.distr, B.dims.distr.map((x, i) => distrLbl(i)), 'distributor')}, {h:'Provinsi', val: o => o.prov.size, html: o => setTxt(o.prov, B.dims.prov, 'provinsi')},
       {h:'Tujuan (distrik)', val: o => o.dist.size, html: o => setTxt(o.dist, B.dims.dist, 'distrik')}];
-    const all = agg(rows), named = all.filter(o => o.k !== '\u0000'), unk = all.find(o => o.k === '\u0000');
+    const all = agg(rows), named = all.filter(o => o.k !== '\u0000'), unk = agg(rows.filter(r => !/CONTAINER/.test(INCS()[r[1]] || ''))).find(o => o.k === '\u0000');   // kontainer has its own section
     // grouping: per dermaga (loading point = source plant); vessel names exist for FOB only, so an incoterm split adds nothing
     const srcs = [...new Set(rows.map(r => r[2]))].map(si => ({si, rs: rows.filter(r => r[2] === si)})).map(g => Object.assign(g, {vol: g.rs.reduce((a, r) => a + r[8], 0)})).sort((a, b) => b.vol - a.vol);
     const groups = tabsHTML('kapal', srcs.map(g => {
+      const isK = r => /CONTAINER/.test(INCS()[r[1]] || ''), gk = g.rs.filter(isK), gs = g.rs.filter(r => !isK(r)), gsV = gs.reduce((a, r) => a + r[8], 0);   // Rendy: kontainer apart (no vessel name)
       const list = agg(g.rs), n = list.filter(o => o.k !== '\u0000');
       // Rendy: one timeline per dermaga (the berth is one resource; poly = hatched blocks); detail table per muatan (lasahan / poly)
-      const packs = [0, 1].filter(k => g.rs.some(r => (r[12] === 1 ? 1 : 0) === k && r[12] != null)), split = packs.length > 1;
-      const pRows = pk => g.rs.filter(r => (r[12] === 1 ? 1 : 0) === pk);
+      const packs = [0, 1].filter(k => gs.some(r => (r[12] === 1 ? 1 : 0) === k && r[12] != null)), split = packs.length > 1;
+      const pRows = pk => gs.filter(r => (r[12] === 1 ? 1 : 0) === pk);
       // one detail table, grouped: Lasahan (header row = its total) then its ships, Poly likewise (Rendy). A ship carrying both appears in both.
-      const detail = () => { const l = split ? packs.flatMap(pk => agg(pRows(pk)).map(o => Object.assign(o, {pk}))) : agg(g.rs), c = cols.map(x => Object.assign({}, x));
-        c[2].total = fmt(l.reduce((a, o) => a + (o.voy || 0), 0)); c[3].total = fmt(g.vol);
-        const hm = l.reduce((a, o) => a + (o.hm || 0), 0); c[5].total = fmt(hm); c[6].total = hm ? fmt(g.vol / hm) : '–'; { const vy = l.reduce((x, o) => x + (o.voy || 0), 0); c[4].total = vy ? fmt(g.vol / vy) : '–'; }
+      const detail = () => { if(!gs.length) return ''; const l = split ? packs.flatMap(pk => agg(pRows(pk)).map(o => Object.assign(o, {pk}))) : agg(gs), c = cols.map(x => Object.assign({}, x));
+        c[2].total = fmt(l.reduce((a, o) => a + (o.voy || 0), 0)); c[3].total = fmt(gsV);
+        const hm = l.reduce((a, o) => a + (o.hm || 0), 0); c[5].total = fmt(hm); c[6].total = hm ? fmt(gsV / hm) : '–'; { const vy = l.reduce((x, o) => x + (o.voy || 0), 0); c[4].total = vy ? fmt(gsV / vy) : '–'; }
         if(split) c[0] = Object.assign({}, c[0], {html: o => o.rank ? '#' + o.rank : '–'});
         // kinerja (Rendy): % Ach. to target per muatan and for the dermaga; ships themselves have no target
         const TT = {}; const tOf = sub => { const sv = F.sub; F.sub = sub; try { return total(m, {src: g.si}); } finally { F.sub = sv; } };
-        packs.forEach(pk => { TT[pk] = tOf(pk ? 'POLY' : 'LAS'); }); const TA = tOf(null);
+        packs.forEach(pk => { TT[pk] = tOf(pk ? 'POLY' : 'LAS'); }); const TA = (() => { const a = tOf('POLY'), b = tOf('LAS'), tg = a.tgt + b.tgt; return {hasTgt: tg > 0, tgt: tg, tgtFull: a.tgtFull + b.tgtFull, pct: tg > 0 ? pctOf(a.frc + b.frc, tg) : null}; })();   // kapal (non-kontainer) only
         const tc = [{h: 'Target FM (Ton)', num: true, cls: 'ct', val: o => o.tgtFull ?? -1, html: o => o.tgtFull != null ? fmt(o.tgtFull) : '–'},
           {h: 'Target MTD (Ton)', num: true, cls: 'ct', val: o => o.tgtM ?? -1, html: o => o.tgtM != null ? fmt(o.tgtM) : '–'},
           {h: '% Ach.', num: true, cls: 'pc', val: o => o.ach ?? -1, html: o => o.ach != null ? pctTxt(o.ach) : '–', style: o => o.ach != null ? 'color:' + tierColor(o.ach) : ''}];
         if(TA.hasTgt){ tc[0].total = fmt(TA.tgtFull); tc[1].total = fmt(TA.tgt); tc[2].total = '<b style="color:' + tierColor(TA.pct) + '">' + pctTxt(TA.pct) + '</b>'; c.splice(4, 0, ...tc); }
-        return '<div class="krm-sub">Detail kapal' + (split ? ' · dikelompokkan per muatan' : '') + '</div>' + table(c, l, {total: true, limit: 400, go: o => o.k === '\u0000' ? null : '#/kapal/' + enc(o.nm),
+        return '<div class="krm-sub">Detail kapal' + (split ? ' · dikelompokkan per muatan' : '') + (gk.length ? ' · tanpa kontainer' : '') + '</div>' + table(c, l, {total: true, limit: 400, go: o => o.k === '\u0000' ? null : '#/kapal/' + enc(o.nm),
           grp: split ? {keys: packs, of: o => o.pk, cls: k => 'pk' + k, lbl: (k, sub) => '<b class="pk-dot pk' + k + '">' + PACK_LBL[k] + '</b><small>' + PACK_SUB[k] + ' · ' + fmt(l.filter(o => o.pk === k && o.k !== '\u0000').length) + ' kapal · ' + pctTxt(pctOf(sub.vol, g.vol)) + ' dermaga ini</small>'} : null,
           subFix: (sub, rs) => { sub.rank = null; sub.hm = rs.reduce((a, o) => a + (o.hm || 0), 0); const t = TT[rs[0] && rs[0].pk]; if(t && t.hasTgt){ sub.tgtFull = t.tgtFull; sub.tgtM = t.tgt; sub.ach = t.pct; } }}); };
+      // Kontainer (FOT / FRC CONTAINER, Rendy): no vessel name in the source, so per tujuan distrik; % Ach. vs the kontainer target of this dermaga
+      const kont = () => { if(!gk.length) return ''; const T = (() => { const sv = F.sub; F.sub = 'KONT'; try { return total(m, {src: g.si}); } finally { F.sub = sv; } })(), kv = gk.reduce((a, r) => a + r[8], 0);
+        const by = new Map(); gk.forEach(r => { let o = by.get(r[4]); if(!o) by.set(r[4], o = {key: r[4], prov: r[3], vol: 0, trips: 0, distr: new Set(), days: new Set(), last: -1, inc: new Set()}); o.vol += r[8]; o.trips += r[9]; o.distr.add(r[5]); o.days.add(r[0]); o.last = Math.max(o.last, r[0]); o.inc.add(INCS()[r[1]]); });
+        const l = [...by.values()].sort((a, b) => b.vol - a.vol);
+        const kc = [{h: 'Tujuan (distrik)', cls: 'name', val: o => tc(B.dims.dist[o.key] || ''), html: o => esc(tc(B.dims.dist[o.key] || '')) + '<small>' + esc(tc(B.dims.prov[o.prov] || '')) + ' · ' + esc([...o.inc].map(incLbl).join(', ')) + '</small>', total: '<b>Total kontainer</b>'},
+          {h: 'Tonase (Ton)', num: true, val: o => o.vol, html: o => '<b>' + fmt(o.vol) + '</b>', total: '<b>' + fmt(kv) + '</b>'}, {h: 'Trip', num: true, val: o => o.trips, html: o => fmt(o.trips), total: fmt(gk.reduce((a, r) => a + r[9], 0))},
+          {h: 't / trip', num: true, val: o => o.vol / Math.max(1, o.trips), html: o => fmt1(o.vol / Math.max(1, o.trips))}, {h: 'Hari kirim', num: true, val: o => o.days.size},
+          {h: 'Kirim terakhir', val: o => o.last, html: o => shortDate(B.days[o.last])}, {h: 'Distributor', val: o => o.distr.size, html: o => setTxt(o.distr, B.dims.distr.map((x, i) => distrLbl(i)), 'distributor')}];
+        return '<div class="krm-pack pkK"><b>Kontainer</b><small>FOT / FRC container · tanpa nama kapal di sumber · ' + fmt(kv) + ' t · ' + pctTxt(pctOf(kv, g.vol)) + ' dermaga ini' + (T.hasTgt ? ' · target MTD ' + fmt(T.tgt) + ' t · <b style="color:' + tierColor(T.pct) + '">' + pctTxt(T.pct) + ' ach.</b>' : '') + '</small></div>' +
+          table(kc, l, {total: l.length > 1, go: o => B.dims.dist[o.key] ? '#/distrik/' + enc(B.dims.dist[o.key]) : null}); };
       // rank inside each muatan group
       const tl = shipGantt(m, null, {src: g.si, bare: true, noKey: true, grpPack: true});
-      const packTxt = split ? ' · ' + packs.map(k => PACK_LBL[k].toLowerCase() + ' ' + fmt(pRows(k).reduce((a, r) => a + r[8], 0)) + ' t').join(' · ') : packs.length ? ' · ' + PACK_LBL[packs[0]].toLowerCase() : '';
+      const packTxt = (split ? ' · ' + packs.map(k => PACK_LBL[k].toLowerCase() + ' ' + fmt(pRows(k).reduce((a, r) => a + r[8], 0)) + ' t').join(' · ') : packs.length ? ' · ' + PACK_LBL[packs[0]].toLowerCase() : '') + (gk.length ? ' · kontainer ' + fmt(gk.reduce((a, r) => a + r[8], 0)) + ' t' : '');
       const h = '<section class="krm-grp"><div class="krm-h"><b>' + esc(dermagaLbl(g.si)) + '</b><small>' + fmt(n.length) + ' kapal · ' + fmt(g.vol) + ' t · ' + pctTxt(pctOf(g.vol, tot)) + ' tonase laut' + packTxt + ' · ' + esc(periodSub()) + '</small></div>' +
-        '<div class="krm-sub">Timeline 30 hari' + (packOn() ? ' · hijau = lasahan, merah = poly' : '') + '</div>' + (tl || '<div class="dp-review">Tidak ada kapal bernama dalam 30 hari terakhir.</div>') + detail() + '</section>';
+        '<div class="krm-sub">Timeline 30 hari' + (packOn() ? ' · hijau = lasahan, merah = poly' : '') + '</div>' + (tl || '<div class="dp-review">Tidak ada kapal bernama dalam 30 hari terakhir.</div>') + detail() + kont() + '</section>';
       return {k: String(g.si), label: dermagaLbl(g.si), n: n.length, html: h};
     }));
     const e30 = Math.max(0, B.days.indexOf(m.to) >= 0 ? B.days.indexOf(m.to) : B.days.length - 1);
     page('<div class="wrap">' + crumb([['Kapal']]) +
       '<div class="dp-head"><div><div class="nm">Kapal · moda laut</div><div class="sub">' + fmt(named.length) + ' kapal di ' + fmt(srcs.length) + ' dermaga · voyage: kapal reguler (rata-rata < ' + VOY_SMALL + ' t/hari muat) = tiap hari muat; kapal kargo = hari muat berjeda ≤ ' + VOY_GAP + ' hari · ' + periodSub() + '</div></div></div>' +
       '<div class="dp-hint" style="font-size:12px;color:var(--sub);margin:-6px 0 14px">Filter aktif: ' + srcTxt() + ' · incoterm <b>' + (F.inc === 'ALL' ? 'semua laut' : esc(incLbl(F.inc))) + '</b>' + (landInc ? ' (filter ' + esc(incLbl(sv[0])) + ' adalah darat: semua incoterm laut ditampilkan)' : '') + ' · kemasan <b>' + esc(kemName()) + '</b> · area <b>' + esc(areaName()) + '</b> · <a class="section-link" data-act="openfilter" style="cursor:pointer;color:var(--red);font-weight:700">ubah filter</a></div>' +
-      (unk && tot ? '<div class="dp-review">' + pctTxt(pctOf(unk.vol, tot)) + ' tonase laut periode ini (' + fmt(unk.vol) + ' t) belum punya nama kapal di sumber Rilis. Yang tercatat nama kapalnya baru FOB; FAS, kontainer, FRC KAPAL, FRC KONTAINER dan FOB KAPAL (polysling) menunggu data tambahan.</div>' : '') +
+      (unk && tot ? '<div class="dp-review">' + pctTxt(pctOf(unk.vol, tot)) + ' tonase laut periode ini (' + fmt(unk.vol) + ' t) belum punya nama kapal di sumber Rilis. Yang tercatat nama kapalnya baru FOB; FAS dan FRC KAPAL (polysling) menunggu data tambahan. Kontainer ditampilkan terpisah per dermaga.</div>' : '') +
       '<div class="section-head"><div class="section-title">Kapal per dermaga</div><div class="section-sub">timeline: kapal masuk berurutan dari atas · klik bar untuk detail kapal</div></div>' + ktujChips(rowsAll) + shipKey(Math.max(0, e30 - 29), e30) +
       (rows.length ? groups : '<div class="dp-review">Tidak ada pengiriman laut pada filter ini (plant, kemasan, periode).</div>') + '</div>', 'armada');
   } finally { F.inc = sv[0]; F.moda = sv[1]; }
