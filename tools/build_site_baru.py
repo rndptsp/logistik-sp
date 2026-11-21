@@ -317,6 +317,8 @@ def build(cfg):
     spj_rows = []   # per-SPJ truck detail for the truck page, last 45 days (encrypted bundle only)
     spj_from = today - datetime.timedelta(days=45)
     so_ship = defaultdict(float)   # SO no -> realisasi tonnage on that SO (all incoterms), for % OF per SO
+    so_ship_d = defaultdict(float)   # (SO no, TGL_SPJ date) -> tonnage
+    so_ship_m = defaultdict(float)   # (SO no, month of TGL_SPJ) -> tonnage loaded and out of the weighbridge (Rendy: SO terkirim)
     kspj = []     # sea shipments, one row per SPJ (whole history): weighbridge detail for the Kapal page
     tw_raw = []   # FRC truk SPJ for contract KPI 2 (ketepatan waktu): (day, src, dist, eksp, kem, SO no, ton)
     def mins(v, d0):   # WAKTU_* -> minutes after 00:00 of the SPJ date (may be negative / > 1440), None if unreadable
@@ -378,6 +380,8 @@ def build(cfg):
         sn_r = str(r.get("NO_SO") or "").strip().split(".")[0]
         if sn_r:
             so_ship[sn_r] += ton
+            so_ship_m[(sn_r, d.strftime("%Y-%m"))] += ton
+            so_ship_d[(sn_r, d)] += ton   # same-day delivery (SDD): loaded on the Tgl SO day
         if inc == "FRC":
             tw_raw.append((d, s, di, e, kem, str(r.get("NO_SO") or "").strip().split(".")[0], ton))
         kt = str(r.get("KODE_TOKO") or "").strip().split(".")[0]
@@ -539,6 +543,34 @@ def build(cfg):
         if rest > 0.01:
             age = (today - dso).days
             soopen[(p_, di_, e_, dx, k_, ii, 0 if age <= 7 else 1 if age <= 30 else 2)] += rest
+    # SO per month (Rendy, Nov 2026): SO = SO created this month + SO still open from earlier months (valid 30 days from Tgl SO);
+    # SO terkirim = loaded on those SO this month (TGL_SPJ); gap = SO - terkirim = SO open; % OF = terkirim / SO;
+    # % OF ops = terkirim / SO created this month (can exceed 100%). Rejected / blocked SO lines are left out.
+    som = defaultdict(lambda: [0.0, 0.0, 0.0, 0.0])   # (month, prov, dist, eksp, distr, kem, inc) -> [SO created, SO carried over, terkirim, terkirim same day as Tgl SO]
+    by_so = defaultdict(list)
+    for x in so_lines:
+        if not x[10] and x[9] > 0 and x[0]:
+            by_so[x[0]].append(x)
+    ship_months = defaultdict(dict)
+    for (sn_, mo_), t_ in so_ship_m.items():
+        ship_months[sn_][mo_] = t_
+    cur_m = today.strftime("%Y-%m")
+    def next_m(mo):
+        y_, m_ = int(mo[:4]), int(mo[5:])
+        return f"{y_ + (m_ == 12)}-{1 if m_ == 12 else m_ + 1:02d}"
+    for sn_, ls in by_so.items():
+        tot_ = sum(x[9] for x in ls); dso_ = min(x[2] for x in ls); mo = dso_.strftime("%Y-%m"); open_ = tot_; first = True
+        sm = ship_months.get(sn_, {})
+        while mo <= cur_m and open_ > 0.01:
+            m_start = datetime.date(int(mo[:4]), int(mo[5:]), 1)
+            if not first and (m_start - dso_).days > 30:
+                break   # expired before this month started: not carried
+            sh_ = min(open_, sm.get(mo, 0.0)); sd_ = min(tot_, so_ship_d.get((sn_, dso_), 0.0)) if first else 0.0
+            for x in ls:
+                f_ = x[9] / tot_; g_ = som[(mo, x[3], x[4], x[5], x[6], x[7], x[8])]
+                g_[0 if first else 1] += open_ * f_; g_[2] += sh_ * f_; g_[3] += sd_ * f_
+            open_ -= sh_; first = False; mo = next_m(mo)
+    print(f"  SO per bulan: {len(som):,} grup")
     print(f"  % OF per SO: {len(sof):,} grup jatuh tempo; SO open {sum(soopen.values()):,.0f} t ({sum(v for k, v in soopen.items() if k[6] == 2):,.0f} t > 30 hari)")
 
     # KPI 2 kontrak (Lampiran 12): SPJ tepat waktu = Tgl SPJ - Tgl Kirim SO <= 1 hari (as the Monitoring sheet); SPJ whose SO
@@ -642,6 +674,8 @@ def build(cfg):
         "sof": [[k[0], k[1], k[2], k[3], round(v[0], 2), k[4], k[5], round(v[1], 2), k[6]] for k, v in sof.items() if v[0]],
         # SO open today: [prov, dist, eksp, distributor, kem, inc, age bucket (0 <= 7 d, 1 = 8-30 d, 2 > 30 d = kedaluwarsa), ton]
         "soopen": [list(k) + [round(v, 2)] for k, v in soopen.items() if v >= 0.5],
+        # SO per month (Rendy): [month, prov, dist, eksp, distributor (-1 none), kem, inc, SO created, SO carried over, SO terkirim, terkirim same day (SDD)]
+        "som": [list(k) + [round(v[0], 2), round(v[1], 2), round(v[2], 2), round(v[3], 2)] for k, v in som.items() if v[0] + v[1] >= 0.5],
         # SO FRC per distributor by delivery day: [date, prov, dist, distributor, ton, kem]
         "sodd": [[k[0], k[1], k[2], k[3], round(v, 2), k[4], k[5]] for k, v in sodd.items() if v],
         "prog": {"date": "", "time": "", "fields": [], "rows": []},
