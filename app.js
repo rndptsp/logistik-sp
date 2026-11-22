@@ -366,7 +366,7 @@ function summarize(group, per, sc, opt){
     o.pct = o.hasTgt ? (o.tgt > 0 ? pctOf(o.frc, o.tgt) : 100) : (F.kem !== 'CURAH' && (o.vol > 0 || o.frc > 0) ? 100 : null);   // no target but shipped = 100% (Rendy); curah market has no target: –
     o.of = sofOn() ? (o.so > 0 ? pctOf(o.soShip, o.so) : null) : soOn() && o.so > 0 ? pctOf(o.frc0, o.so) : null;
     o.ofOps = B.som && o.soNew > 0 ? pctOf(o.soShip, o.soNew) : null;   // % OF ops = terkirim / SO dibuat bulan ini (Rendy)
-    o.ofSdd = B.som && o.so > 0 ? pctOf(o.soSdd || 0, o.so) : null;   // % OF SDD = terkirim di hari Tgl SO / SO
+    o.ofSdd = B.som && o.so > 0 ? pctOf(o.soSdd || 0, o.so) : null;   // % OF SDD = terkirim s.d. Tgl SO + 1 / SO
     o.gap = o.frc - o.tgt;
     o.dwell = o.dwN ? o.dwS / o.dwN : null;
   });
@@ -687,7 +687,7 @@ function arrangeCols(cols, rows, opt){
     const tSo = S(r => r.so), tSh = S(r => r.soShip), tNw = S(r => r.soNew), tSd = S(r => r.soSdd);
     const add = [{h: 'SO terkirim (Ton)', num: true, kind: 'v', slot: 5.5, val: r => r.soShip || 0, html: r => r.so ? fmt(r.soShip || 0) : '–', total: tSo ? fmt(tSh) : '–'},
       {h: 'Gap / SO open (Ton)', num: true, kind: 'v', slot: 6, val: r => r.so ? r.so - (r.soShip || 0) : -1, html: r => r.so ? fmt(r.so - (r.soShip || 0)) : '–', total: tSo ? fmt(tSo - tSh) : '–'},
-      pcol('% OF ops', 7.2, r => r.ofOps, tNw ? pctTxt(pctOf(tSh, tNw)) : '–'), pcol('% OF SDD', 7.3, r => r.ofSdd, tSo ? pctTxt(pctOf(tSd, tSo)) : '–')];
+      pcol('% OF ops', 7.2, r => r.ofOps, tNw ? pctTxt(pctOf(tSh, tNw)) : '–'), pcol('% OF SDD (H+1)', 7.3, r => r.ofSdd, tSo ? pctTxt(pctOf(tSd, tSo)) : '–')];
     cols = cols.filter(c => c.slot !== 7.5).concat(add);
   }
   if(so && of && !cols.some(c => c.slot === 6)){
@@ -1538,7 +1538,7 @@ function treeHTML(nodes, levels, opt){
       // order (Rendy): FM | Realisasi | [MTD | Gap | % Ach.] | [SO | Gap vs SO | % OF] | [LM | Gap vs LM | vs LM] | Trip — each bracket one colour
       (hasT ? '<th class="num cv">Target FM (Ton)</th>' : '') + '<th class="num cv">Realisasi (Ton)</th>' +
       (hasT ? '<th class="num cv ga">Target MTD (Ton)</th><th class="num cv ga">Gap (Ton)</th><th class="num cp ga">% Ach.</th>' : '') +
-      (hasT && soCols ? (B.som ? '<th class="num cv gb">SO (Ton)</th><th class="num cv gb">SO terkirim (Ton)</th><th class="num cv gb">Gap / SO open (Ton)</th><th class="num cp gb">% OF</th><th class="num cp gb">% OF ops</th><th class="num cp gb">% OF SDD</th>'
+      (hasT && soCols ? (B.som ? '<th class="num cv gb">SO (Ton)</th><th class="num cv gb">SO terkirim (Ton)</th><th class="num cv gb">Gap / SO open (Ton)</th><th class="num cp gb">% OF</th><th class="num cp gb">% OF ops</th><th class="num cp gb">% OF SDD (H+1)</th>'
         : '<th class="num cv gb">SO (Ton)</th><th class="num cv gb">Gap vs SO (Ton)</th><th class="num cp gb">% OF</th>' + (B.soopen ? '<th class="num cv gb">SO open (Ton)</th>' : '')) : '') +
       (tag ? '<th class="num lmc cv">' + tag + ' (Ton)</th><th class="num lmc cv">Gap vs ' + tag + ' (Ton)</th><th class="num lmc cp">vs ' + tag + '</th>' : '') + '<th class="num">Trip</th></tr></thead><tbody>';
   const walk = (list, depth, parent, kp) => list.forEach((n, i) => {

@@ -565,7 +565,7 @@ def build(cfg):
             m_start = datetime.date(int(mo[:4]), int(mo[5:]), 1)
             if not first and (m_start - dso_).days > 30:
                 break   # expired before this month started: not carried
-            sh_ = min(open_, sm.get(mo, 0.0)); sd_ = min(tot_, so_ship_d.get((sn_, dso_), 0.0)) if first else 0.0
+            sh_ = min(open_, sm.get(mo, 0.0)); sd_ = min(tot_, so_ship_d.get((sn_, dso_), 0.0) + so_ship_d.get((sn_, dso_ + datetime.timedelta(days=1)), 0.0)) if first else 0.0   # SDD = loaded on Tgl SO or Tgl SO + 1 (Rendy)
             for x in ls:
                 f_ = x[9] / tot_; g_ = som[(mo, x[3], x[4], x[5], x[6], x[7], x[8])]
                 g_[0 if first else 1] += open_ * f_; g_[2] += sh_ * f_; g_[3] += sd_ * f_
@@ -674,7 +674,7 @@ def build(cfg):
         "sof": [[k[0], k[1], k[2], k[3], round(v[0], 2), k[4], k[5], round(v[1], 2), k[6]] for k, v in sof.items() if v[0]],
         # SO open today: [prov, dist, eksp, distributor, kem, inc, age bucket (0 <= 7 d, 1 = 8-30 d, 2 > 30 d = kedaluwarsa), ton]
         "soopen": [list(k) + [round(v, 2)] for k, v in soopen.items() if v >= 0.5],
-        # SO per month (Rendy): [month, prov, dist, eksp, distributor (-1 none), kem, inc, SO created, SO carried over, SO terkirim, terkirim same day (SDD)]
+        # SO per month (Rendy): [month, prov, dist, eksp, distributor (-1 none), kem, inc, SO created, SO carried over, SO terkirim, terkirim by Tgl SO + 1 (SDD)]
         "som": [list(k) + [round(v[0], 2), round(v[1], 2), round(v[2], 2), round(v[3], 2)] for k, v in som.items() if v[0] + v[1] >= 0.5],
         # SO FRC per distributor by delivery day: [date, prov, dist, distributor, ton, kem]
         "sodd": [[k[0], k[1], k[2], k[3], round(v, 2), k[4], k[5]] for k, v in sodd.items() if v],
