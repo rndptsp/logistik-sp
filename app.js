@@ -3245,7 +3245,7 @@ function pageTruk(nopol){
   const ti = B.dims.truck.indexOf(nopol);
   if(ti < 0) return notFound('Truk ' + nopol);
   const m = PER(), all = B.trucks.filter(t => t[1] === ti), rows = all.filter(t => inPer(t[0], m));
-  const sp = (B.spj || []).filter(r => r[1] === ti).sort((a, b) => b[0] - a[0] || (b[12] || 0) - (a[12] || 0));
+  const spAll = (B.spj || []).filter(r => r[1] === ti), sp = spAll.filter(r => inPer(r[0], m)).sort((a, b) => b[0] - a[0] || (b[12] || 0) - (a[12] || 0));
   const st = korStat(rows, null), ek = new Map(); rows.forEach(t => ek.set(t[3], (ek.get(t[3]) || 0) + t[6]));
   const days = [...new Set(all.map(t => t[0]))].sort((a, b) => a - b), endI = B.days.indexOf(m.to) >= 0 ? B.days.indexOf(m.to) : B.days.length - 1;
   const d60 = days.filter(d => d > endI - 60 && d <= endI), gaps = d60.slice(1).map((d, i) => d - d60[i]).filter(g => g >= 1 && g <= 12);
@@ -3258,8 +3258,9 @@ function pageTruk(nopol){
     {h: 'Ekspeditur', val: r => [...r.eks].map(ekspLbl).join(', '), html: r => esc([...r.eks].map(ekspLbl).join(', '))}, {h: 'Trip', num: true, val: r => r.trips}, {h: 'Tonase', num: true, val: r => r.ton, html: r => fmt(r.ton)},
     {h: 'Terakhir', val: r => r.last, html: r => shortDate(B.days[r.last])}], [...rt.values()], {sort: 3});
   // 30-day strip
-  const s30 = Array.from({length: 30}, (_, i) => endI - 29 + i).filter(d => d >= 0), dset = new Set(days);
-  const strip = '<div class="tk-strip">' + s30.map(d => '<span class="' + (dset.has(d) ? 'on' : '') + '" title="' + esc(dayLabel(B.days[d])) + '"><i>' + (+B.days[d].slice(8)) + '</i></span>').join('') + '</div>';
+  // day strip = the filtered period (Rendy: same dates as the SPJ list); long periods show their last 62 days
+  const pI = B.days.map((ds, i) => [ds, i]).filter(([ds]) => ds >= m.from && ds <= m.to).map(x => x[1]), s30 = pI.slice(-62), dset = new Set(days);
+  const strip = '<div class="tk-strip" style="grid-template-columns:repeat(' + s30.length + ',1fr)">' + s30.map((d, j) => '<span class="' + (dset.has(d) ? 'on' : '') + '" title="' + esc(dayLabel(B.days[d])) + '"><i>' + (j === 0 || B.days[d].slice(8) === '01' ? '<b>' + MON3[+B.days[d].slice(5, 7) - 1] + '</b> ' : '') + (+B.days[d].slice(8)) + '</i></span>').join('') + '</div>';
   const spCols = [{h: 'Tanggal', cls: 'name', val: r => r[0] * 1e5 + (r[12] || 0), html: r => shortDate(B.days[r[0]]) + '<small>SPJ ' + esc(r[2] || '–') + '</small>'},
     {h: 'Plant', val: r => tc(B.dims.src[r[3]] || ''), html: r => esc(tc(B.dims.src[r[3]] || '')) + '<small>' + esc(incLbl(INCS()[r[4]] || '')) + '</small>'},
     {h: 'Tujuan', val: r => B.dims.dist[r[7]] || '', html: r => esc(tc(B.dims.dist[r[7]] || '–')) + '<small>' + esc(tc(B.dims.prov[B.dims.distProv[r[7]]] || '')) + '</small>'},
@@ -3278,9 +3279,9 @@ function pageTruk(nopol){
       kpi('clock', st.sla == null ? 'var(--black)' : slaColor(st.sla), 'SLA', st.sla == null ? '–' : fmt1(st.sla) + ' <small>jam</small>', {hint: st.wait == null ? '' : 'antri ' + fmt1(st.wait) + ' jam'}) +
       kpi('box', 'var(--black)', 'Berat kosong', tare ? fmt1(tare / 1000) + ' <small>t</small>' : '–', {hint: tare ? 'median timbangan · muatan ' + fmt1(st.tpt) + ' t/trip' : 'tersedia setelah build data berikutnya'}) +
     '</div>' +
-    '<div class="section-head"><div class="section-title">Hari muat · 30 hari</div></div>' + strip +
+    '<div class="section-head"><div class="section-title">Hari muat · ' + esc(periodSub()) + '</div></div>' + strip +
     tabsHTML('truk', [
-      {k: 'spj', label: 'Riwayat SPJ', n: sp.length, html: sp.length ? '<div class="tab-note">45 hari terakhir · satu baris per SPJ · jam relatif tanggal SPJ</div>' + table(spCols, sp, {sort: 0, limit: 300}) : '<div class="dp-review">Rincian per SPJ tersedia setelah build data berikutnya.</div>'},
+      {k: 'spj', label: 'Riwayat SPJ', n: sp.length, html: sp.length ? '<div class="tab-note">' + esc(periodSub()) + ' · satu baris per SPJ · jam relatif tanggal SPJ' + (spAll.length && m.from < B.days[Math.min(...spAll.map(r => r[0]))] ? ' · rincian SPJ hanya tersedia 45 hari terakhir' : '') + '</div>' + table(spCols, sp, {sort: 0, limit: 300}) : '<div class="dp-review">' + (spAll.length ? 'Tidak ada SPJ truk ini di periode ' + esc(periodSub()) + ' (rincian SPJ tersedia 45 hari terakhir).' : 'Rincian per SPJ tersedia setelah build data berikutnya.') + '</div>'},
       {k: 'rute', label: 'Rute', n: rt.size, html: rt.size ? rtTbl : '<div class="dp-review">Tidak ada trip di periode ini.</div>'}]) +
     '<div class="dp-review" style="margin-top:16px">Nama supir dan pemilik kendaraan tidak ada di data Rilis. Kolom yang tersedia: nopol, SPJ, plant, tujuan, distributor, toko, ekspeditur, tonase, jam antri/masuk/keluar dan timbangan.</div>' +
     '</div>', 'armada');
