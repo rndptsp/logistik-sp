@@ -1490,11 +1490,54 @@ function nodeLabel(n){
   if(!t || !t[0]) return '<span class="t-unk">Toko belum tercatat</span><small>data tujuan tidak tersedia untuk periode ini</small>';
   return esc(t[1] || t[0]) + '<small>' + esc([t[2], t[0]].filter(Boolean).join(' · ')) + '</small>';
 }
+/* Toko / gudang page (Rendy): #/toko/<kode ship-to> */
+const tokoHref = i => { const t = B.dims.toko[i]; return t && t[0] ? '#/toko/' + enc(t[0]) : null; };
+function pageToko(code){
+  const ti = B.dims.toko.findIndex(t => t && t[0] === code); if(ti < 0) return notFound('Toko ' + code);
+  const t = B.dims.toko[ti], m = PER(), all = B.ship.filter(r => r[7] === ti), rows = all.filter(r => inPer(r[0], m) && incOk(r[1]) && kemOk(r[10]));
+  const vol = rows.reduce((a, r) => a + r[8], 0), trips = rows.reduce((a, r) => a + r[9], 0), dset = new Set(rows.map(r => r[0])), last = all.length ? Math.max(...all.map(r => r[0])) : -1;
+  const distrs = [...new Set(all.map(r => r[5]))], dist = all.length ? all[0][4] : null, prov = all.length ? all[0][3] : null;
+  const pv = all.filter(r => inPer(r[0], prevPer(m)) && incOk(r[1]) && kemOk(r[10])).reduce((a, r) => a + r[8], 0);
+  // day strip of the period
+  const pI = B.days.map((ds, i) => [ds, i]).filter(([ds]) => ds >= m.from && ds <= m.to).map(x => x[1]).slice(-62), dayT = new Map(); rows.forEach(r => dayT.set(r[0], (dayT.get(r[0]) || 0) + r[8]));
+  const strip = '<div class="tk-strip" style="grid-template-columns:repeat(' + pI.length + ',1fr)">' + pI.map((d, j) => '<span class="' + (dayT.has(d) ? 'on' : '') + '" title="' + esc(dayLabel(B.days[d]) + (dayT.has(d) ? ' · ' + fmt(dayT.get(d)) + ' t' : '')) + '"><i>' + (j === 0 || B.days[d].slice(8) === '01' ? '<b>' + MON3[+B.days[d].slice(5, 7) - 1] + '</b> ' : '') + (+B.days[d].slice(8)) + '</i></span>').join('') + '</div>';
+  // per bulan (all history)
+  const byM = new Map(); all.filter(r => incOk(r[1]) && kemOk(r[10])).forEach(r => { const k = B.days[r[0]].slice(0, 7); const o = byM.get(k) || {key: k, vol: 0, trips: 0, days: new Set()}; o.vol += r[8]; o.trips += r[9]; o.days.add(r[0]); byM.set(k, o); });
+  const mTbl = table([{h: 'Bulan', cls: 'name', val: o => o.key, html: o => esc(monthLabel(o.key))}, {h: 'Tonase (Ton)', num: true, val: o => o.vol, html: o => '<b>' + fmt(o.vol) + '</b>'}, {h: 'Trip', num: true, val: o => o.trips}, {h: 'Hari kirim', num: true, val: o => o.days.size}],
+    [...byM.values()].sort((a, b) => b.key.localeCompare(a.key)), {});
+  // per distributor / ekspeditur / plant in the period
+  const grp = (keyOf, lbl, nameOf, href) => { const g = new Map(); rows.forEach(r => { const k = keyOf(r); const o = g.get(k) || {key: k, vol: 0, trips: 0, last: -1}; o.vol += r[8]; o.trips += r[9]; o.last = Math.max(o.last, r[0]); g.set(k, o); });
+    return table([{h: lbl, cls: 'name', val: o => nameOf(o.key)}, {h: 'Tonase (Ton)', num: true, val: o => o.vol, html: o => '<b>' + fmt(o.vol) + '</b>'}, {h: 'Porsi', num: true, kind: 'p', val: o => o.vol / (vol || 1), html: o => pctTxt(pctOf(o.vol, vol))}, {h: 'Trip', num: true, val: o => o.trips}, {h: 'Terakhir', val: o => o.last, html: o => shortDate(B.days[o.last])}],
+      [...g.values()].sort((a, b) => b.vol - a.vol), {go: href}); };
+  // SPJ (last 45 days, within the period)
+  const sp = (B.spj || []).filter(r => r[8] === ti && inPer(r[0], m)).sort((a, b) => b[0] - a[0] || (b[12] || 0) - (a[12] || 0));
+  const spTbl = table([{h: 'Tanggal', cls: 'name', val: r => r[0] * 1e5 + (r[12] || 0), html: r => shortDate(B.days[r[0]]) + '<small>SPJ ' + esc(r[2] || '–') + '</small>'},
+    {h: 'Nopol', val: r => B.dims.truck[r[1]] || '', html: r => B.dims.truck[r[1]] ? '<a href="#/truk/' + enc(B.dims.truck[r[1]]) + '">' + esc(B.dims.truck[r[1]]) + '</a>' : '–'},
+    {h: 'Plant', val: r => tc(B.dims.src[r[3]] || ''), html: r => esc(tc(B.dims.src[r[3]] || '')) + '<small>' + esc(incLbl(INCS()[r[4]] || '')) + '</small>'},
+    {h: 'Ekspeditur', val: r => ekspLbl(r[5]), html: r => esc(ekspLbl(r[5]))}, {h: 'Ton', num: true, val: r => r[9], html: r => fmt1(r[9]) + (r[16] ? '<small>' + esc(tc(r[16])) + '</small>' : '')},
+    {h: 'Keluar', num: true, val: r => r[13] == null ? -1e9 : r[13], html: r => hhmm(r[13])}], sp, {sort: 0, limit: 300});
+  const loc = t[4] != null && t[5] != null ? '<a href="https://www.google.com/maps?q=' + t[4] + ',' + t[5] + '" target="_blank" rel="noopener">buka peta</a>' : '';
+  page('<div class="wrap">' + crumb([['Distributor', '#/distributor'], distrs.length === 1 && B.dims.distr[distrs[0]] ? [distrLbl(distrs[0]), '#/distributor/' + enc(B.dims.distr[distrs[0]])] : null, [t[1] || t[0]]].filter(Boolean)) +
+    '<div class="dp-head"><div><div class="nm">' + esc(t[1] || t[0]) + '</div><div class="sub">Toko / gudang tujuan · kode ' + esc(t[0]) + (dist != null ? ' · ' + esc(tc(B.dims.dist[dist] || '')) + ', ' + esc(tc(B.dims.prov[prov] || '')) : '') + ' · ' + esc(incName()) + ' · ' + periodSub() + '</div>' +
+      (t[2] ? '<div class="sub" style="margin-top:4px">' + esc(t[2]) + (loc ? ' · ' + loc : '') + '</div>' : (loc ? '<div class="sub">' + loc + '</div>' : '')) + '</div></div>' +
+    '<div class="dp-grid4">' + kpi('box', 'var(--black)', 'Realisasi', fmt(vol) + ' <small>t</small>', {hint: 'vs ' + cmpTag(m) + ' ' + (pv ? vsTot(vol, pv) : '–')}) +
+      kpi('trend', 'var(--black)', 'Trip', fmt(trips), {hint: trips ? fmt1(vol / trips) + ' t / trip' : ''}) +
+      kpi('truck', 'var(--black)', 'Hari kirim', fmt(dset.size), {hint: 'dari ' + pI.length + ' hari periode'}) +
+      kpi('clock', 'var(--black)', 'Kirim terakhir', last >= 0 ? shortDate(B.days[last]) : '–', {hint: fmt(distrs.length) + ' distributor'}) + '</div>' +
+    '<div class="section-head"><div class="section-title">Hari kirim · ' + esc(periodSub()) + '</div></div>' + strip +
+    tabsHTML('toko', [
+      {k: 'spj', label: 'Riwayat SPJ', n: sp.length, html: sp.length ? '<div class="tab-note">' + esc(periodSub()) + ' · rincian SPJ tersedia 45 hari terakhir</div>' + spTbl : '<div class="dp-review">Tidak ada SPJ di periode ini (rincian SPJ tersedia 45 hari terakhir).</div>'},
+      {k: 'distr', label: 'Distributor', html: rows.length ? grp(r => r[5], 'Distributor', k => distrLbl(k) || '(tanpa distributor)', o => B.dims.distr[o.key] ? '#/distributor/' + enc(B.dims.distr[o.key]) : null) : ''},
+      {k: 'eksp', label: 'Ekspeditur', html: rows.length ? grp(r => r[6], 'Ekspeditur', k => ekspLbl(k), o => ekspHref(o.key)) : ''},
+      {k: 'plant', label: 'Plant', html: rows.length ? grp(r => r[2], 'Plant', k => tc(B.dims.src[k] || ''), o => B.dims.src[o.key] ? plantHref(B.dims.src[o.key]) : null) : ''},
+      {k: 'bulan', label: 'Per bulan', html: byM.size ? mTbl : ''}]) + '</div>', 'distributor');
+}
 function nodeHref(n){
   if(n.lv === 'prov') return '#/provinsi/' + enc(B.dims.prov[n.key]);
   if(n.lv === 'dist') return '#/distrik/' + enc(B.dims.dist[n.key]);
   if(n.lv === 'distr') return B.dims.distr[n.key] ? '#/distributor/' + enc(B.dims.distr[n.key]) : null;
   if(n.lv === 'eksp') return ekspHref(n.key);
+  if(n.lv === 'toko') return tokoHref(n.key);
   return null;
 }
 /* Expandable table: click a row to open the next level; "›" opens that item's own page.
@@ -3446,6 +3489,7 @@ function route(){
     else if(a === 'brand') b ? pageBrand(b) : pageBrandList();
     else if(a === 'kapal') b ? pageKapalDetail(b) : pageKapal();
     else if(a === 'truk' && b) pageTruk(b);
+    else if(a === 'toko' && b) pageToko(b);
     else if(a === 'kualitas') pageQuality();
     else if(a === 'kredit') pageCredits();
     else if(a === 'prognosa') pageForecast(PROG_GRAN[b] || 'harian');
